@@ -1,10 +1,9 @@
-from huggingface_hub import login, HfApi
-from datasets import load_dataset
 import os
 from typing import Optional, Union, Dict, Any
-from dotenv import load_dotenv,dotenv_values
-
-load_dotenv()
+import logging
+from huggingface_hub import login, HfApi
+from datasets import load_dataset
+import torch
 
 class HuggingFaceLogin:
     def __init__(self, token: Optional[str] = None):
@@ -18,12 +17,22 @@ class HuggingFaceLogin:
         if not self.token:
             raise ValueError("No token provided. Please provide a token or set HUGGING_FACE_TOKEN environment variable.")
         
-        self.api = HfApi()
-        self._login()
+        try:
+            self.api = HfApi()
+            self._login()
+            # Initialize PyTorch with proper settings
+            torch.set_num_threads(1)  # Prevent threading issues
+        except Exception as e:
+            logging.error(f"Error initializing HuggingFaceLogin: {str(e)}")
+            raise
     
     def _login(self) -> None:
         """Authenticate with Hugging Face Hub."""
-        login(token=self.token)
+        try:
+            login(token=self.token)
+        except Exception as e:
+            logging.error(f"Login failed: {str(e)}")
+            raise
     
     def load_dataset(
         self,
@@ -44,13 +53,17 @@ class HuggingFaceLogin:
         Returns:
             Dataset object
         """
-        return load_dataset(
-            dataset_name,
-            split=split,
-            cache_dir=cache_dir,
-            token=self.token,
-            **kwargs
-        )
+        try:
+            return load_dataset(
+                dataset_name,
+                split=split,
+                cache_dir=cache_dir,
+                token=self.token,
+                **kwargs
+            )
+        except Exception as e:
+            logging.error(f"Error loading dataset {dataset_name}: {str(e)}")
+            raise
     
     def get_dataset_info(self, dataset_name: str) -> Dict[str, Any]:
         """
@@ -62,7 +75,11 @@ class HuggingFaceLogin:
         Returns:
             Dict containing dataset information
         """
-        return self.api.dataset_info(dataset_name)
+        try:
+            return self.api.dataset_info(dataset_name)
+        except Exception as e:
+            logging.error(f"Error getting dataset info for {dataset_name}: {str(e)}")
+            raise
     
     def list_dataset_splits(self, dataset_name: str) -> list:
         """
@@ -74,5 +91,9 @@ class HuggingFaceLogin:
         Returns:
             List of available splits
         """
-        dataset_info = self.get_dataset_info(dataset_name)
-        return list(dataset_info.splits.keys()) 
+        try:
+            dataset_info = self.get_dataset_info(dataset_name)
+            return list(dataset_info.splits.keys())
+        except Exception as e:
+            logging.error(f"Error listing splits for {dataset_name}: {str(e)}")
+            raise 
