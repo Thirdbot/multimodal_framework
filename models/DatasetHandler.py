@@ -124,7 +124,6 @@ class APIFetch(BaseModel):
     def get_api_json(self):
         concatenated_json = []
         data_list = []
-        data_model_json = {"model":str,"datasets":[]}
         url = self.concatenate_request()
         print(url)
         
@@ -143,26 +142,35 @@ class APIFetch(BaseModel):
                         continue
                 else:
                     try:
+                        # Get full model response
                         response = requests.get(url['model'])
                         print(f"Generated MODEL URL: {url['model']}")
                         response.raise_for_status()
-                        data_model_json['model'] = response.json()
-                        concatenated_json.append(data_model_json)
+                        model_response = response.json()
+                        
+                        # Create entry with full model response
+                        model_entry = {"model": model_response, "datasets": []}
+                        concatenated_json.append(model_entry)
+                        
+                        # Get full dataset responses
+                        for dataset_url in url['datasets']:
+                            try:
+                                response = requests.get(dataset_url)
+                                print(f"Generated DATASETS URL: {dataset_url}")
+                                response.raise_for_status()
+                                dataset_response = response.json()
+                                data_list.append(dataset_response)
+                            except requests.exceptions.RequestException as e:
+                                print(f"Error fetching data: {e}")
+                                continue
+                        
+                        # Add all dataset responses to current model
+                        concatenated_json[-1]['datasets'] = data_list
+                        data_list = []
+                        
                     except requests.exceptions.RequestException as e:
                         print(f"Error fetching data: {e}")
                         continue
-                    for datasets in url['datasets']:
-                        try:
-                            response = requests.get(datasets)
-                            print(f"Generated DATASETS URL: {datasets}")
-                            response.raise_for_status()
-                            data_list.append(response.json())
-                        
-                        
-                        except requests.exceptions.RequestException as e:
-                            print(f"Error fetching data: {e}")
-                            continue
-                    concatenated_json = [{**cj, 'datasets': data_list} for cj in concatenated_json]
             return concatenated_json
         else:
             try:
@@ -176,8 +184,7 @@ class APIFetch(BaseModel):
 
 
 class Convert(BaseModel):
-    model: Optional[list] = Field(default=None)
-    datasets: Optional[list] = Field(default=None)
+    data_model:Optional[list] = Field(default=None)
     keyword:Optional[str] = Field(default='id')
     list_key:Optional[list] = Field(default=[])
     model_amount:Optional[int] = Field(default=None)
@@ -195,27 +202,28 @@ class Convert(BaseModel):
         
     def convert_to_json(self):
         name_list = []
-        place_holder = {'model':str,'datasets':[]}
-        datasets_array = []
-        i = 0
+
         for key in self.list_key:
-            for value in getattr(self,key):
-                if key == 'model':
-                    print(value[self.keyword])
-                    if len(name_list) < self.model_amount:
-                        print(value[self.keyword])
-                        place_holder['model'] = value[self.keyword]
-                        name_list.append(place_holder)
+            for value in getattr(self, key):
+                if key == 'data_model':
+                    # Create a new model entry
+                    model_entry = {
+                        'model': value['model'][self.keyword],
+                        'datasets': []
+                    }
                     
-                    pass
-                elif key == 'datasets':
-                    print(name_list)
-                    if len(name_list[i]['datasets']) < self.datasets_amount:
-                        datasets_array.append(value[self.keyword])
-                        name_list[i]['datasets'] = datasets_array
-                    pass
-                    i += 1
-        with open('DataModel_config/data_model.json','w') as f:
+                    # Add all datasets for this model
+                    for dataset in value['datasets']:
+                        if len(model_entry['datasets']) < self.datasets_amount:
+                            model_entry['datasets'].append(dataset[self.keyword])
+                    
+                    # Add the model entry if we haven't reached the limit
+                    if len(name_list) < self.model_amount:
+                        name_list.append(model_entry)
+                
+        
+        # Write the final result to file
+        with open('DataModel_config/data_model.json', 'w') as f:
             json.dump(name_list, f, indent=4)
  
         
@@ -235,11 +243,12 @@ if __name__ == "__main__":
                     ,"nari-labs/Dia-1.6B"],
         datasets_name=[["nvidia/OpenMathReasoning",
                        "Anthropic/values-in-the-wild"],
-                       ['nvidia/describe-anything-dataset']]
+                       ['nvidia/describe-anything-dataset',
+                        ]]
     )
     
     all_model_name = model_api.get_api_json()
-    
+
     # data_type = "datasets"
     # datasets_api = APIFetch(
     #     web_address="https://huggingface.co/api/",
@@ -248,9 +257,9 @@ if __name__ == "__main__":
     # )
     
     # all_datasets_name = datasets_api.get_api_json()
-    # converter = Convert(model=all_model_name,datasets=all_datasets_name
-    #                     ,keyword="id",model_amount=10,datasets_amount=10)
-    # converter.convert_to_json()
+    converter = Convert(data_model=all_model_name
+                        ,keyword="id",model_amount=10,datasets_amount=10)
+    converter.convert_to_json()
     
 
 # WORKSPACE_DIR = Path(__file__).parent.parent.absolute()
