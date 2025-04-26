@@ -1,3 +1,4 @@
 .env
 .Llama/
 __pycache__
+checkpoints
