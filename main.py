@@ -114,8 +114,7 @@ if __name__ == "__main__":
 #What To do
 
 #this just addon.
-# create fetch for dataset stoff
-#create json file store datasets properties
+#download dataset from huggingface with data_model.json and history of download
 #create class to finetune model with its compatible dataset Multiple time and can be chain function
 
 #main stuff
