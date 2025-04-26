@@ -2,3 +2,5 @@
 .Llama/
 __pycache__
 checkpoints
+DataModel_config/
+data_model.json

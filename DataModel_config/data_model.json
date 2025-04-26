@@ -1,0 +1,15 @@
+{
+    "model": "Orenguteng/Llama-3-8B-Lexi-Uncensored",
+    "datasets": [
+        "fawern/Text-to-sql-query-generation",
+        "shahidul034/text_generation_model_data",
+        "shahidul034/text_generation_model_data2",
+        "shahidul034/text_generation_model_data3",
+        "shahidul034/text_generation_model_data4",
+        "shahidul034/text_generation_model_data5",
+        "shahidul034/text_generation_model_data6",
+        "shahidul034/text_generation_model_data7",
+        "shahidul034/text_generation_model_data8",
+        "shahidul034/text_generation_model_data9"
+    ]
+}
