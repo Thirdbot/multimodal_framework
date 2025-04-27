@@ -203,15 +203,14 @@ class Convert(BaseModel):
                 self.list_key.append(key)
                 setattr(self,key,value)
         
-    def convert_to_json(self):
+    def convert_to_json(self,file_path):
         name_list = []
         i=0
         for key in self.list_key:
             
             for value in getattr(self, key):
-                for data in value:
                     if key == 'data_model':
-                        print(data)
+                        
                         # print(value['model'][i])
                         # print(value['datasets'][0])
                         # Create a new model entry
@@ -244,7 +243,7 @@ class Convert(BaseModel):
                 
         
         # Write the final result to file
-        with open('DataModel_config/data_model.json', 'w') as f:
+        with open(file_path, 'w+') as f:
             json.dump(name_list, f, indent=4)
  
         
@@ -253,6 +252,12 @@ class Convert(BaseModel):
         
 # Example usage
 if __name__ == "__main__":
+    folder_path = Path(__file__).parent.parent.absolute()
+    folder_path = folder_path / 'DataModel_config'
+    folder_path.mkdir(parents=True, exist_ok=True)  # Create directory if it doesn't exist
+    file_path = folder_path / 'data_model.json'
+    file_path.touch(exist_ok=True)
+    
     # Create an instance of APIFetch with only the parameters you want to use
     data_type = ["models","datasets"]
     # task = "text-generation"
@@ -270,17 +275,11 @@ if __name__ == "__main__":
     
     all_model_name = model_api.get_api_json()
 
-    # data_type = "datasets"
-    # datasets_api = APIFetch(
-    #     web_address="https://huggingface.co/api/",
-    #     type=data_type,
-    #     search=search
-    # )
-    
+
     # all_datasets_name = datasets_api.get_api_json()
     converter = Convert(data_model=all_model_name
                         ,keyword="id",model_amount=10,datasets_amount=10)
-    converter.convert_to_json()
+    converter.convert_to_json(file_path)
     
 
 # WORKSPACE_DIR = Path(__file__).parent.parent.absolute()
