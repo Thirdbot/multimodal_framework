@@ -80,7 +80,8 @@ class APIFetch(BaseModel):
                     
                     if len(target_url) > 1:
                         return target_url
-                else:
+                    
+                elif len(self.model_name) == 0 and len(self.datasets_name) == 1:
                     for datasets_name in self.datasets_name:
                         web_address = web_address + '/' + datasets_name
                         
@@ -90,12 +91,10 @@ class APIFetch(BaseModel):
                     target_url = [{**trt, 'datasets': data_list} for trt in target_url]
                     if len(target_url) > 1:
                         
-  
                         return target_url
            
             # Get all non-None attributes that were actually set
-            
-            
+        
             for key in self.list_key:
                 for value in getattr(self,key):  # Only include if it was actually set
                     if value is not None:
@@ -110,14 +109,17 @@ class APIFetch(BaseModel):
             if len(self.task_categories) >= 1:
         
                 for idx ,task in enumerate(self.task_categories ):
+                    if type == 'models':
                         data = f"{web_address}?{param_string}&task_categories={task}"
                         model_data_url['model'] = data
                         target_url.append(model_data_url)
                         model_data_url = {'model':str,'datasets':[]}
+                    elif type == 'datasets':
+                        data = f"{web_address}?{param_string}&task_categories={task}"
                         data_list.append(data)
                         target_url[idx]['datasets'] = data_list
                         data_list = []
-                return target_url
+        return target_url
      
                     
        
@@ -171,6 +173,7 @@ class APIFetch(BaseModel):
                     except requests.exceptions.RequestException as e:
                         print(f"Error fetching data: {e}")
                         continue
+                print("Size of concatenated_json",len(concatenated_json))
             return concatenated_json
         else:
             try:
@@ -202,24 +205,42 @@ class Convert(BaseModel):
         
     def convert_to_json(self):
         name_list = []
-
+        i=0
         for key in self.list_key:
+            
             for value in getattr(self, key):
-                if key == 'data_model':
-                    # Create a new model entry
-                    model_entry = {
-                        'model': value['model'][self.keyword],
-                        'datasets': []
-                    }
-                    
-                    # Add all datasets for this model
-                    for dataset in value['datasets']:
-                        if len(model_entry['datasets']) < self.datasets_amount:
-                            model_entry['datasets'].append(dataset[self.keyword])
-                    
-                    # Add the model entry if we haven't reached the limit
-                    if len(name_list) < self.model_amount:
-                        name_list.append(model_entry)
+                for data in value:
+                    if key == 'data_model':
+                        print(data)
+                        # print(value['model'][i])
+                        # print(value['datasets'][0])
+                        # Create a new model entry
+                        if isinstance(value['model'],list):
+                            # print(value['model'][i])
+                            model_entry = {
+                                'model': value['model'][i].get(self.keyword,''),
+                                'datasets': []
+                            }
+                            
+                            for dataset in value['datasets'][0]:
+                                if len(model_entry['datasets']) < self.datasets_amount:
+                                    model_entry['datasets'].append(dataset[self.keyword])
+                            i += 1
+                            
+                        else:
+                            model_entry = {
+                                'model': value['model'].get(self.keyword,''),
+                                'datasets': []
+                            }
+                        
+                            # Add all datasets for this model
+                            for dataset in value['datasets']:
+                                if len(model_entry['datasets']) < self.datasets_amount:
+                                    model_entry['datasets'].append(dataset[self.keyword])
+                        
+                        # Add the model entry if we haven't reached the limit
+                        if len(name_list) < self.model_amount:
+                                name_list.append(model_entry)
                 
         
         # Write the final result to file
@@ -238,13 +259,13 @@ if __name__ == "__main__":
     model_api = APIFetch(
         web_address="https://huggingface.co/api/",
         type=data_type,
-        # task_categories=['text-generation','text-classification'],
-        model_name=["Orenguteng/Llama-3-8B-Lexi-Uncensored"
-                    ,"nari-labs/Dia-1.6B"],
-        datasets_name=[["nvidia/OpenMathReasoning",
-                       "Anthropic/values-in-the-wild"],
-                       ['nvidia/describe-anything-dataset',
-                        ]]
+        task_categories=['text-generation','text-classification'],
+        # model_name=["Orenguteng/Llama-3-8B-Lexi-Uncensored"
+        #             ,"nari-labs/Dia-1.6B"],
+        # datasets_name=[["nvidia/OpenMathReasoning",
+        #                "Anthropic/values-in-the-wild"],
+        #                ['nvidia/describe-anything-dataset',
+        #                 ]]
     )
     
     all_model_name = model_api.get_api_json()
@@ -283,5 +304,4 @@ if __name__ == "__main__":
 
 #     def get_dataset(self):
 #         return self.dataset
-
 
