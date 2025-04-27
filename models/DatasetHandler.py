@@ -17,8 +17,8 @@ class APIFetch(BaseModel):
     tag: Optional[str] = Field(default=None)
     list_key:Optional[list] = Field(default=[])
     
-    model_name:Optional[list] = Field(default=[])
-    datasets_name:Optional[list] = Field(default=[])
+    model_name:list = Field(default=[])
+    datasets_name:list = Field(default=[])
 
     
     
@@ -173,7 +173,6 @@ class APIFetch(BaseModel):
                     except requests.exceptions.RequestException as e:
                         print(f"Error fetching data: {e}")
                         continue
-                print("Size of concatenated_json",len(concatenated_json))
             return concatenated_json
         else:
             try:
@@ -222,6 +221,7 @@ class Convert(BaseModel):
                                     'datasets': []
                                 }
                                 i += 1
+                                
                                 for dataset in value['datasets'][0]:
                                     if len(model_entry['datasets']) < self.datasets_amount:
                                         model_entry['datasets'].append(dataset[self.keyword])
