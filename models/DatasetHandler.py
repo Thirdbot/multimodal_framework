@@ -216,15 +216,21 @@ class Convert(BaseModel):
                         # Create a new model entry
                         if isinstance(value['model'],list):
                             # print(value['model'][i])
-                            model_entry = {
-                                'model': value['model'][i].get(self.keyword,''),
-                                'datasets': []
-                            }
+                            for model in value['model']:
+                                model_entry = {
+                                    'model':model.get(self.keyword,''),
+                                    'datasets': []
+                                }
+                                i += 1
+                                for dataset in value['datasets'][0]:
+                                    if len(model_entry['datasets']) < self.datasets_amount:
+                                        model_entry['datasets'].append(dataset[self.keyword])
+                                if i < self.model_amount:
+                                    name_list.append(model_entry)
+
                             
-                            for dataset in value['datasets'][0]:
-                                if len(model_entry['datasets']) < self.datasets_amount:
-                                    model_entry['datasets'].append(dataset[self.keyword])
-                            i += 1
+                            
+                            
                             
                         else:
                             model_entry = {
