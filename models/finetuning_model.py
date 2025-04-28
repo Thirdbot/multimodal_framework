@@ -3,7 +3,7 @@ from langchain.callbacks import StreamingStdOutCallbackHandler
 from langchain.callbacks.manager import CallbackManager
 from langchain.prompts import PromptTemplate
 
-from DatasetHandler import DatasetHandler
+from .DatasetHandler import DatasetHandler
 from trl import SFTTrainer
 
 # from peft.tuners.lora import mark_only_lora_as_trainable
@@ -40,6 +40,13 @@ class FinetuneModel:
         self.dataset_name = dataset_name
         self.language = language
         self.split = split
+        
+        # Training parameters
+        self.per_device_train_batch_size = 2
+        self.per_device_eval_batch_size = 2
+        self.gradient_accumulation_steps = 4
+        self.learning_rate = 2e-4
+        self.num_train_epochs = 3
         
         # Define paths
         self.WORKSPACE_DIR = Path(__file__).parent.parent.absolute()
