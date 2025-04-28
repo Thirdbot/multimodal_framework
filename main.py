@@ -2,109 +2,337 @@ import os
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 
 from login.huggingface_login import HuggingFaceLogin
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import pipeline, AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
 import torch
 from pathlib import Path
 from accelerate import init_empty_weights, load_checkpoint_and_dispatch, infer_auto_device_map, disk_offload
 from accelerate.utils import set_seed
+from models.finetuning_model import FinetuneModel
+from typing import Dict, Optional, List
+import json
+from datetime import datetime
+import yaml
 
 # Define paths
 WORKSPACE_DIR = Path(__file__).parent.absolute()
 MODEL_DIR = WORKSPACE_DIR / "models" / "Text-Text-generation"
 OFFLOAD_DIR = WORKSPACE_DIR / "offload"
 
-def load_merged_model():
-    # Check if model directory exists
-    if not MODEL_DIR.exists():
-        raise FileNotFoundError(f"Model directory not found at {MODEL_DIR}")
+class PromptConfig:
+    """Configuration class for managing prompts using a table-based approach"""
+    
+    def __init__(self, config_path: Optional[str] = None):
+        # Default prompt configurations
+        self.prompt_table = {
+            "system": {
+                "default": "You are a helpful AI assistant. You provide clear, concise, and accurate responses.",
+                "creative": "You are a creative AI assistant. You provide imaginative and engaging responses.",
+                "technical": "You are a technical AI assistant. You provide detailed and accurate technical information.",
+                "friendly": "You are a friendly AI assistant. You provide warm and approachable responses."
+            },
+            "user": {
+                "default": "{input}",
+                "question": "Question: {input}",
+                "instruction": "Instruction: {input}",
+                "chat": "User: {input}"
+            },
+            "assistant": {
+                "default": "Assistant: {response}",
+                "answer": "Answer: {response}",
+                "response": "Response: {response}",
+                "chat": "Assistant: {response}"
+            },
+            "context": {
+                "default": "{history}\n\n{current_prompt}",
+                "minimal": "{current_prompt}",
+                "full": "Previous conversation:\n{history}\n\nCurrent interaction:\n{current_prompt}"
+            }
+        }
         
-    # Check if CUDA is available
-    if not torch.cuda.is_available():
-        raise RuntimeError("CUDA is not available. Please check your GPU setup.")
+        # Load custom configuration if provided
+        if config_path and Path(config_path).exists():
+            self.load_config(config_path)
         
-    # Create offload directory if it doesn't exist
-    OFFLOAD_DIR.mkdir(exist_ok=True)
+        # Set default configurations
+        self.current_config = {
+            "system": "default",
+            "user": "default",
+            "assistant": "default",
+            "context": "default"
+        }
+    
+    def load_config(self, config_path: str) -> None:
+        """Load prompt configurations from a YAML file"""
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                custom_config = yaml.safe_load(f)
+                self.prompt_table.update(custom_config)
+        except Exception as e:
+            print(f"Warning: Could not load custom prompt configuration: {e}")
+    
+    def set_config(self, config_type: str, config_name: str) -> None:
+        """Set a specific configuration type"""
+        if config_type in self.current_config and config_name in self.prompt_table[config_type]:
+            self.current_config[config_type] = config_name
+        else:
+            raise ValueError(f"Invalid configuration: {config_type}={config_name}")
+    
+    def get_prompt(self, prompt_type: str, **kwargs) -> str:
+        """Get a formatted prompt based on current configuration"""
+        if prompt_type not in self.current_config:
+            raise ValueError(f"Invalid prompt type: {prompt_type}")
         
-    # Load tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(
-        MODEL_DIR,
-        trust_remote_code=True
-    )
+        template = self.prompt_table[prompt_type][self.current_config[prompt_type]]
+        return template.format(**kwargs)
     
-    # Initialize model with empty weights
-    with init_empty_weights():
-        model = AutoModelForCausalLM.from_pretrained(
-            MODEL_DIR,
-            trust_remote_code=True,
-            torch_dtype=torch.bfloat16
-        )
+    def get_available_configs(self) -> Dict[str, List[str]]:
+        """Get all available configurations"""
+        return {k: list(v.keys()) for k, v in self.prompt_table.items()}
     
-    # Calculate device map
-    max_memory = {0: "6GB", "cpu": "30GB"}
-    device_map = infer_auto_device_map(
-        model,
-        max_memory=max_memory,
-        no_split_module_classes=model._no_split_modules
-    )
-    
-    # Load and dispatch model with disk offloading
-    model = load_checkpoint_and_dispatch(
-        model,
-        MODEL_DIR,
-        device_map=device_map,
-        offload_folder=str(OFFLOAD_DIR),
-        offload_state_dict=True,
-        no_split_module_classes=model._no_split_modules
-    )
-    
-    # Enable disk offloading
-    disk_offload(model, OFFLOAD_DIR, device_map=device_map)
-    
-    return model, tokenizer
+    def save_config(self, config_path: str) -> None:
+        """Save current prompt configurations to a YAML file"""
+        try:
+            with open(config_path, 'w', encoding='utf-8') as f:
+                yaml.dump(self.prompt_table, f, allow_unicode=True)
+        except Exception as e:
+            print(f"Warning: Could not save prompt configuration: {e}")
 
-def generate_text(prompt, model, tokenizer, max_length=100, temperature=0.7, top_p=0.9):
-    # Prepare inputs
-    inputs = tokenizer(prompt, return_tensors="pt")
+class Conversation:
+    """Class to manage conversation history"""
+    def __init__(self):
+        self.messages: List[Dict] = []
+        self.system_message = {
+            "role": "system",
+            "content": "You are a helpful AI assistant. You provide clear, concise, and accurate responses."
+        }
+        self.add_message(self.system_message)
     
-    # Move inputs to the appropriate device
-    for k, v in inputs.items():
-        inputs[k] = v.to(next(model.parameters()).device)
+    def add_message(self, message: Dict) -> None:
+        """Add a message to the conversation history"""
+        message["timestamp"] = datetime.now().isoformat()
+        self.messages.append(message)
     
-    # Generate text
-    with torch.amp.autocast(device_type=next(model.parameters()).device.type):
-        outputs = model.generate(
-            **inputs,
-            max_length=max_length,
-            num_return_sequences=1,
+    def get_conversation_text(self) -> str:
+        """Convert conversation history to text format"""
+        history_text = ""
+        for msg in self.messages[1:]:  # Skip system message
+            if msg["role"] == "user":
+                history_text += self.get_prompt("user", input=msg["content"]) + "\n\n"
+            elif msg["role"] == "assistant":
+                history_text += self.get_prompt("assistant", response=msg["content"]) + "\n\n"
+        return history_text.strip()
+    
+    def get_full_prompt(self, user_input: str) -> str:
+        """Get the complete prompt with history and current input"""
+        history = self.get_conversation_text()
+        current_prompt = self.get_prompt("user", input=user_input)
+        return self.get_prompt("context", 
+                               history=history,
+                               current_prompt=current_prompt)
+    
+    def save_conversation(self, filepath: str) -> None:
+        """Save conversation history to a file"""
+        try:
+            with open(filepath, 'w', encoding='utf-8') as f:
+                json.dump(self.messages, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            print(f"Warning: Could not save conversation: {e}")
+    
+    def load_conversation(self, filepath: str) -> None:
+        """Load conversation history from a file"""
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                loaded_messages = json.load(f)
+                # Keep the system message and add loaded messages
+                self.messages = [self.messages[0]]  # Keep system message
+                self.messages.extend(loaded_messages[1:])  # Add loaded messages
+        except FileNotFoundError:
+            print(f"No previous conversation found at {filepath}")
+        except Exception as e:
+            print(f"Warning: Could not load conversation: {e}")
+            # Reset to initial state if loading fails
+            self.messages = [self.messages[0]]  # Keep only system message
+
+class ModelManager:
+    def __init__(self):
+        self.pipe = None
+        self.device = "cuda:0" if torch.cuda.is_available() else "cpu"
+        self.conversation = Conversation()
+        self.conversation_file = "conversation_history.json"
+        self.prompt_config = PromptConfig()
+        
+    def load_model(self, model_path):
+        """Load a finetuned model using Hugging Face pipeline"""
+        if not model_path.exists():
+            raise FileNotFoundError(f"Model directory not found at {model_path}")
+        
+        # Configure quantization
+        quantization_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=torch.bfloat16,
+            bnb_4bit_use_double_quant=True,
+            bnb_4bit_quant_type="nf4",
+            llm_int8_enable_fp32_cpu_offload=True,
+            llm_int8_threshold=6.0,
+            llm_int8_has_fp16_weight=True
+        )
+        
+        # Create text generation pipeline with offloading
+        self.pipe = pipeline(
+            "text-generation",
+            model=str(model_path),
+            device_map="auto",
+            torch_dtype=torch.bfloat16,
+            quantization_config=quantization_config,
+            trust_remote_code=True,
+            model_kwargs={
+                "offload_folder": str(OFFLOAD_DIR),
+                "offload_state_dict": True,
+                "max_memory": {0: "6GB", "cpu": "30GB"}
+            }
+        )
+        
+        return self.pipe
+    
+    def generate_response(self, user_input: str, max_new_tokens: int = 150, 
+                         temperature: float = 0.7, top_p: float = 0.9) -> str:
+        """Generate a response using the loaded model with conversation history"""
+        if self.pipe is None:
+            raise RuntimeError("Model must be loaded first")
+        
+        # Add user message to conversation
+        self.conversation.add_message({
+            "role": "user",
+            "content": user_input
+        })
+        
+        # Get formatted prompt with history
+        prompt = self.conversation.get_full_prompt(user_input)
+        
+        # Generate response using pipeline
+        outputs = self.pipe(
+            prompt,
+            max_new_tokens=max_new_tokens,
             temperature=temperature,
             top_p=top_p,
             do_sample=True,
-            pad_token_id=tokenizer.eos_token_id
+            pad_token_id=self.pipe.tokenizer.eos_token_id,
+            eos_token_id=self.pipe.tokenizer.eos_token_id,
+            repetition_penalty=1.1,
+            no_repeat_ngram_size=3
         )
-    
-    # Decode and return generated text
-    return tokenizer.decode(outputs[0], skip_special_tokens=True)
+        
+        # Extract the response
+        full_response = outputs[0]['generated_text']
+        response = full_response.split(prompt)[-1].strip()
+        
+        # Add assistant's response to conversation
+        self.conversation.add_message({
+            "role": "assistant",
+            "content": response
+        })
+        
+        # Save conversation after each exchange
+        self.conversation.save_conversation(self.conversation_file)
+        
+        return self.conversation.format_response(response)
 
 def main():
     # Set random seed for reproducibility
     set_seed(42)
     
-    # Load model and tokenizer
-    print("Loading model and tokenizer...")
-    model, tokenizer = load_merged_model()
-    print("Model and tokenizer loaded successfully!")
-    print(f"Model device: {next(model.parameters()).device}")
+    # Create directories
+    MODEL_DIR.mkdir(parents=True, exist_ok=True)
+    OFFLOAD_DIR.mkdir(parents=True, exist_ok=True)
     
-    # Example usage
+    # Initialize model manager
+    model_manager = ModelManager()
+    
+    # Check if model exists
+    if not (MODEL_DIR.exists() and any(MODEL_DIR.iterdir())):
+        print("No finetuned model found. Starting finetuning process...")
+        
+        # Initialize finetuner
+        finetuner = FinetuneModel(
+            model_id="prometheus-eval/prometheus-7b-v2.0",
+            dataset_name="oscar-corpus/OSCAR-2201",
+            language='th',
+            split='train'
+        )
+        
+        # Finetune model
+        model_path = finetuner.finetune()
+        print(f"Model finetuned and saved to: {model_path}")
+    else:
+        print("Found existing finetuned model.")
+        model_path = MODEL_DIR
+    
+    # Load the model
+    print("Loading model...")
+    model_manager.load_model(model_path)
+    print("Model loaded successfully!")
+    print(f"Model device: {model_manager.device}")
+    
+    # Try to load previous conversation
+    model_manager.conversation.load_conversation(model_manager.conversation_file)
+    
+    print("\nChat Interface")
+    print("Available commands:")
+    print("- 'quit': Exit the program")
+    print("- 'clear': Start a new conversation")
+    print("- 'history': View conversation history")
+    print("- 'config': View/change prompt configurations")
+    print("- 'save': Save current prompt configuration")
+    print("-" * 50)
+    
+    # Interactive loop
     while True:
-        prompt = input("\nEnter your prompt (or 'quit' to exit): ")
-        if prompt.lower() == 'quit':
+        user_input = input("\nYou: ").strip()
+        
+        if user_input.lower() == 'quit':
             break
+        elif user_input.lower() == 'clear':
+            model_manager.conversation = Conversation()
+            print("\nConversation cleared. Starting fresh conversation.")
+            continue
+        elif user_input.lower() == 'history':
+            print("\nConversation History:")
+            print("-" * 50)
+            print(model_manager.conversation.get_conversation_text())
+            print("-" * 50)
+            continue
+        elif user_input.lower() == 'config':
+            print("\nAvailable Prompt Configurations:")
+            configs = model_manager.prompt_config.get_available_configs()
+            for config_type, options in configs.items():
+                print(f"\n{config_type}:")
+                for option in options:
+                    current = " (current)" if option == model_manager.prompt_config.current_config[config_type] else ""
+                    print(f"  - {option}{current}")
             
-        print("\nGenerating response...")
-        generated_text = generate_text(prompt, model, tokenizer)
-        print("\nGenerated text:")
-        print(generated_text)
+            change = input("\nChange configuration? (y/n): ").lower()
+            if change == 'y':
+                config_type = input("Enter configuration type (system/user/assistant/context): ")
+                config_name = input("Enter configuration name: ")
+                try:
+                    model_manager.prompt_config.set_config(config_type, config_name)
+                    print(f"Configuration updated: {config_type}={config_name}")
+                except ValueError as e:
+                    print(f"Error: {e}")
+            continue
+        elif user_input.lower() == 'save':
+            model_manager.prompt_config.save_config(model_manager.prompt_config_file)
+            print(f"Prompt configuration saved to {model_manager.prompt_config_file}")
+            continue
+        
+        print("\nAssistant: ", end='', flush=True)
+        response = model_manager.generate_response(
+            user_input,
+            max_new_tokens=150,
+            temperature=0.7,
+            top_p=0.9
+        )
+        print(response)
 
 if __name__ == "__main__":
     main()

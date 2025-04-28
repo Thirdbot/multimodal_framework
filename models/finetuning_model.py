@@ -3,15 +3,14 @@ from langchain.callbacks import StreamingStdOutCallbackHandler
 from langchain.callbacks.manager import CallbackManager
 from langchain.prompts import PromptTemplate
 
-from DatasetHandler import DatasetHandler
-
+from models.DatasetHandler import DatasetHandler
 from trl import SFTTrainer
 
 # from peft.tuners.lora import mark_only_lora_as_trainable
 
-from transformers import AutoTokenizer,DataCollatorForLanguageModeling,BitsAndBytesConfig, AutoModelForCausalLM, TrainingArguments
+from transformers import AutoTokenizer,BitsAndBytesConfig,AutoConfig,DataCollatorForLanguageModeling,BitsAndBytesConfig, AutoModelForCausalLM, TrainingArguments
 
-from peft import LoraConfig, get_peft_model,PeftModel
+from peft import LoraConfig, get_peft_model,PeftModel, AutoPeftModelForCausalLM
 
 import torch
 
@@ -20,141 +19,7 @@ from pathlib import Path
 import os
 
 # os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
-
-# Define absolute paths
-WORKSPACE_DIR = Path(__file__).parent.parent.absolute()
-MODEL_DIR = WORKSPACE_DIR / "models" / "Text-Text-generation"
-CHECKPOINT_DIR = WORKSPACE_DIR / "checkpoints"
-
-# Create model directory if it doesn't exist
-MODEL_DIR.mkdir(parents=True, exist_ok=True)
-
-
-model_id = "Orenguteng/Llama-3-8B-Lexi-Uncensored"
-
-
-#multilingual dataset
-dataset = DatasetHandler("oscar-corpus/OSCAR-2201",language='th',split='train')
-#get dataset (im prove later)
-ds = dataset.get_dataset()
-
-
-#quantiation for load 4 bit
-q_config = BitsAndBytesConfig(
-    load_in_4bit=True,
-    bnb_4bit_use_double_quant=True,
-    bnb_4bit_compute_dtype=torch.bfloat16,
-    llm_int8_enable_fp32_cpu_offload=True,
-    bnb_4bit_quant_type="nf4"  # Using nf4 for better memory efficiency
-)
-
-
-#model finetuning 
-tokenizer = AutoTokenizer.from_pretrained(
-    model_id,
-    legacy=False,
-)
-
-# Load base model with quantization
-model = AutoModelForCausalLM.from_pretrained(
-    model_id,
-    quantization_config=q_config,
-    device_map="auto",
-    torch_dtype=torch.bfloat16,
-    max_memory={0: "6GB"},
-    use_cache=False  # Disable cache for gradient checkpointing compatibility
-)
-
-# Configure LoRA
-peft_config = LoraConfig(
-    r=4,  # Reduced from 8 for faster training
-    lora_alpha=8,  # Reduced proportionally with r
-    lora_dropout=0.05,
-    bias="none",
-    task_type="CAUSAL_LM",
-    target_modules=["q_proj", "v_proj"],  # Focus on key attention layers
-    modules_to_save=None
-)
-
-# Get PEFT model - only apply PEFT once
-if not hasattr(model, 'peft_config'):
-    model = get_peft_model(model, peft_config)
-    model.enable_input_require_grads()
-    model.gradient_checkpointing_enable()
-    model.print_trainable_parameters()
-
-def tokenize(batch):
-    return tokenizer(
-        batch["text"],
-        padding=True,
-        truncation=True,
-        max_length=512,
-        return_tensors="pt"
-    )
-
-#map token
-tokenized_ds = ds.map(tokenize, batched=True, remove_columns=ds.column_names)
-
-#training args specifiction using bfp16 for precision 2x save .pth file
-training_args = TrainingArguments(
-    output_dir=str(CHECKPOINT_DIR),
-    per_device_train_batch_size=2,
-    per_device_eval_batch_size=2,
-    max_steps=10,
-    gradient_accumulation_steps=4,
-    optim='adamw_torch',
-    learning_rate=2e-4,  # Slightly higher learning rate
-    lr_scheduler_type='cosine',  # Better learning rate schedule
-    warmup_ratio=0.05,  # Reduced warmup
-    save_strategy="epoch",
-    save_total_limit=3,
-    num_train_epochs=3,
-    bf16=True,
-    save_safetensors=True,
-    save_on_each_node=True,
-    gradient_checkpointing=True,
-    torch_compile=False,
-    dataloader_num_workers=0,
-    remove_unused_columns=False,
-    label_names=["labels"],
-    logging_steps=10,            # Log every 10 steps
-)
-#collator
-collator = DataCollatorForLanguageModeling(tokenizer=tokenizer,mlm=False)
-
-# Configure trainer
-trainer = SFTTrainer(
-    model=model,
-    args=training_args,
-    train_dataset=tokenized_ds,
-    data_collator=collator,
-    peft_config=peft_config
-)
-
-
-#this code is just placeholder
-if not (os.path.exists(CHECKPOINT_DIR) and os.listdir(CHECKPOINT_DIR)):
-    # mark_only_lora_as_trainable(model)
-    trainer.train()
-    trainer.model.save_pretrained(MODEL_DIR)
-    #.pt file
-
-
-else:
-    # Load the checkpoint with the correct config
-    pmodel = PeftModel.from_pretrained(
-        model,
-        "checkpoints/checkpoint-10",
-        is_trainable=True
-    )
-
-    # Now merge the weights properly with 16-bit precision to avoid rounding errors
-    merged_model = pmodel.merge_and_unload(safe_merge=True)
-
-    # Save the merged model
-    save_path = "models/Text-Text-generation"
-    merged_model.save_pretrained(save_path, safe_serialization=True, save_adapters=True, save_embedding_layers=True)
-    tokenizer.save_pretrained(save_path)
+# os.environ["PYTORCH_USE_CUDA_DSA"] = "1"
 
 
 
@@ -169,9 +34,204 @@ else:
 # )
 
 
-class Finetune():
-    def __init__(self) -> None:
-        pass
+class FinetuneModel:
+    def __init__(self, model_id, dataset_name, language=None, split=None):
+        self.model_id = model_id
+        self.dataset_name = dataset_name
+        self.language = language
+        self.split = split
+        
+        # Define paths
+        self.WORKSPACE_DIR = Path(__file__).parent.parent.absolute()
+        self.MODEL_DIR = self.WORKSPACE_DIR / "models" / "Text-Text-generation"
+        self.CHECKPOINT_DIR = self.WORKSPACE_DIR / "checkpoints"
+        
+        # Create directories
+        self.MODEL_DIR.mkdir(parents=True, exist_ok=True)
+        self.CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
+        
+        self.device_map = "cuda:0" if torch.cuda.is_available() else "cpu"
+
+        
+    def setup_quantization(self):
+        return BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_use_double_quant=True,
+            bnb_4bit_compute_dtype=torch.bfloat16,
+            llm_int8_enable_fp32_cpu_offload=True,
+            bnb_4bit_quant_type="nf4"
+        )
     
-    def tune(self,model,dataset):
-        MODEL_DIR = WORKSPACE_DIR / "models" / "Text-Text-generation"
+    def setup_lora_config(self):
+        return LoraConfig(
+            r=4,
+            lora_alpha=8,
+            lora_dropout=0.05,
+            bias="none",
+            task_type="CAUSAL_LM",
+            target_modules=["q_proj", "v_proj"]
+        )
+    
+    def setup_training_args(self):
+        return TrainingArguments(
+            output_dir=str(self.CHECKPOINT_DIR),
+            per_device_train_batch_size=2,
+            per_device_eval_batch_size=2,
+            max_steps=10,
+            gradient_accumulation_steps=4,
+            optim='adamw_torch',
+            learning_rate=2e-4,
+            lr_scheduler_type='cosine',
+            warmup_ratio=0.05,
+            save_strategy="epoch",
+            save_total_limit=3,
+            num_train_epochs=3,
+            bf16=True,
+            save_safetensors=True,
+            save_on_each_node=True,
+            gradient_checkpointing=True,
+            torch_compile=False,
+            dataloader_num_workers=0,
+            remove_unused_columns=False,
+            label_names=["labels"],
+            logging_steps=10,
+        )
+    
+    def load_model_and_tokenizer(self):
+        # Load config and tokenizer
+        config = AutoConfig.from_pretrained(self.model_id)
+        tokenizer = AutoTokenizer.from_pretrained(
+            self.model_id,
+            legacy=False,
+            trust_remote_code=True,
+            use_fast=True,  # Enable fast tokenizer
+            add_prefix_space=True,  # Add space before tokens
+            padding_side="right",  # Consistent padding
+            truncation_side="right"  # Consistent truncation
+        )
+        
+        # Add special tokens if they don't exist
+        special_tokens = {
+            "pad_token": "<pad>",
+            "eos_token": "</s>",
+            "bos_token": "<s>",
+            "unk_token": "<unk>"
+        }
+        
+        # Add any missing special tokens
+        for token_name, token_value in special_tokens.items():
+            if getattr(tokenizer, token_name) is None:
+                tokenizer.add_special_tokens({token_name: token_value})
+        
+        # Resize token embeddings to match tokenizer
+        tokenizer.model_max_length = 2048  # Set maximum sequence length
+        
+        # Load model with quantization
+        model = AutoModelForCausalLM.from_pretrained(
+            self.model_id,
+            quantization_config=self.setup_quantization(),
+            device_map=self.device_map,
+            torch_dtype=torch.bfloat16,
+            max_memory={0: "6GB"},
+            trust_remote_code=True,
+            config=config
+        )
+        
+        # Resize model's token embeddings to match tokenizer
+        model.resize_token_embeddings(len(tokenizer))
+        
+        return model, tokenizer
+    
+    def prepare_dataset(self):
+        dataset = DatasetHandler(self.dataset_name, language=self.language, split=self.split)
+        raw_dataset = dataset.download_dataset()
+        
+        # Add language-specific tokens if needed
+        if self.language:
+            # Add language-specific special tokens
+            language_token = f"<{self.language}>"
+            if language_token not in self.tokenizer.get_vocab():
+                self.tokenizer.add_tokens([language_token])
+                self.model.resize_token_embeddings(len(self.tokenizer))
+        
+        return raw_dataset
+    
+    def tokenize_dataset(self, dataset, tokenizer):
+        def tokenize(batch):
+            # Add language token if specified
+            if self.language:
+                texts = [f"<{self.language}> {text}" for text in batch["text"]]
+            else:
+                texts = batch["text"]
+                
+            return tokenizer(
+                texts,
+                padding=True,
+                truncation=True,
+                max_length=512,
+                return_tensors="pt",
+                add_special_tokens=True
+            )
+            
+        tokenized_dataset = dataset.map(
+            tokenize,
+            batched=True,
+            remove_columns=dataset.column_names,
+            desc="Tokenizing dataset"
+        )
+        
+        return tokenized_dataset
+    
+    def finetune(self):
+        # Load model and tokenizer
+        model, tokenizer = self.load_model_and_tokenizer()
+        
+        # Prepare dataset
+        dataset = self.prepare_dataset()
+        tokenized_dataset = self.tokenize_dataset(dataset, tokenizer)
+        
+        # Setup LoRA
+        peft_config = self.setup_lora_config()
+        model = get_peft_model(model, peft_config)
+        model.enable_input_require_grads()
+        model.gradient_checkpointing_enable()
+        
+        # Setup training
+        training_args = self.setup_training_args()
+        data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
+        
+        trainer = SFTTrainer(
+            model=model,
+            args=training_args,
+            train_dataset=tokenized_dataset,
+            data_collator=data_collator,
+            peft_config=peft_config
+        )
+        
+        # Train or load from checkpoint
+        if not (os.path.exists(self.CHECKPOINT_DIR) and os.listdir(self.CHECKPOINT_DIR)):
+            trainer.train()
+            trainer.model.save_pretrained(self.MODEL_DIR, safe_serialization=True)
+            tokenizer.save_pretrained(self.MODEL_DIR)
+        else:
+            pmodel = PeftModel.from_pretrained(
+                model,
+                str(self.CHECKPOINT_DIR / "checkpoint-10"),
+                is_trainable=True
+            )
+            merged_model = pmodel.merge_and_unload(safe_merge=True)
+            merged_model.save_pretrained(self.MODEL_DIR, safe_serialization=True)
+            tokenizer.save_pretrained(self.MODEL_DIR)
+        
+        return self.MODEL_DIR
+
+# Example usage
+if __name__ == "__main__":
+    finetuner = FinetuneModel(
+        model_id="prometheus-eval/prometheus-7b-v2.0",
+        dataset_name="oscar-corpus/OSCAR-2201",
+        language='th',
+        split='train'
+    )
+    model_path = finetuner.finetune()
+    print(f"Model saved to: {model_path}")
