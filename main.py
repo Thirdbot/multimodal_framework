@@ -98,9 +98,9 @@ class PromptConfig:
             print(f"Warning: Could not save prompt configuration: {e}")
 
 class Conversation:
-    """Class to manage conversation history"""
+    """Class to manage conversation history using Hugging Face chat template style"""
     def __init__(self):
-        self.messages: List[Dict] = []
+        self.messages = []
         self.system_message = {
             "role": "system",
             "content": "You are a helpful AI assistant. You provide clear, concise, and accurate responses."
@@ -112,23 +112,9 @@ class Conversation:
         message["timestamp"] = datetime.now().isoformat()
         self.messages.append(message)
     
-    def get_conversation_text(self) -> str:
-        """Convert conversation history to text format"""
-        history_text = ""
-        for msg in self.messages[1:]:  # Skip system message
-            if msg["role"] == "user":
-                history_text += f"User: {msg['content']}\n\n"
-            elif msg["role"] == "assistant":
-                history_text += f"Assistant: {msg['content']}\n\n"
-        return history_text.strip()
-    
-    def get_full_prompt(self, user_input: str) -> str:
-        """Get the complete prompt with history and current input"""
-        history = self.get_conversation_text()
-        current_prompt = f"User: {user_input}"
-        if history:
-            return f"{history}\n\n{current_prompt}"
-        return current_prompt
+    def get_chat_template(self) -> List[Dict]:
+        """Get messages in Hugging Face chat template format"""
+        return [{"role": msg["role"], "content": msg["content"]} for msg in self.messages]
     
     def save_conversation(self, filepath: str) -> None:
         """Save conversation history to a file"""
@@ -152,10 +138,6 @@ class Conversation:
             print(f"Warning: Could not load conversation: {e}")
             # Reset to initial state if loading fails
             self.messages = [self.messages[0]]  # Keep only system message
-    
-    def format_response(self, response: str) -> str:
-        """Format the assistant's response"""
-        return response
 
 class ModelManager:
     def __init__(self):
@@ -225,8 +207,15 @@ class ModelManager:
             "content": user_input
         })
         
-        # Get formatted prompt with history
-        prompt = self.conversation.get_full_prompt(user_input)
+        # Get chat template format
+        messages = self.conversation.get_chat_template()
+        
+        # Apply chat template
+        prompt = self.tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True
+        )
         
         # Tokenize input
         inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
@@ -258,7 +247,7 @@ class ModelManager:
         # Save conversation after each exchange
         self.conversation.save_conversation(self.conversation_file)
         
-        return self.conversation.format_response(response)
+        return response
 
 def main():
     # Set random seed for reproducibility
@@ -321,7 +310,7 @@ def main():
         elif user_input.lower() == 'history':
             print("\nConversation History:")
             print("-" * 50)
-            print(model_manager.conversation.get_conversation_text())
+            print(model_manager.conversation.get_chat_template())
             print("-" * 50)
             continue
         elif user_input.lower() == 'config':
