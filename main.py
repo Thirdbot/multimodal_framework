@@ -188,9 +188,10 @@ class ModelManager:
         if self.model is None or self.tokenizer is None:
             raise RuntimeError("Model and tokenizer must be loaded first")
         
-        # Tokenize input
-        inputs = self.tokenizer(user_input, return_tensors="pt").to(self.device)
-        input_ids = inputs.input_ids
+        # Tokenize input with attention mask
+        inputs = self.tokenizer(user_input, return_tensors="pt", padding=True, truncation=True)
+        input_ids = inputs.input_ids.to(self.device)
+        attention_mask = inputs.attention_mask.to(self.device)
         
         # Initialize generation parameters
         generation_config = {
@@ -209,6 +210,7 @@ class ModelManager:
                 # Generate next token
                 outputs = self.model.generate(
                     input_ids,
+                    attention_mask=attention_mask,
                     max_new_tokens=1,
                     **generation_config
                 )
@@ -224,8 +226,9 @@ class ModelManager:
                 new_token = self.tokenizer.decode([new_token_id], skip_special_tokens=True)
                 yield new_token
                 
-                # Update input_ids for next iteration
+                # Update input_ids and attention_mask for next iteration
                 input_ids = outputs
+                attention_mask = torch.cat([attention_mask, torch.ones(1, 1, device=self.device)], dim=1)
 
 def main():
     # Set random seed for reproducibility
