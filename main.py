@@ -141,94 +141,64 @@ class Conversation:
 
 class ModelManager:
     def __init__(self):
-        self.model = None
-        self.tokenizer = None
+        self.pipe = None
         self.device = "cuda:0" if torch.cuda.is_available() else "cpu"
         
     def load_model(self, model_path):
-        """Load a finetuned model directly without offloading"""
+        """Load a finetuned model using Hugging Face pipeline with optimized memory usage"""
         if not model_path.exists():
             raise FileNotFoundError(f"Model directory not found at {model_path}")
         
-        # Configure quantization for full GPU usage
+        # Configure optimized quantization for memory efficiency
         quantization_config = BitsAndBytesConfig(
             load_in_4bit=True,
-            bnb_4bit_compute_dtype=torch.bfloat16,
+            bnb_4bit_compute_dtype=torch.float16,  # Use float16 instead of bfloat16
             bnb_4bit_use_double_quant=True,
-            bnb_4bit_quant_type="nf4"
+            bnb_4bit_quant_type="nf4",
+            llm_int8_threshold=6.0,
+            llm_int8_has_fp16_weight=True
         )
         
-        # Load tokenizer
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            str(model_path),
-            trust_remote_code=True,
-            use_fast=True
-        )
-        
-        # Load model directly to GPU
-        self.model = AutoModelForCausalLM.from_pretrained(
-            str(model_path),
+        # Create text generation pipeline with memory optimization
+        self.pipe = pipeline(
+            "text-generation",
+            model=str(model_path),
+            device=0 if torch.cuda.is_available() else -1,
+            torch_dtype=torch.float16,  # Use float16 for better memory efficiency
             quantization_config=quantization_config,
-            device_map="auto",
-            torch_dtype=torch.bfloat16,
             trust_remote_code=True,
-            use_cache=True,
-            low_cpu_mem_usage=True
+            model_kwargs={
+                "low_cpu_mem_usage": True,
+                "use_cache": True,
+                "device_map": None,
+                "max_memory": {0: "16GB"}  # Limit GPU memory usage
+            }
         )
         
-        # Move model to GPU if not already there
-        if self.device != "cpu":
-            self.model = self.model.to(self.device)
+        # Clear CUDA cache before moving model
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            self.pipe.model = self.pipe.model.to("cuda:0")
         
-        return self.model
+        return self.pipe
     
     def generate_response_stream(self, user_input: str, max_new_tokens: int = 150, 
                                temperature: float = 0.7, top_p: float = 0.9) -> str:
-        """Generate a response token by token with streaming"""
-        if self.model is None or self.tokenizer is None:
-            raise RuntimeError("Model and tokenizer must be loaded first")
+        """Generate a response using Hugging Face pipeline"""
+        if self.pipe is None:
+            raise RuntimeError("Model must be loaded first")
         
-        # Tokenize input with attention mask
-        inputs = self.tokenizer(user_input, return_tensors="pt", padding=True, truncation=True)
-        input_ids = inputs.input_ids.to(self.device)
-        attention_mask = inputs.attention_mask.to(self.device)
-        
-        # Initialize generation parameters
-        generation_config = {
-            "temperature": temperature,
-            "top_p": top_p,
-            "do_sample": True,
-            "pad_token_id": self.tokenizer.eos_token_id,
-            "eos_token_id": self.tokenizer.eos_token_id,
-            "repetition_penalty": 1.1,
-            "no_repeat_ngram_size": 3
-        }
-        
-        # Generate response token by token
-        with torch.no_grad():
-            for _ in range(max_new_tokens):
-                # Generate next token
-                outputs = self.model.generate(
-                    input_ids,
-                    attention_mask=attention_mask,
-                    max_new_tokens=1,
-                    **generation_config
-                )
-                
-                # Get the new token
-                new_token_id = outputs[0][-1].item()
-                
-                # Check if we've reached the end of the sequence
-                if new_token_id == self.tokenizer.eos_token_id:
-                    break
-                
-                # Decode and yield the new token
-                new_token = self.tokenizer.decode([new_token_id], skip_special_tokens=True)
-                yield new_token
-                
-                # Update input_ids and attention_mask for next iteration
-                input_ids = outputs
-                attention_mask = torch.cat([attention_mask, torch.ones(1, 1, device=self.device)], dim=1)
+        # Generate response with streaming
+        for response in self.pipe(
+            user_input,
+            max_new_tokens=max_new_tokens,
+            temperature=temperature,
+            top_p=top_p,
+            do_sample=True,
+            stream=True,
+            return_full_text=False
+        ):
+            yield response[0]["generated_text"]
 
 def main():
     # Set random seed for reproducibility
