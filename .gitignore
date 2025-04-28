@@ -2,4 +2,5 @@
 .Llama/
 __pycache__
 checkpoints
-DataModel_config
+DataModel_config/
+models/Text-Text-generation/

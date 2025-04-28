@@ -293,20 +293,23 @@ if __name__ == "__main__":
 
 # DATAMODEL_DIR.mkdir(parents=True,exist_ok=True)
 
-# class DatasetHandler:
-#     def __init__(self, name,language,split):
-#         self.name = name
-#         self.language = language
-#         self.split = split
-#         self.dataset = load_dataset(name,
-#                         language=self.language, 
-#                         split=self.split,
-#                         streaming=True,
-#                         trust_remote_code=True) # optional, but the dataset only has a train split
+class DatasetHandler:
+    def __init__(self, name, language=None, split=None):
+        self.name = name
+        self.language = language
+        self.split = split
+        self.dataset = None
         
+    def download_dataset(self, cache_dir=None, streaming=True, trust_remote_code=True):
+        try:
+
+            # Download the dataset
+            self.dataset = load_dataset(self.name,language=self.language,split=self.split,trust_remote_code=trust_remote_code,streaming=streaming)
+            return self.dataset
+            
+        except Exception as e:
+            print(f"Error downloading dataset: {e}")
+            return None
+            
         
-
-
-#     def get_dataset(self):
-#         return self.dataset
 
