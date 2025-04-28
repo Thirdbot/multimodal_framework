@@ -3,7 +3,7 @@ from langchain.callbacks import StreamingStdOutCallbackHandler
 from langchain.callbacks.manager import CallbackManager
 from langchain.prompts import PromptTemplate
 
-from models.DatasetHandler import DatasetHandler
+from DatasetHandler import DatasetHandler
 from trl import SFTTrainer
 
 # from peft.tuners.lora import mark_only_lora_as_trainable
@@ -72,12 +72,23 @@ class FinetuneModel:
             target_modules=["q_proj", "v_proj"]
         )
     
-    def setup_training_args(self):
+    def setup_training_args(self, dataset):
+        """Setup training arguments based on dataset type"""
+        # Check if dataset has length
+        has_length = hasattr(dataset, '__len__')
+        
+        # Calculate max_steps if dataset has length
+        if has_length:
+            dataset_length = len(dataset)
+            max_steps = (dataset_length * self.num_train_epochs) // (self.per_device_train_batch_size * self.gradient_accumulation_steps)
+        else:
+            max_steps = 500  # Default max steps for streaming datasets
+            
         return TrainingArguments(
             output_dir=str(self.CHECKPOINT_DIR),
             per_device_train_batch_size=2,
             per_device_eval_batch_size=2,
-            max_steps=10,
+            max_steps=max_steps if not has_length else None,
             gradient_accumulation_steps=4,
             optim='adamw_torch',
             learning_rate=2e-4,
@@ -143,48 +154,34 @@ class FinetuneModel:
         return model, tokenizer
     
     def prepare_dataset(self):
+        """Load the dataset"""
         dataset = DatasetHandler(self.dataset_name, language=self.language, split=self.split)
-        raw_dataset = dataset.download_dataset()
-        
-        # Add language-specific tokens if needed
-        if self.language:
-            # Add language-specific special tokens
-            language_token = f"<{self.language}>"
-            if language_token not in self.tokenizer.get_vocab():
-                self.tokenizer.add_tokens([language_token])
-                self.model.resize_token_embeddings(len(self.tokenizer))
-        
-        return raw_dataset
+        return dataset.download_dataset()
     
     def tokenize_dataset(self, dataset, tokenizer):
         def tokenize(batch):
-            # Add language token if specified
-            if self.language:
-                texts = [f"<{self.language}> {text}" for text in batch["text"]]
-            else:
-                texts = batch["text"]
-                
             return tokenizer(
-                texts,
-                padding=True,
+                batch["text"],
+                padding="max_length",
                 truncation=True,
                 max_length=512,
-                return_tensors="pt",
-                add_special_tokens=True
+                return_tensors="pt"
             )
             
         tokenized_dataset = dataset.map(
             tokenize,
             batched=True,
-            remove_columns=dataset.column_names,
-            desc="Tokenizing dataset"
+            remove_columns=dataset.column_names
         )
         
         return tokenized_dataset
     
     def finetune(self):
-        # Load model and tokenizer
+        # Load model and tokenizer first
         model, tokenizer = self.load_model_and_tokenizer()
+        
+        # Store tokenizer for later use
+        self.tokenizer = tokenizer
         
         # Prepare dataset
         dataset = self.prepare_dataset()
@@ -193,11 +190,13 @@ class FinetuneModel:
         # Setup LoRA
         peft_config = self.setup_lora_config()
         model = get_peft_model(model, peft_config)
+        
+        # Enable gradient checkpointing and input gradients
         model.enable_input_require_grads()
         model.gradient_checkpointing_enable()
         
-        # Setup training
-        training_args = self.setup_training_args()
+        # Setup training arguments based on dataset type
+        training_args = self.setup_training_args(tokenized_dataset)
         data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
         
         trainer = SFTTrainer(
@@ -211,7 +210,8 @@ class FinetuneModel:
         # Train or load from checkpoint
         if not (os.path.exists(self.CHECKPOINT_DIR) and os.listdir(self.CHECKPOINT_DIR)):
             trainer.train()
-            trainer.model.save_pretrained(self.MODEL_DIR, safe_serialization=True)
+            trainer.save_model(self.MODEL_DIR)
+            # trainer.model.save_pretrained(self.MODEL_DIR, safe_serialization=True)
             tokenizer.save_pretrained(self.MODEL_DIR)
         else:
             pmodel = PeftModel.from_pretrained(
