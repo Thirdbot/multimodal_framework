@@ -144,110 +144,88 @@ class ModelManager:
         self.model = None
         self.tokenizer = None
         self.device = "cuda:0" if torch.cuda.is_available() else "cpu"
-        self.conversation = Conversation()
-        self.conversation_file = "conversation_history.json"
-        self.prompt_config = PromptConfig()
         
     def load_model(self, model_path):
-        """Load a finetuned model using direct model loading"""
+        """Load a finetuned model directly without offloading"""
         if not model_path.exists():
             raise FileNotFoundError(f"Model directory not found at {model_path}")
         
-        # Create offload directory if it doesn't exist
-        offload_dir = Path("offload")
-        offload_dir.mkdir(exist_ok=True)
-        
-        # Configure quantization
+        # Configure quantization for full GPU usage
         quantization_config = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_compute_dtype=torch.bfloat16,
             bnb_4bit_use_double_quant=True,
-            bnb_4bit_quant_type="nf4",
-            llm_int8_enable_fp32_cpu_offload=True,
-            llm_int8_threshold=6.0,
-            llm_int8_has_fp16_weight=True
+            bnb_4bit_quant_type="nf4"
         )
         
-        # Load tokenizer and model directly
+        # Load tokenizer
         self.tokenizer = AutoTokenizer.from_pretrained(
             str(model_path),
-            trust_remote_code=True
+            trust_remote_code=True,
+            use_fast=True
         )
         
+        # Load model directly to GPU
         self.model = AutoModelForCausalLM.from_pretrained(
             str(model_path),
+            quantization_config=quantization_config,
             device_map="auto",
             torch_dtype=torch.bfloat16,
-            quantization_config=quantization_config,
             trust_remote_code=True,
-            offload_folder=str(offload_dir),
-            offload_state_dict=True,
-            max_memory={
-                0: "8GB",  # GPU memory
-                "cpu": "32GB"  # CPU memory
-            },
-            offload_buffers=True,
+            use_cache=True,
             low_cpu_mem_usage=True
         )
         
-        # Set model to evaluation mode
-        self.model.eval()
+        # Move model to GPU if not already there
+        if self.device != "cpu":
+            self.model = self.model.to(self.device)
         
         return self.model
     
-    def generate_response(self, user_input: str, max_new_tokens: int = 150, 
-                         temperature: float = 0.7, top_p: float = 0.9) -> str:
-        """Generate a response using the loaded model with conversation history"""
-        if self.model is None:
-            raise RuntimeError("Model must be loaded first")
-        
-        # Add user message to conversation
-        self.conversation.add_message({
-            "role": "user",
-            "content": user_input
-        })
-        
-        # Get chat template format
-        messages = self.conversation.get_chat_template()
-        
-        # Apply chat template
-        prompt = self.tokenizer.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True
-        )
+    def generate_response_stream(self, user_input: str, max_new_tokens: int = 150, 
+                               temperature: float = 0.7, top_p: float = 0.9) -> str:
+        """Generate a response token by token with streaming"""
+        if self.model is None or self.tokenizer is None:
+            raise RuntimeError("Model and tokenizer must be loaded first")
         
         # Tokenize input
-        inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
+        inputs = self.tokenizer(user_input, return_tensors="pt").to(self.device)
+        input_ids = inputs.input_ids
         
-        # Generate response
+        # Initialize generation parameters
+        generation_config = {
+            "temperature": temperature,
+            "top_p": top_p,
+            "do_sample": True,
+            "pad_token_id": self.tokenizer.eos_token_id,
+            "eos_token_id": self.tokenizer.eos_token_id,
+            "repetition_penalty": 1.1,
+            "no_repeat_ngram_size": 3
+        }
+        
+        # Generate response token by token
         with torch.no_grad():
-            outputs = self.model.generate(
-                **inputs,
-                max_new_tokens=max_new_tokens,
-                temperature=temperature,
-                top_p=top_p,
-                do_sample=True,
-                pad_token_id=self.tokenizer.eos_token_id,
-                eos_token_id=self.tokenizer.eos_token_id,
-                repetition_penalty=1.1,
-                no_repeat_ngram_size=3
-            )
-        
-        # Decode the response
-        response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
-        response = response[len(prompt):].strip()
-        
-        # Add assistant's response to conversation
-        self.conversation.add_message({
-            "role": "assistant",
-            "content": response
-        })
-        
-        # Save conversation after each exchange
-        self.conversation.save_conversation(self.conversation_file)
-        
-        return response
+            for _ in range(max_new_tokens):
+                # Generate next token
+                outputs = self.model.generate(
+                    input_ids,
+                    max_new_tokens=1,
+                    **generation_config
+                )
+                
+                # Get the new token
+                new_token_id = outputs[0][-1].item()
+                
+                # Check if we've reached the end of the sequence
+                if new_token_id == self.tokenizer.eos_token_id:
+                    break
+                
+                # Decode and yield the new token
+                new_token = self.tokenizer.decode([new_token_id], skip_special_tokens=True)
+                yield new_token
+                
+                # Update input_ids for next iteration
+                input_ids = outputs
 
 def main():
     # Set random seed for reproducibility
@@ -255,7 +233,6 @@ def main():
     
     # Create directories
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
-    OFFLOAD_DIR.mkdir(parents=True, exist_ok=True)
     
     # Initialize model manager
     model_manager = ModelManager()
@@ -285,16 +262,8 @@ def main():
     print("Model loaded successfully!")
     print(f"Model device: {model_manager.device}")
     
-    # Try to load previous conversation
-    model_manager.conversation.load_conversation(model_manager.conversation_file)
-    
     print("\nChat Interface")
-    print("Available commands:")
-    print("- 'quit': Exit the program")
-    print("- 'clear': Start a new conversation")
-    print("- 'history': View conversation history")
-    print("- 'config': View/change prompt configurations")
-    print("- 'save': Save current prompt configuration")
+    print("Type 'quit' to exit")
     print("-" * 50)
     
     # Interactive loop
@@ -303,48 +272,17 @@ def main():
         
         if user_input.lower() == 'quit':
             break
-        elif user_input.lower() == 'clear':
-            model_manager.conversation = Conversation()
-            print("\nConversation cleared. Starting fresh conversation.")
-            continue
-        elif user_input.lower() == 'history':
-            print("\nConversation History:")
-            print("-" * 50)
-            print(model_manager.conversation.get_chat_template())
-            print("-" * 50)
-            continue
-        elif user_input.lower() == 'config':
-            print("\nAvailable Prompt Configurations:")
-            configs = model_manager.prompt_config.get_available_configs()
-            for config_type, options in configs.items():
-                print(f"\n{config_type}:")
-                for option in options:
-                    current = " (current)" if option == model_manager.prompt_config.current_config[config_type] else ""
-                    print(f"  - {option}{current}")
-            
-            change = input("\nChange configuration? (y/n): ").lower()
-            if change == 'y':
-                config_type = input("Enter configuration type (system/user/assistant/context): ")
-                config_name = input("Enter configuration name: ")
-                try:
-                    model_manager.prompt_config.set_config(config_type, config_name)
-                    print(f"Configuration updated: {config_type}={config_name}")
-                except ValueError as e:
-                    print(f"Error: {e}")
-            continue
-        elif user_input.lower() == 'save':
-            model_manager.prompt_config.save_config(model_manager.prompt_config_file)
-            print(f"Prompt configuration saved to {model_manager.prompt_config_file}")
-            continue
         
         print("\nAssistant: ", end='', flush=True)
-        response = model_manager.generate_response(
-            user_input,
-            max_new_tokens=150,
-            temperature=0.7,
-            top_p=0.9
-        )
-        print(response)
+        
+        # Generate and stream response token by token
+        try:
+            for token in model_manager.generate_response_stream(user_input):
+                print(token, end='', flush=True)
+            print()  # New line after response
+        except Exception as e:
+            print(f"\nError generating response: {e}")
+            print("Please try again or check the model configuration.")
 
 if __name__ == "__main__":
     main()
