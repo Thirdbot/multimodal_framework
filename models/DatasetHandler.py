@@ -132,7 +132,7 @@ class APIFetch(BaseModel):
         if not url:
             return None
         if isinstance(url,list):
-            for url in url:
+            for idx,url in enumerate(url):
                 if not isinstance(url,dict):
                     try:
                         response = requests.get(url)
@@ -167,7 +167,7 @@ class APIFetch(BaseModel):
                                 continue
                         
                         # Add all dataset responses to current model
-                        concatenated_json[-1]['datasets'] = data_list
+                        concatenated_json[idx]['datasets'] = data_list
                         data_list = []
                         
                     except requests.exceptions.RequestException as e:
@@ -205,6 +205,7 @@ class Convert(BaseModel):
     def convert_to_json(self,file_path):
         name_list = []
         i=0
+        
         for key in self.list_key:
             
             for value in getattr(self, key):
@@ -214,19 +215,31 @@ class Convert(BaseModel):
                         # print(value['datasets'][0])
                         # Create a new model entry
                         if isinstance(value['model'],list):
+                            dataset_list = value['datasets'][0]
                             # print(value['model'][i])
-                            for model in value['model']:
+                            for idx,model in enumerate(value['model']):
                                 model_entry = {
                                     'model':model.get(self.keyword,''),
                                     'datasets': []
                                 }
                                 i += 1
                                 
-                                for dataset in value['datasets'][0]:
-                                    if len(model_entry['datasets']) < self.datasets_amount:
+                                
+                                for dataset in dataset_list:
+                           
+                                    dataset_used = False
+                                    for prev_entry in name_list[:idx]:
+                                        if dataset[self.keyword] in prev_entry['datasets']:
+                                            dataset_used = True
+                                            break
+                                    
+                                    if not dataset_used and len(model_entry['datasets']) < self.datasets_amount:
                                         model_entry['datasets'].append(dataset[self.keyword])
+                                        
+                           
                                 if i < self.model_amount:
                                     name_list.append(model_entry)
+                                    
 
                             
                             
@@ -270,7 +283,7 @@ if __name__ == "__main__":
     model_api = APIFetch(
         web_address="https://huggingface.co/api/",
         type=data_type,
-        task_categories=['text-generation','text-classification'],
+        task_categories=['text-generation'],
         # model_name=["Orenguteng/Llama-3-8B-Lexi-Uncensored"
         #             ,"nari-labs/Dia-1.6B"],
         # datasets_name=[["nvidia/OpenMathReasoning",
