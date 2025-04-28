@@ -117,18 +117,18 @@ class Conversation:
         history_text = ""
         for msg in self.messages[1:]:  # Skip system message
             if msg["role"] == "user":
-                history_text += self.get_prompt("user", input=msg["content"]) + "\n\n"
+                history_text += f"User: {msg['content']}\n\n"
             elif msg["role"] == "assistant":
-                history_text += self.get_prompt("assistant", response=msg["content"]) + "\n\n"
+                history_text += f"Assistant: {msg['content']}\n\n"
         return history_text.strip()
     
     def get_full_prompt(self, user_input: str) -> str:
         """Get the complete prompt with history and current input"""
         history = self.get_conversation_text()
-        current_prompt = self.get_prompt("user", input=user_input)
-        return self.get_prompt("context", 
-                               history=history,
-                               current_prompt=current_prompt)
+        current_prompt = f"User: {user_input}"
+        if history:
+            return f"{history}\n\n{current_prompt}"
+        return current_prompt
     
     def save_conversation(self, filepath: str) -> None:
         """Save conversation history to a file"""
@@ -152,19 +152,28 @@ class Conversation:
             print(f"Warning: Could not load conversation: {e}")
             # Reset to initial state if loading fails
             self.messages = [self.messages[0]]  # Keep only system message
+    
+    def format_response(self, response: str) -> str:
+        """Format the assistant's response"""
+        return response
 
 class ModelManager:
     def __init__(self):
-        self.pipe = None
+        self.model = None
+        self.tokenizer = None
         self.device = "cuda:0" if torch.cuda.is_available() else "cpu"
         self.conversation = Conversation()
         self.conversation_file = "conversation_history.json"
         self.prompt_config = PromptConfig()
         
     def load_model(self, model_path):
-        """Load a finetuned model using Hugging Face pipeline"""
+        """Load a finetuned model using direct model loading"""
         if not model_path.exists():
             raise FileNotFoundError(f"Model directory not found at {model_path}")
+        
+        # Create offload directory if it doesn't exist
+        offload_dir = Path("offload")
+        offload_dir.mkdir(exist_ok=True)
         
         # Configure quantization
         quantization_config = BitsAndBytesConfig(
@@ -177,27 +186,37 @@ class ModelManager:
             llm_int8_has_fp16_weight=True
         )
         
-        # Create text generation pipeline with offloading
-        self.pipe = pipeline(
-            "text-generation",
-            model=str(model_path),
+        # Load tokenizer and model directly
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            str(model_path),
+            trust_remote_code=True
+        )
+        
+        self.model = AutoModelForCausalLM.from_pretrained(
+            str(model_path),
             device_map="auto",
             torch_dtype=torch.bfloat16,
             quantization_config=quantization_config,
             trust_remote_code=True,
-            model_kwargs={
-                "offload_folder": str(OFFLOAD_DIR),
-                "offload_state_dict": True,
-                "max_memory": {0: "6GB", "cpu": "30GB"}
-            }
+            offload_folder=str(offload_dir),
+            offload_state_dict=True,
+            max_memory={
+                0: "8GB",  # GPU memory
+                "cpu": "32GB"  # CPU memory
+            },
+            offload_buffers=True,
+            low_cpu_mem_usage=True
         )
         
-        return self.pipe
+        # Set model to evaluation mode
+        self.model.eval()
+        
+        return self.model
     
     def generate_response(self, user_input: str, max_new_tokens: int = 150, 
                          temperature: float = 0.7, top_p: float = 0.9) -> str:
         """Generate a response using the loaded model with conversation history"""
-        if self.pipe is None:
+        if self.model is None:
             raise RuntimeError("Model must be loaded first")
         
         # Add user message to conversation
@@ -209,22 +228,26 @@ class ModelManager:
         # Get formatted prompt with history
         prompt = self.conversation.get_full_prompt(user_input)
         
-        # Generate response using pipeline
-        outputs = self.pipe(
-            prompt,
-            max_new_tokens=max_new_tokens,
-            temperature=temperature,
-            top_p=top_p,
-            do_sample=True,
-            pad_token_id=self.pipe.tokenizer.eos_token_id,
-            eos_token_id=self.pipe.tokenizer.eos_token_id,
-            repetition_penalty=1.1,
-            no_repeat_ngram_size=3
-        )
+        # Tokenize input
+        inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
         
-        # Extract the response
-        full_response = outputs[0]['generated_text']
-        response = full_response.split(prompt)[-1].strip()
+        # Generate response
+        with torch.no_grad():
+            outputs = self.model.generate(
+                **inputs,
+                max_new_tokens=max_new_tokens,
+                temperature=temperature,
+                top_p=top_p,
+                do_sample=True,
+                pad_token_id=self.tokenizer.eos_token_id,
+                eos_token_id=self.tokenizer.eos_token_id,
+                repetition_penalty=1.1,
+                no_repeat_ngram_size=3
+            )
+        
+        # Decode the response
+        response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+        response = response[len(prompt):].strip()
         
         # Add assistant's response to conversation
         self.conversation.add_message({
