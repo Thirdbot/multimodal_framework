@@ -211,7 +211,5 @@ dependencies:
       - protobuf==6.30.2
       - sentencepiece==0.2.0
       - sympy==1.13.1
-      - torch==2.6.0+cu126
-      - torchaudio==2.6.0+cu126
-      - torchvision==0.20.1
+
 prefix: C:\Users\astro\anaconda3\envs\hf_pytorch
