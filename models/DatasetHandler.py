@@ -7,6 +7,10 @@ from typing import Optional
 from pydantic import BaseModel, Field
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 
+# -- get data from huggingface api
+# need to add more function to get data from other api
+# need to get category to save in json file each name/dataset
+# need to refactor code to make it more efficient
 
 class APIFetch(BaseModel):
     web_address: Optional[str] = Field(default=None)
@@ -306,7 +310,7 @@ if __name__ == "__main__":
 
 # DATAMODEL_DIR.mkdir(parents=True,exist_ok=True)
 
-class DatasetHandler:
+class LangDataset:
     def __init__(self, name, language=None, split=None):
         self.name = name
         self.language = language
