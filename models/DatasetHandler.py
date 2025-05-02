@@ -28,7 +28,7 @@ class APIFetch(BaseModel):
     
     def __init__(self, **data):
         super().__init__(**data)
-        forbid_key = ['model_name','type','datasets_name','web_address','task_categories']
+        forbid_key = ['model_name','type','datasets_name','web_address','list_key']
         # Only set attributes that were actually passed in
         for key, value in data.items():
             if value is not None and key not in forbid_key:
@@ -100,29 +100,38 @@ class APIFetch(BaseModel):
             # Get all non-None attributes that were actually set
         
             for key in self.list_key:
-                for value in getattr(self,key):  # Only include if it was actually set
-                    if value is not None:
-                        params[key] = value
+                    params[key] = getattr(self,key)
             
             # Construct URL with parameters
-            # if params:
-            print(web_address)
-            param_string = '&'.join(f"{k}={v}" for k, v in params.items() 
-                                    if not(isinstance(pv, list) for pv in params['task_categories']))
-            print(param_string)
-            if len(self.task_categories) >= 1:
-        
-                for idx ,task in enumerate(self.task_categories ):
-                    if type == 'models':
-                        data = f"{web_address}?{param_string}&task_categories={task}"
-                        model_data_url['model'] = data
-                        target_url.append(model_data_url)
-                        model_data_url = {'model':str,'datasets':[]}
-                    elif type == 'datasets':
-                        data = f"{web_address}?{param_string}&task_categories={task}"
-                        data_list.append(data)
-                        target_url[idx]['datasets'] = data_list
-                        data_list = []
+            if params:
+                
+                param_string = '&'.join(f"{k}={v}" for k, v in params.items() if k != "task_categories")
+
+            
+                    
+                if len(self.task_categories) >= 1:
+                    param_string = '&'.join(f"{k}={v}" for k, v in params.items() if k != "task_categories")
+                    for idx ,task in enumerate(self.task_categories ):
+                        if type == 'models':
+                            data = f"{web_address}?{param_string}&task_categories={task}"
+                            print(data)
+                            model_data_url['model'] = data
+                            target_url.append(model_data_url)
+                            model_data_url = {'model':str,'datasets':[]}
+                        elif type == 'datasets':
+                            data = f"{web_address}?{param_string}&task_categories={task}"
+                            data_list.append(data)
+                            target_url[idx]['datasets'] = data_list
+                            data_list = []
+                elif type == 'models':
+                    model_data_url['model'] = web_address + '?' + param_string
+                    target_url.append(model_data_url)
+                    model_data_url = {'model':str,'datasets':[]}
+                elif type == 'datasets':
+                    data_list.append(web_address + '?' + param_string)
+                    target_url[-1]['datasets'] = data_list
+                    data_list = []
+                
         return target_url
      
                     
@@ -287,13 +296,14 @@ if __name__ == "__main__":
     model_api = APIFetch(
         web_address="https://huggingface.co/api/",
         type=data_type,
-        task_categories=['text-generation'],
-        # model_name=["Orenguteng/Llama-3-8B-Lexi-Uncensored"
-        #             ,"nari-labs/Dia-1.6B"],
-        # datasets_name=[["nvidia/OpenMathReasoning",
-        #                "Anthropic/values-in-the-wild"],
-        #                ['nvidia/describe-anything-dataset',
-        #                 ]]
+        # task_categories=['text-generation'],
+        # author="huggingface",
+        model_name=["Orenguteng/Llama-3-8B-Lexi-Uncensored"
+                    ,"nari-labs/Dia-1.6B"],
+        datasets_name=[["nvidia/OpenMathReasoning",
+                       "Anthropic/values-in-the-wild"],
+                       ['nvidia/describe-anything-dataset',
+                        ]]
     )
     
     all_model_name = model_api.get_api_json()
