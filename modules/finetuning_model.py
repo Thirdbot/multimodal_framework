@@ -1,6 +1,10 @@
 import os
 import json
+from colorama import Fore, Style, init
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
+from modules.defect import Report
+# Initialize colorama
+init(autoreset=True)
 
 # from langchain.llms import LlamaCpp
 from langchain.callbacks import StreamingStdOutCallbackHandler
@@ -20,7 +24,8 @@ from pathlib import Path
 import evaluate
 
 import numpy as np
-from transformers import  AutoModel,AutoTokenizer,AutoConfig,BitsAndBytesConfig,DataCollatorForLanguageModeling,BitsAndBytesConfig, AutoModelForCausalLM, Trainer, TrainingArguments,pipeline
+from transformers import  AutoModel,AutoTokenizer,AutoConfig,BitsAndBytesConfig,DataCollatorForLanguageModeling,AutoModelForCausalLM, Trainer, TrainingArguments,pipeline
+from datasets import load_dataset
 
 # --fine-tune and merge with base-model through finetuning_model.py with custom multimodal embedding
 
@@ -70,37 +75,98 @@ class FinetuneModel:
         self.metric = evaluate.load("accuracy")
     
     def load_model(self,model_id):
-        print(f"retrieve model {model_id}")
+        print(f"{Fore.CYAN}retrieve model {model_id}{Style.RESET_ALL}")
         #load model 
         self.model_id = model_id
+        try:
+            # Load model with quantization config for memory efficiency
+            quantization_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_compute_dtype=torch.float16,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_use_double_quant=True,
+            )
+            model = AutoModelForCausalLM.from_pretrained(
+                model_id,
+                quantization_config=quantization_config,
+                device_map=self.device_map,
+                trust_remote_code=True
+            )
+            return model
+        except Exception as e:
+            print(f"{Fore.RED}Error loading model {model_id}: {str(e)}{Style.RESET_ALL}")
+            return None
 
     def load_dataset(self,dataset_name):
-        print(f"retrieve dataset {dataset_name}")
-        #load dataset
-        self.dataset_name = dataset_name
+        print(f"{Fore.CYAN}retrieve dataset {dataset_name}{Style.RESET_ALL}")
+        try:
+            # Load dataset from Hugging Face
+            self.dataset_name = dataset_name
+            dataset = load_dataset(dataset_name,trust_remote_code=True)
+            return dataset
+        except Exception as e:
+            print(f"{Fore.RED}Error loading dataset {dataset_name}: {str(e)}{Style.RESET_ALL}")
+            return None
         
     def tokenizer(self):
-        tokenizer = AutoTokenizer.from_pretrained(self.model_id)
-        return tokenizer
+        try:
+            tokenizer = AutoTokenizer.from_pretrained(
+                self.model_id,
+                trust_remote_code=True,
+                padding_side="right",
+                truncation_side="right"
+            )
+            # Set padding token if not set
+            if tokenizer.pad_token is None:
+                tokenizer.pad_token = tokenizer.eos_token
+            return tokenizer
+        except Exception as e:
+            print(f"{Fore.RED}Error loading tokenizer: {str(e)}{Style.RESET_ALL}")
+            return None
+
+    def map_tokenizer(self, tokenizer, dataset, label, max_length=512):
+        try:
+            def tokenize_function(examples):
+                return tokenizer(
+                    examples[label],
+                    padding="max_length",
+                    truncation=True,
+                    max_length=max_length,
+                    return_tensors="pt"
+                )
+            
+            tokenized_dataset = dataset.map(
+                tokenize_function,
+                batched=True,
+                remove_columns=dataset["train"].column_names if "train" in dataset else dataset.column_names
+            )
+            
+            return tokenized_dataset
+        except Exception as e:
+            print(f"{Fore.RED}Error tokenizing dataset: {str(e)}{Style.RESET_ALL}")
+            return None
     
     def model(self):
-        model = AutoModel.from_pretrained(self.model_id)
+        model = AutoModel.from_pretrained(self.model_id,trust_remote_code=True)
         return model
     def config(self):
-        config = AutoConfig.from_pretrained(self.model_id)
+        config = AutoConfig.from_pretrained(self.model_id,trust_remote_code=True)
         return config
     
     def runtuning(self):
-        print(f"run tuning:{self.model_id,self.dataset_name}")
-        model = self.model()
-        tokenizer = self.tokenizer()
-        config = self.config()
-        dataset = self.load_dataset()
+        try:
+            print(f"{Fore.YELLOW}run tuning:{self.model_id,self.dataset_name}{Style.RESET_ALL}")
+            model = self.model()
+            tokenizer = self.tokenizer()
+            config = self.config()
+            dataset = self.load_dataset(self.dataset_name)
+            
+        except Exception as e:
+            print(f"{Fore.RED}Error running tuning: {str(e)}{Style.RESET_ALL}")
+            report = Report()
+            report.store_problem(model=self.model_id,dataset=self.dataset_name)
+            return None
         
-    def map_tokenizer(self,tokenizer,dataset,label):
-        dataset = dataset.map(lambda x: tokenizer(x[label],padding=True,truncation=True,max_length=512),batched=True)
-        return tokenizer
-    
     def train_args(self):
         return TrainingArguments(
             output_dir=self.MODEL_DIR,
@@ -144,15 +210,21 @@ class Manager:
             data = json.load(f)
             return data
     def run_finetune(self,list_model_data):
-        for el in list_model_data:
-            for key,value in el.items():
-                if key == "model":
-                    model = value
-                    self.finetune_model.load_model(model)
-                elif key == "datasets":
-                    for dataset in value:
-                        self.finetune_model.load_dataset(dataset)
-                        self.finetune_model.runtuning()
+        try:
+            model = None
+            dataset = None
+            for el in list_model_data:
+                for key,value in el.items():
+                    if key == "model":
+                        model = value
+                        self.finetune_model.load_model(model)
+                    elif key == "datasets":
+                        for dataset in value:
+                            self.finetune_model.load_dataset(dataset)
+                            self.finetune_model.runtuning()
+        except Exception as e:
+            print(f"{Fore.RED}Error running finetune: {str(e)}{Style.RESET_ALL}")
+            return model,dataset
                         
                         
 if __name__ == "__main__":
