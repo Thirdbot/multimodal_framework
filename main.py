@@ -33,7 +33,7 @@ OFFLOAD_DIR.mkdir(parents=True, exist_ok=True)
 #What To do
 
 #this just addon.
-#download dataset from huggingface with data_model.json and history of download
+
 #create class to finetune model with its compatible dataset Multiple time and can be chain function
 
 #main stuff
