@@ -313,7 +313,7 @@ if __name__ == "__main__":
 
     # all_datasets_name = datasets_api.get_api_json()
     converter = Convert(data_model=all_model_name
-                        ,keyword="id",model_amount=2,datasets_amount=10)
+                        ,keyword="id",model_amount=2,datasets_amount=1)
     converter.convert_to_json(file_path)
     
 
