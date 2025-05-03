@@ -18,6 +18,7 @@ import torch
 
 from pathlib import Path
 import evaluate
+
 import numpy as np
 from transformers import  AutoModel,AutoTokenizer,AutoConfig,BitsAndBytesConfig,DataCollatorForLanguageModeling,BitsAndBytesConfig, AutoModelForCausalLM, Trainer, TrainingArguments,pipeline
 
@@ -121,7 +122,7 @@ class FinetuneModel:
     def compute_metrics(self,eval_pred):
         logits, labels = eval_pred
         predictions = np.argmax(logits, axis=-1)
-        return metric.compute(predictions=predictions, references=labels)
+        return self.metric.compute(predictions=predictions, references=labels)
     def Trainer(self):
         return Trainer(
             model=self.model(),
