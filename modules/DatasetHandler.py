@@ -281,45 +281,49 @@ class Convert(BaseModel):
         return name_list
  
         
+
+class Manager:
+    def __init__(self):
+        self.folder_path = Path(__file__).parent.parent.absolute() / 'DataModel_config'
+        self.folder_path.mkdir(parents=True, exist_ok=True)  # Create directory if it doesn't exist
+        self.file_path = self.folder_path / 'data_model.json'
+        self.file_path.touch(exist_ok=True)
+        self.data_type = ["models","datasets"]
+    
+    def handle_data(self):
+        
+        # task = "text-generation"
+        model_api = APIFetch(
+            web_address="https://huggingface.co/api/",
+            type=self.data_type,
+            task_categories=['text-generation'],
+            author="huggingface",
+            # model_name=["Orenguteng/Llama-3-8B-Lexi-Uncensored"
+            #             ,"nari-labs/Dia-1.6B"],
+            # datasets_name=[["nvidia/OpenMathReasoning",
+            #                "Anthropic/values-in-the-wild"],
+            #                ['nvidia/describe-anything-dataset',
+            #                 ]]
+        )
+        
+        all_model_name = model_api.get_api_json()
+
+
+        # all_datasets_name = datasets_api.get_api_json()
+        converter = Convert(data_model=all_model_name
+                            ,keyword="id",model_amount=2,datasets_amount=4)
+        converter.convert_to_json(self.file_path)
+        
+
+        
+        
+        
         
         
         
 # Example usage
 if __name__ == "__main__":
-    folder_path = Path(__file__).parent.parent.absolute()
-    folder_path = folder_path / 'DataModel_config'
-    folder_path.mkdir(parents=True, exist_ok=True)  # Create directory if it doesn't exist
-    file_path = folder_path / 'data_model.json'
-    file_path.touch(exist_ok=True)
+    manager = Manager()
+    manager.handle_data()
     
-    # Create an instance of APIFetch with only the parameters you want to use
-    data_type = ["models","datasets"]
-    # task = "text-generation"
-    model_api = APIFetch(
-        web_address="https://huggingface.co/api/",
-        type=data_type,
-        task_categories=['text-generation'],
-        # author="huggingface",
-        # model_name=["Orenguteng/Llama-3-8B-Lexi-Uncensored"
-        #             ,"nari-labs/Dia-1.6B"],
-        # datasets_name=[["nvidia/OpenMathReasoning",
-        #                "Anthropic/values-in-the-wild"],
-        #                ['nvidia/describe-anything-dataset',
-        #                 ]]
-    )
-    
-    all_model_name = model_api.get_api_json()
-
-
-    # all_datasets_name = datasets_api.get_api_json()
-    converter = Convert(data_model=all_model_name
-                        ,keyword="id",model_amount=2,datasets_amount=1)
-    converter.convert_to_json(file_path)
-    
-
-WORKSPACE_DIR = Path(__file__).parent.parent.absolute()
-DATAMODEL_DIR = WORKSPACE_DIR / 'DataModel_config'
-
-DATAMODEL_DIR.mkdir(parents=True,exist_ok=True)
-
 
