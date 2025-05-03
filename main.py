@@ -14,8 +14,8 @@ from transformers import (
     AutoConfig
 )
 
-from login.huggingface_login import HuggingFaceLogin
-from models.finetuning_model import FinetuneModel
+from modules.huggingface_login import HuggingFaceLogin
+from modules.finetuning_model import FinetuneModel
 
 # Set environment variables for optimization
 

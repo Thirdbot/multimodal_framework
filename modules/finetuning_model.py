@@ -1,16 +1,13 @@
 import os
-os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
+# os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 
 # from langchain.llms import LlamaCpp
 from langchain.callbacks import StreamingStdOutCallbackHandler
 from langchain.callbacks.manager import CallbackManager
 from langchain.prompts import PromptTemplate
 from trl import SFTTrainer
-try:
-    from models.DatasetHandler  import LangDataset
-    
-except:
-    from DatasetHandler  import LangDataset
+
+from DatasetHandler  import LangDataset
 
 # from peft.tuners.lora import mark_only_lora_as_trainable
 

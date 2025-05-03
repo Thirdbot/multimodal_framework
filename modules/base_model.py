@@ -10,7 +10,7 @@ import os
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig
 
-os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
+# os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 # Use a pipeline as a high-level helper
 from transformers import pipeline
 
