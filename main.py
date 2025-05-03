@@ -14,9 +14,10 @@ from transformers import (
     AutoConfig
 )
 
-from modules.huggingface_login import HuggingFaceLogin
-from modules.finetuning_model import FinetuneModel
-
+from modules.DataDownload import DataLoader
+from modules.DatasetHandler import Manager as DatasetHandler
+from modules.finetuning_model import Manager as FinetuneModel
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 # Set environment variables for optimization
 
 # Define paths
@@ -26,6 +27,22 @@ OFFLOAD_DIR = WORKSPACE_DIR / "offload"
 OFFLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
+class Main:
+    def __init__(self):
+        self.data_loader = DataLoader()
+        self.dataset_handler = DatasetHandler()
+        self.finetune_model = FinetuneModel()
+        self.HomePath = Path(__file__).parent.parent.absolute()
+        self.DataModelFolder = f"{self.HomePath}/DataModel_config"
+        self.datafile = 'installed.json'
+        self.model_data_json_path = f"{self.DataModelFolder}/{self.datafile}"
+        self.manager = FinetuneModel(self.model_data_json_path)
+        self.list_model_data = self.manager.generate_model_data()
+
+    def run(self):
+        self.data_loader.datainstall_load()
+        self.dataset_handler.handle_data()
+        self.manager.run_finetune()
 
 
 
