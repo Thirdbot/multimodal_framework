@@ -42,6 +42,7 @@ class Main:
         self.HomePath = Path(__file__).parent.absolute()
         
         self.DataModelFolder = f"{self.HomePath}/DataModel_config"
+        self.DataModelFolder.mkdir(parents=True, exist_ok=True)
         self.temporal_file_path = f'{self.DataModelFolder}/data_model.json'
         Path(self.temporal_file_path).touch(exist_ok=True)
         
