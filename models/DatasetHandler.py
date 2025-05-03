@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from typing import Optional
 from pydantic import BaseModel, Field
+from datasets import load_dataset, get_dataset_config_names
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 
 # -- get data from huggingface api
@@ -277,6 +278,7 @@ class Convert(BaseModel):
         # Write the final result to file
         with open(file_path, 'w+') as f:
             json.dump(name_list, f, indent=4)
+        return name_list
  
         
         
@@ -296,14 +298,14 @@ if __name__ == "__main__":
     model_api = APIFetch(
         web_address="https://huggingface.co/api/",
         type=data_type,
-        # task_categories=['text-generation'],
+        task_categories=['text-generation'],
         # author="huggingface",
-        model_name=["Orenguteng/Llama-3-8B-Lexi-Uncensored"
-                    ,"nari-labs/Dia-1.6B"],
-        datasets_name=[["nvidia/OpenMathReasoning",
-                       "Anthropic/values-in-the-wild"],
-                       ['nvidia/describe-anything-dataset',
-                        ]]
+        # model_name=["Orenguteng/Llama-3-8B-Lexi-Uncensored"
+        #             ,"nari-labs/Dia-1.6B"],
+        # datasets_name=[["nvidia/OpenMathReasoning",
+        #                "Anthropic/values-in-the-wild"],
+        #                ['nvidia/describe-anything-dataset',
+        #                 ]]
     )
     
     all_model_name = model_api.get_api_json()
@@ -311,32 +313,13 @@ if __name__ == "__main__":
 
     # all_datasets_name = datasets_api.get_api_json()
     converter = Convert(data_model=all_model_name
-                        ,keyword="id",model_amount=10,datasets_amount=10)
+                        ,keyword="id",model_amount=2,datasets_amount=10)
     converter.convert_to_json(file_path)
     
 
-# WORKSPACE_DIR = Path(__file__).parent.parent.absolute()
-# DATAMODEL_DIR = WORKSPACE_DIR / 'DataModel_config'
+WORKSPACE_DIR = Path(__file__).parent.parent.absolute()
+DATAMODEL_DIR = WORKSPACE_DIR / 'DataModel_config'
 
-# DATAMODEL_DIR.mkdir(parents=True,exist_ok=True)
+DATAMODEL_DIR.mkdir(parents=True,exist_ok=True)
 
-class LangDataset:
-    def __init__(self, name, language=None, split=None):
-        self.name = name
-        self.language = language
-        self.split = split
-        self.dataset = None
-        
-    def download_dataset(self, cache_dir=None, streaming=True, trust_remote_code=True):
-        try:
-
-            # Download the dataset
-            self.dataset = load_dataset(self.name,language=self.language,split=self.split,trust_remote_code=trust_remote_code,streaming=streaming)
-            return self.dataset
-            
-        except Exception as e:
-            print(f"Error downloading dataset: {e}")
-            return None
-            
-        
 
