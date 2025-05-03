@@ -279,7 +279,7 @@ class Manager:
             web_address="https://huggingface.co/api/",
             type=self.data_type,
             # task_categories=['text-generation','image-generation'],
-            author="huggingface",
+            # author="huggingface",
             model_name=["beatajackowska/DialoGPT-RickBot"],
             datasets_name=["theneuralmaze/rick-and-morty-transcripts-sharegpt"]
         )

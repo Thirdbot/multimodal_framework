@@ -222,6 +222,7 @@ class Manager:
                         for dataset in value:
                             self.finetune_model.load_dataset(dataset)
                             self.finetune_model.runtuning()
+            return model,dataset
         except Exception as e:
             print(f"{Fore.RED}Error running finetune: {str(e)}{Style.RESET_ALL}")
             return model,dataset

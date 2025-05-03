@@ -8,7 +8,9 @@ init(autoreset=True)
 class Report:
     def __init__(self):
         self.report_file = 'problem.txt'
-        self.report_path = Path(__file__).parent.parent.absolute() / 'report' / self.report_file
+        self.path_folder = Path(__file__).parent.parent.absolute() / 'report' 
+        Path(self.path_folder).mkdir(parents=True, exist_ok=True)
+        self.report_path = self.path_folder / self.report_file
         self.report_path.touch(exist_ok=True)
         
     def store_problem(self,model=None,dataset=None):

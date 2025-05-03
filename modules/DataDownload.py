@@ -99,7 +99,9 @@ class DataLoader():
                 model_api = APIFetch(
                     web_address="https://huggingface.co/api/",
                     type=self.data_type,
-                    task_categories=['text-generation','image-to-text'],
+                    # task_categories=['text-generation','image-to-text'],
+                    model_name=["beatajackowska/DialoGPT-RickBot"],
+                    datasets_name=["theneuralmaze/rick-and-morty-transcripts-sharegpt"]
                 )
                 all_model_name = model_api.get_api_json()
                 converter = Convert(data_model=all_model_name, keyword="id", model_amount=10, datasets_amount=10)
