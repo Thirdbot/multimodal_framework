@@ -5,7 +5,7 @@ from datasets import load_dataset, get_dataset_config_names
 from huggingface_hub import hf_hub_download,HfApi
 from pathlib import Path
 from colorama import Fore, Style, init
-
+from modules.DatasetHandler import APIFetch,Convert
 # Initialize colorama
 init(autoreset=True)
 
@@ -79,7 +79,8 @@ class DataLoader():
         # self.load(self.datamodel)
     
     def run(self):
-        self.load(self.datamodel)
+        return self.load(self.datamodel)
+        
     def datainstall_load(self):
         if self.installed_filepath.exists():
             if self.installed_filepath.stat().st_size > 0:
@@ -112,7 +113,7 @@ class DataLoader():
         
         if depth > 3:
             print(f"{Fore.RED}Maximum retry depth reached.{Style.RESET_ALL}")
-            return
+            return failed_models
         if base_df.equals(compare_df):
             print(f"{Fore.GREEN}Data already installed{Style.RESET_ALL}")
         else:
