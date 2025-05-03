@@ -278,14 +278,10 @@ class Manager:
         model_api = APIFetch(
             web_address="https://huggingface.co/api/",
             type=self.data_type,
-            task_categories=['text-generation','image-generation'],
+            # task_categories=['text-generation','image-generation'],
             author="huggingface",
-            # model_name=["Orenguteng/Llama-3-8B-Lexi-Uncensored"
-            #             ,"nari-labs/Dia-1.6B"],
-            # datasets_name=[["nvidia/OpenMathReasoning",
-            #                "Anthropic/values-in-the-wild"],
-            #                ['nvidia/describe-anything-dataset',
-            #                 ]]
+            model_name=["beatajackowska/DialoGPT-RickBot"],
+            datasets_name=["theneuralmaze/rick-and-morty-transcripts-sharegpt"]
         )
         
         all_model_name = model_api.get_api_json()
