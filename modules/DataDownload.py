@@ -157,12 +157,14 @@ class DataLoader():
                     model = row['model']
                     datasets = row['datasets']
                     print(model,datasets)
-                    self.model.load_model(model)
+                    # self.model.load_model(model)
                     if isinstance(datasets,list):
                         for dataset in datasets:
-                            self.dataset.load(dataset)
+                            pass
+                            # self.dataset.load(dataset)
                     else:
-                        self.dataset.load(datasets)
+                        # self.dataset.load(datasets)
+                        pass
                     
                     datadict = {
                         'model': model,
