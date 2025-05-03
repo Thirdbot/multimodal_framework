@@ -6,6 +6,11 @@ from pathlib import Path
 from typing import Optional
 from pydantic import BaseModel, Field
 from datasets import load_dataset, get_dataset_config_names
+from colorama import Fore, Style, init
+
+# Initialize colorama
+init(autoreset=True)
+
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 
 # -- get data from huggingface api
@@ -35,51 +40,39 @@ class APIFetch(BaseModel):
             if value is not None and key not in forbid_key:
                 self.list_key.append(key)
             setattr(self,key,value)
+        
                 
                 
    
 
     def concatenate_request(self):
-        
-        # all_url = []
         target_url = []
         data_list = []
         model_data_url = {'model':str,'datasets':[]}
         if not self.web_address:
             return None
         
-        
-        # web_address = self.web_address + type
         params = {}
         for type in self.type:
-           
             web_address = self.web_address.rstrip(',')
             web_address = web_address + type
-            # list of url target model
 
             if type == 'models':
                 if len(self.model_name) >= 1:
                     for model_name in self.model_name:
                         web_address = web_address + '/' + model_name
-                
                         model_data_url['model'] = web_address
                         target_url.append(model_data_url)
                         model_data_url = {'model':str,'datasets':[]}
                         web_address = self.web_address + type
                         
-                        
             elif type == 'datasets':   
                 if len(self.model_name) > 1 and any(isinstance(i,list) for i in self.datasets_name):
-                    
                     for idx,datasets_name in enumerate(self.datasets_name):
                         for datasets_name in datasets_name:
                             web_address = web_address + '/' + datasets_name
-                            
                             data_list.append(web_address)
-                            
                             web_address = self.web_address + type
-                    # model_data_url['datasets'] = data_list
-                
                         target_url[idx]['datasets'] = data_list
                         data_list = []
                     
@@ -89,33 +82,24 @@ class APIFetch(BaseModel):
                 elif len(self.model_name) == 0 and len(self.datasets_name) == 1:
                     for datasets_name in self.datasets_name:
                         web_address = web_address + '/' + datasets_name
-                        
                         data_list.append(web_address)
-                        
                         web_address = self.web_address + type
                     target_url = [{**trt, 'datasets': data_list} for trt in target_url]
                     if len(target_url) > 1:
-                        
                         return target_url
            
-            # Get all non-None attributes that were actually set
-        
             for key in self.list_key:
-                    params[key] = getattr(self,key)
+                params[key] = getattr(self,key)
             
-            # Construct URL with parameters
             if params:
-                
                 param_string = '&'.join(f"{k}={v}" for k, v in params.items() if k != "task_categories")
-
-            
                     
                 if len(self.task_categories) >= 1:
                     param_string = '&'.join(f"{k}={v}" for k, v in params.items() if k != "task_categories")
-                    for idx ,task in enumerate(self.task_categories ):
+                    for idx ,task in enumerate(self.task_categories):
                         if type == 'models':
                             data = f"{web_address}?{param_string}&task_categories={task}"
-                            print(data)
+                            print(f"{Fore.WHITE}Generated URL: {data}{Style.RESET_ALL}")
                             model_data_url['model'] = data
                             target_url.append(model_data_url)
                             model_data_url = {'model':str,'datasets':[]}
@@ -134,14 +118,12 @@ class APIFetch(BaseModel):
                     data_list = []
                 
         return target_url
-     
-                    
-       
+
     def get_api_json(self):
         concatenated_json = []
         data_list = []
         url = self.concatenate_request()
-        print(url)
+        print(f"{Fore.YELLOW}Generated URLs: {url}{Style.RESET_ALL}")
         
         if not url:
             return None
@@ -150,52 +132,47 @@ class APIFetch(BaseModel):
                 if not isinstance(url,dict):
                     try:
                         response = requests.get(url)
-                        print(f"Generated URL: {url}")
+                        print(f"{Fore.CYAN}Fetching data from: {url}{Style.RESET_ALL}")
                         response.raise_for_status()
                         concatenated_json.append(response.json())
                     except requests.exceptions.RequestException as e:
-                        print(f"Error fetching data: {e}")
+                        print(f"{Fore.RED}Error fetching data: {e}{Style.RESET_ALL}")
                         continue
                 else:
                     try:
-                        # Get full model response
                         response = requests.get(url['model'])
-                        print(f"Generated MODEL URL: {url['model']}")
+                        print(f"{Fore.CYAN}Fetching model data from: {url['model']}{Style.RESET_ALL}")
                         response.raise_for_status()
                         model_response = response.json()
-                        
-                        # Create entry with full model response
                         model_entry = {"model": model_response, "datasets": []}
                         concatenated_json.append(model_entry)
                         
-                        # Get full dataset responses
                         for dataset_url in url['datasets']:
                             try:
                                 response = requests.get(dataset_url)
-                                print(f"Generated DATASETS URL: {dataset_url}")
+                                print(f"{Fore.CYAN}Fetching dataset from: {dataset_url}{Style.RESET_ALL}")
                                 response.raise_for_status()
                                 dataset_response = response.json()
                                 data_list.append(dataset_response)
                             except requests.exceptions.RequestException as e:
-                                print(f"Error fetching data: {e}")
+                                print(f"{Fore.RED}Error fetching dataset: {e}{Style.RESET_ALL}")
                                 continue
                         
-                        # Add all dataset responses to current model
                         concatenated_json[idx]['datasets'] = data_list
                         data_list = []
                         
                     except requests.exceptions.RequestException as e:
-                        print(f"Error fetching data: {e}")
+                        print(f"{Fore.RED}Error fetching model data: {e}{Style.RESET_ALL}")
                         continue
             return concatenated_json
         else:
             try:
                 response = requests.get(url)
-                print(f"Generated URL: {url}")
+                print(f"{Fore.CYAN}Fetching data from: {url}{Style.RESET_ALL}")
                 response.raise_for_status()
                 return response.json()
             except requests.exceptions.RequestException as e:
-                print(f"Error fetching data: {e}")
+                print(f"{Fore.RED}Error fetching data: {e}{Style.RESET_ALL}")
                 return None
 
 
@@ -284,19 +261,24 @@ class Convert(BaseModel):
 
 class Manager:
     def __init__(self):
-        self.folder_path = Path(__file__).parent.parent.absolute() / 'DataModel_config'
-        self.folder_path.mkdir(parents=True, exist_ok=True)  # Create directory if it doesn't exist
-        self.file_path = self.folder_path / 'data_model.json'
-        self.file_path.touch(exist_ok=True)
+
         self.data_type = ["models","datasets"]
     
-    def handle_data(self):
+    def handle_data(self,file_path):
         
+        if os.path.exists(file_path):
+            os.remove(file_path)
+            print(f"{Fore.RED}File {file_path} has been deleted.{Style.RESET_ALL}")
+            Path(file_path).touch(exist_ok=True)
+            print(f"{Fore.GREEN}File {file_path} has been created.{Style.RESET_ALL}")
+        else:
+            Path(file_path).touch(exist_ok=True)
+            print(f"{Fore.GREEN}File {file_path} has been created.{Style.RESET_ALL}")
         # task = "text-generation"
         model_api = APIFetch(
             web_address="https://huggingface.co/api/",
             type=self.data_type,
-            task_categories=['text-generation'],
+            task_categories=['text-generation','image-generation'],
             author="huggingface",
             # model_name=["Orenguteng/Llama-3-8B-Lexi-Uncensored"
             #             ,"nari-labs/Dia-1.6B"],
@@ -312,7 +294,7 @@ class Manager:
         # all_datasets_name = datasets_api.get_api_json()
         converter = Convert(data_model=all_model_name
                             ,keyword="id",model_amount=2,datasets_amount=4)
-        converter.convert_to_json(self.file_path)
+        converter.convert_to_json(file_path)
         
 
         
@@ -323,7 +305,9 @@ class Manager:
         
 # Example usage
 if __name__ == "__main__":
+    file_path = Path(__file__).parent.parent.absolute() / 'DataModel_config' / 'data_model.json'
+    file_path.touch(exist_ok=True)
     manager = Manager()
-    manager.handle_data()
+    manager.handle_data(file_path)
     
 

@@ -3,6 +3,10 @@ import gc
 import json
 from datetime import datetime
 from pathlib import Path
+# Set environment variables before any other imports
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
+os.environ['OMP_NUM_THREADS'] = '1'  # Limit OpenMP threads
+os.environ['TOKENIZERS_PARALLELISM'] = 'false'  # Disable tokenizer parallelism
 
 import torch
 import yaml
@@ -14,11 +18,14 @@ from transformers import (
     AutoConfig
 )
 
+from modules.defect import Report
 from modules.DataDownload import DataLoader
 from modules.DatasetHandler import Manager as DatasetHandler
 from modules.finetuning_model import Manager as FinetuneModel
-os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
-# Set environment variables for optimization
+
+# Set PyTorch settings
+torch.set_num_threads(1)
+torch.set_num_interop_threads(1)
 
 # Define paths
 WORKSPACE_DIR = Path(__file__).parent.absolute()
@@ -26,26 +33,39 @@ MODEL_DIR = WORKSPACE_DIR / "models" / "Text-Text-generation"
 OFFLOAD_DIR = WORKSPACE_DIR / "offload"
 OFFLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
+# Set random seed for reproducibility
+set_seed(42)
 
 class Main:
     def __init__(self):
-        self.data_loader = DataLoader()
         self.dataset_handler = DatasetHandler()
+        self.data_loader = DataLoader()
         self.finetune_model = FinetuneModel()
-        self.HomePath = Path(__file__).parent.parent.absolute()
+        self.HomePath = Path(__file__).parent.absolute()
+        
         self.DataModelFolder = f"{self.HomePath}/DataModel_config"
+        self.temporal_file_path = f'{self.DataModelFolder}/ data_model.json'
+        Path(self.temporal_file_path).touch(exist_ok=True)
+        
         self.datafile = 'installed.json'
         self.model_data_json_path = f"{self.DataModelFolder}/{self.datafile}"
+        Path(self.model_data_json_path).touch(exist_ok=True)
+        
         self.manager = FinetuneModel(self.model_data_json_path)
         self.list_model_data = self.manager.generate_model_data()
 
     def run(self):
-        self.data_loader.datainstall_load()
-        self.dataset_handler.handle_data()
-        self.manager.run_finetune()
+        try:
+            self.dataset_handler.handle_data(self.temporal_file_path)
+            self.data_loader.run()
+            model,dataset = self.manager.run_finetune(self.list_model_data)
+        except Exception as e:
+            report = Report()
+            report.store_problem(model=model,dataset=dataset)
 
-
-
+if __name__ == "__main__":
+    main = Main()
+    main.run()
 
 #What To do
 
