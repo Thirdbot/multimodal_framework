@@ -27,6 +27,7 @@ import numpy as np
 from transformers import  AutoModel,AutoTokenizer,AutoConfig,BitsAndBytesConfig,DataCollatorForLanguageModeling,AutoModelForCausalLM, Trainer, TrainingArguments,pipeline
 from datasets import load_dataset, concatenate_datasets, DatasetDict
 import re
+from huggingface_hub import HfApi
 
 # --fine-tune and merge with base-model through finetuning_model.py with custom multimodal embedding
 
@@ -53,15 +54,16 @@ import re
 class FinetuneModel:
     def __init__(self):
         # Training parameters
-        self.per_device_train_batch_size = 2  # Increased from 1
-        self.per_device_eval_batch_size = 2  # Increased from 1
-        self.gradient_accumulation_steps = 8  # Reduced from 16 for better speed
+        self.per_device_train_batch_size = 2
+        self.per_device_eval_batch_size = 2
+        self.gradient_accumulation_steps = 8
         self.learning_rate = 2e-4
         self.num_train_epochs = 3
         self.save_strategy = "epoch"
+        
         # Define paths
         self.WORKSPACE_DIR = Path(__file__).parent.parent.absolute()
-        self.MODEL_DIR = self.WORKSPACE_DIR / "models" / "Text-Text-generation"
+        self.MODEL_DIR = self.WORKSPACE_DIR / "models"
         self.CHECKPOINT_DIR = self.WORKSPACE_DIR / "checkpoints"
         self.OFFLOAD_DIR = self.WORKSPACE_DIR / "offload"
         
@@ -73,14 +75,15 @@ class FinetuneModel:
         self.device_map = "cuda:0" if torch.cuda.is_available() else "cpu"
         
         # Set memory optimization environment variables
-        os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True,max_split_size_mb:256"  # Increased from 128
-        os.environ["CUDA_LAUNCH_BLOCKING"] = "0"  # Disabled for better performance
+        os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True,max_split_size_mb:256"
+        os.environ["CUDA_LAUNCH_BLOCKING"] = "0"
         os.environ["CUDA_VISIBLE_DEVICES"] = "0"
         torch.cuda.empty_cache()
         
         self.model_id = None
         self.dataset_name = None
         self.metric = evaluate.load("accuracy")
+        self.model_task = None
     
     def get_model_architecture(self, model_id):
         """Detect the model architecture and return appropriate LoRA configuration"""
@@ -120,11 +123,31 @@ class FinetuneModel:
             print(f"{Fore.YELLOW}Warning: Could not detect model architecture, using default target modules: {str(e)}{Style.RESET_ALL}")
             return ["q_proj", "k_proj", "v_proj", "o_proj"]
 
+    def get_model_task(self, model_name):
+        try:
+            api = HfApi()
+            models = api.list_models(search=model_name)
+            for model in models:
+                if model.id.startswith(model_name):  # match closely
+                    return model.pipeline_tag
+            return "text-generation"  # default task if not found
+        except Exception as e:
+            print(f"{Fore.YELLOW}Warning: Could not determine model task, using default: {str(e)}{Style.RESET_ALL}")
+            return "text-generation"
+
     def load_model(self,model_id):
         print(f"{Fore.CYAN}retrieve model {model_id}{Style.RESET_ALL}")
         #load model 
         self.model_id = model_id
         try:
+            # Get model task
+            self.model_task = self.get_model_task(model_id)
+            print(f"{Fore.CYAN}Model task detected: {self.model_task}{Style.RESET_ALL}")
+            
+            # Create task-specific model directory
+            self.TASK_MODEL_DIR = self.MODEL_DIR / self.model_task
+            self.TASK_MODEL_DIR.mkdir(parents=True, exist_ok=True)
+            
             # Load tokenizer first
             tokenizer = AutoTokenizer.from_pretrained(
                 model_id,
@@ -163,7 +186,7 @@ class FinetuneModel:
                 low_cpu_mem_usage=True,
                 offload_folder=str(self.OFFLOAD_DIR),
                 offload_state_dict=True,
-                max_memory={0: "40GB"}  # Reserve some memory for other operations
+                max_memory={0: "40GB"}
             )
             
             # Prepare model for k-bit training
@@ -177,8 +200,8 @@ class FinetuneModel:
             
             # Configure LoRA with balanced settings
             lora_config = LoraConfig(
-                r=8,  # Increased from 4 for better performance
-                lora_alpha=16,  # Increased from 8
+                r=8,
+                lora_alpha=16,
                 target_modules=target_modules,
                 lora_dropout=0.05,
                 bias="none",
@@ -301,9 +324,32 @@ class FinetuneModel:
             trainer = self.Trainer(model=model, dataset=tokenized_dataset, tokenizer=tokenizer)
             trainer.train()
             
-            # Save the model
-            model.save_pretrained(self.MODEL_DIR)
-            tokenizer.save_pretrained(self.MODEL_DIR)
+            # Save the model in task-specific directory
+            model_save_path = self.TASK_MODEL_DIR / Path(self.model_id).name
+            model_save_path.mkdir(parents=True, exist_ok=True)
+            
+            # Save model and tokenizer
+            model.save_pretrained(str(model_save_path))
+            tokenizer.save_pretrained(str(model_save_path))
+            
+            # Save model info for inference
+            model_info = {
+                "model_id": self.model_id,
+                "model_task": self.model_task,
+                "base_model": self.model_id,
+                "finetuned": True,
+                "quantization": "4bit",
+                "lora_config": {
+                    "r": 8,
+                    "alpha": 16,
+                    "dropout": 0.05
+                }
+            }
+            
+            with open(model_save_path / "model_info.json", "w") as f:
+                json.dump(model_info, f, indent=4)
+            
+            print(f"{Fore.GREEN}Model saved to: {model_save_path}{Style.RESET_ALL}")
             
         except Exception as e:
             print(f"{Fore.RED}Error running tuning: {str(e)}{Style.RESET_ALL}")

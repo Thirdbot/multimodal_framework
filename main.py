@@ -23,7 +23,7 @@ from modules.defect import Report
 from modules.DataDownload import DataLoader
 from modules.DatasetHandler import Manager as DatasetHandler
 from modules.finetuning_model import Manager as FinetuneModel
-
+from modules.inference import ModelInference
 # Set PyTorch settings
 torch.set_num_threads(1)
 torch.set_num_interop_threads(1)
@@ -62,7 +62,7 @@ class Main:
             # "datasets_amount":4
         }
 
-    def run(self):
+    def runtrain(self):
         model = None
         dataset = None
         failed_models = None
@@ -74,6 +74,9 @@ class Main:
             self.list_model_data = self.finetune_model.generate_model_data()
             #finetune model
             model,dataset = self.finetune_model.run_finetune(self.list_model_data)
+
+
+           
         except Exception as e:
             report = Report()
             if model and dataset is not None:
@@ -88,7 +91,25 @@ class Main:
 
 if __name__ == "__main__":
     main = Main()
-    main.run()
+    # main.runtrain()
+      # Example usage
+    inference = ModelInference()
+    
+    model_name = "DialoGPT-RickBot"
+    if inference.load_model(model_name):
+        # Get model info
+        info = inference.get_model_info()
+        print(f"{Fore.CYAN}Model Info:{Style.RESET_ALL}")
+        print(json.dumps(info, indent=2))
+        
+        # Generate text
+        prompt = "who are you"
+        results = inference.generate(prompt)
+        if results:
+            print(f"{Fore.CYAN}Generated Text:{Style.RESET_ALL}")
+            for i, result in enumerate(results):
+                print(f"{Fore.GREEN}Result {i+1}:{Style.RESET_ALL}")
+                print(result)
 
 #What To do
 
