@@ -24,6 +24,10 @@ from modules.DataDownload import DataLoader
 from modules.DatasetHandler import Manager as DatasetHandler
 from modules.finetuning_model import Manager as FinetuneModel
 from modules.inference import ModelInference
+from modules.interference import Inference
+from modules.chatTemplate import ChatTemplate
+import argparse
+
 # Set PyTorch settings
 torch.set_num_threads(1)
 torch.set_num_interop_threads(1)
@@ -57,10 +61,10 @@ class Main:
         self.model_data_params = {
             "model_name":["beatajackowska/DialoGPT-RickBot"],
             "datasets_name":["theneuralmaze/rick-and-morty-transcripts-sharegpt"]
-            # "task":["text-generation"],
-            # "model_amount":2,
-            # "datasets_amount":4
         }
+        
+        # Initialize ChatTemplate
+        self.chat_template = None
 
     def runtrain(self):
         model = None
