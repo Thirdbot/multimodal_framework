@@ -192,10 +192,8 @@ class FinetuneModel:
                 truncation_side="right"
             )
             
-            # Set chat template if not already set
-            if not hasattr(tokenizer, "chat_template") or tokenizer.chat_template is None:
-                tokenizer.chat_template = self.chat_template.tokenizer.chat_template
-                print(f"{Fore.CYAN}Set chat template from ChatTemplate class{Style.RESET_ALL}")
+            # Initialize ChatTemplate with the already loaded tokenizer
+            self.chat_template = ChatTemplate(tokenizer=tokenizer)
             
             # Configure quantization
             quantization_config = BitsAndBytesConfig(
@@ -298,7 +296,7 @@ class FinetuneModel:
             print(f"{Fore.RED}Error loading tokenizer: {str(e)}{Style.RESET_ALL}")
             return None
 
-    def map_tokenizer(self, tokenizer, dataset, max_length=384):  # Increased from 256
+    def map_tokenizer(self, tokenizer, dataset, max_length=384):
         try:
             # Get the first example to check available fields
             first_example = dataset["train"][0] if "train" in dataset else dataset[0]
@@ -310,30 +308,20 @@ class FinetuneModel:
             if is_chat_dataset:
                 print(f"{Fore.CYAN}Detected chat/conversation dataset{Style.RESET_ALL}")
                 
-                # Use the ChatTemplate class to format conversations
-                def tokenize_chat_function(examples):
-                    # Format conversations using ChatTemplate
-                    formatted_chats = self.chat_template.format_conversation(
-                        examples["conversations"] if "conversations" in examples else examples["messages"]
+                # Use ChatTemplate to prepare the dataset
+                try:
+                    tokenized_dataset = self.chat_template.prepare_dataset(
+                        dataset,
+                        max_length=max_length
                     )
-                    
-                    # Tokenize the formatted chats
-                    return tokenizer(
-                        formatted_chats,
-                        padding="max_length",
-                        truncation=True,
-                        max_length=max_length,
-                        return_tensors="pt"
-                    )
-                
-                tokenized_dataset = dataset.map(
-                    tokenize_chat_function,
-                    batched=True,
-                    remove_columns=dataset["train"].column_names if "train" in dataset else dataset.column_names,
-                    num_proc=2
-                )
-                
-            else:
+                    print(f"{Fore.GREEN}Successfully prepared chat dataset{Style.RESET_ALL}")
+                    return tokenized_dataset
+                except Exception as e:
+                    print(f"{Fore.YELLOW}Warning: Error preparing chat dataset: {str(e)}{Style.RESET_ALL}")
+                    print(f"{Fore.YELLOW}Falling back to regular text processing{Style.RESET_ALL}")
+                    is_chat_dataset = False  # Fall back to regular processing
+            
+            if not is_chat_dataset:
                 # Handle regular text datasets
                 print(f"{Fore.CYAN}Detected regular text dataset{Style.RESET_ALL}")
                 
@@ -373,8 +361,8 @@ class FinetuneModel:
                     remove_columns=dataset["train"].column_names if "train" in dataset else dataset.column_names,
                     num_proc=2
                 )
-            
-            return tokenized_dataset
+                
+                return tokenized_dataset
             
         except Exception as e:
             print(f"{Fore.RED}Error tokenizing dataset: {str(e)}{Style.RESET_ALL}")
