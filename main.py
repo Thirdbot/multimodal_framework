@@ -95,7 +95,7 @@ class Main:
 
 if __name__ == "__main__":
     main = Main()
-    main.runtrain()
+    # main.runtrain()
       # Example usage
     inference = ModelInference()
     
@@ -107,7 +107,7 @@ if __name__ == "__main__":
         print(json.dumps(info, indent=2))
         
         # Generate text
-        prompt = "who are you"
+        prompt = "who are you rick"
         results = inference.generate(prompt)
         if results:
             print(f"{Fore.CYAN}Generated Text:{Style.RESET_ALL}")
