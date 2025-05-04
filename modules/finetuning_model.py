@@ -53,9 +53,9 @@ import re
 class FinetuneModel:
     def __init__(self):
         # Training parameters
-        self.per_device_train_batch_size = 1
-        self.per_device_eval_batch_size = 1
-        self.gradient_accumulation_steps = 8  # Increased to reduce memory usage
+        self.per_device_train_batch_size = 2  # Increased from 1
+        self.per_device_eval_batch_size = 2  # Increased from 1
+        self.gradient_accumulation_steps = 8  # Reduced from 16 for better speed
         self.learning_rate = 2e-4
         self.num_train_epochs = 3
         self.save_strategy = "epoch"
@@ -63,16 +63,20 @@ class FinetuneModel:
         self.WORKSPACE_DIR = Path(__file__).parent.parent.absolute()
         self.MODEL_DIR = self.WORKSPACE_DIR / "models" / "Text-Text-generation"
         self.CHECKPOINT_DIR = self.WORKSPACE_DIR / "checkpoints"
+        self.OFFLOAD_DIR = self.WORKSPACE_DIR / "offload"
         
         # Create directories
         self.MODEL_DIR.mkdir(parents=True, exist_ok=True)
         self.CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
+        self.OFFLOAD_DIR.mkdir(parents=True, exist_ok=True)
         
         self.device_map = "cuda:0" if torch.cuda.is_available() else "cpu"
         
         # Set memory optimization environment variables
-        os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True,max_split_size_mb:512"
-        os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
+        os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True,max_split_size_mb:256"  # Increased from 128
+        os.environ["CUDA_LAUNCH_BLOCKING"] = "0"  # Disabled for better performance
+        os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+        torch.cuda.empty_cache()
         
         self.model_id = None
         self.dataset_name = None
@@ -129,7 +133,7 @@ class FinetuneModel:
                 truncation_side="right"
             )
             
-            # Configure quantization with more aggressive settings
+            # Configure quantization with balanced settings
             quantization_config = BitsAndBytesConfig(
                 load_in_4bit=True,
                 bnb_4bit_compute_dtype=torch.float16,
@@ -143,10 +147,12 @@ class FinetuneModel:
             config = AutoConfig.from_pretrained(
                 model_id,
                 trust_remote_code=True,
-                use_cache=False  # Disable cache for gradient checkpointing
+                use_cache=False,
+                torch_dtype=torch.float16,
+                low_cpu_mem_usage=True
             )
             
-            # Load base model with memory optimization settings
+            # Load base model with balanced settings
             model = AutoModelForCausalLM.from_pretrained(
                 model_id,
                 config=config,
@@ -155,11 +161,12 @@ class FinetuneModel:
                 trust_remote_code=True,
                 torch_dtype=torch.float16,
                 low_cpu_mem_usage=True,
-                offload_folder="offload",
-                offload_state_dict=True
+                offload_folder=str(self.OFFLOAD_DIR),
+                offload_state_dict=True,
+                max_memory={0: "40GB"}  # Reserve some memory for other operations
             )
             
-            # Prepare model for k-bit training with memory optimization
+            # Prepare model for k-bit training
             model = prepare_model_for_kbit_training(
                 model,
                 use_gradient_checkpointing=True
@@ -168,15 +175,14 @@ class FinetuneModel:
             # Get appropriate target modules for the model architecture
             target_modules = self.get_model_architecture(model_id)
             
-            # Configure LoRA with memory-efficient settings
+            # Configure LoRA with balanced settings
             lora_config = LoraConfig(
-                r=8,  # Reduced rank for memory efficiency
-                lora_alpha=16,
+                r=8,  # Increased from 4 for better performance
+                lora_alpha=16,  # Increased from 8
                 target_modules=target_modules,
                 lora_dropout=0.05,
                 bias="none",
-                task_type="CAUSAL_LM",
-                
+                task_type="CAUSAL_LM"
             )
             
             # Get PEFT model
@@ -227,7 +233,7 @@ class FinetuneModel:
             print(f"{Fore.RED}Error loading tokenizer: {str(e)}{Style.RESET_ALL}")
             return None
 
-    def map_tokenizer(self, tokenizer, dataset, max_length=512):
+    def map_tokenizer(self, tokenizer, dataset, max_length=384):  # Increased from 256
         try:
             # Get the first example to check available fields
             first_example = dataset["train"][0] if "train" in dataset else dataset[0]
@@ -266,7 +272,8 @@ class FinetuneModel:
             tokenized_dataset = dataset.map(
                 tokenize_function,
                 batched=True,
-                remove_columns=dataset["train"].column_names if "train" in dataset else dataset.column_names
+                remove_columns=dataset["train"].column_names if "train" in dataset else dataset.column_names,
+                num_proc=2  # Increased from 1 for better performance
             )
             
             return tokenized_dataset
@@ -331,9 +338,13 @@ class FinetuneModel:
             gradient_checkpointing=True,
             gradient_checkpointing_kwargs={"use_reentrant": False},
             ddp_find_unused_parameters=False,
-            ddp_bucket_cap_mb=200,
-            dataloader_pin_memory=False,
-            dataloader_num_workers=0
+            ddp_bucket_cap_mb=200,  # Increased from 100
+            dataloader_pin_memory=True,  # Enabled for better performance
+            dataloader_num_workers=2,  # Increased from 0
+            max_grad_norm=1.0,
+            group_by_length=True,
+            length_column_name="length",
+            report_to="none"
         )
     def compute_metrics(self,eval_pred):
         logits, labels = eval_pred
