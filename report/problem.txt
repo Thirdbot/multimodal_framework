@@ -1,0 +1,14 @@
+Model: beatajackowska/DialoGPT-RickBot
+Dataset: theneuralmaze/rick-and-morty-transcripts-sharegpt
+Model: beatajackowska/DialoGPT-RickBot
+Dataset: theneuralmaze/rick-and-morty-transcripts-sharegpt
+Model: beatajackowska/DialoGPT-RickBot
+Dataset: theneuralmaze/rick-and-morty-transcripts-sharegpt
+Model: beatajackowska/DialoGPT-RickBot
+Dataset: theneuralmaze/rick-and-morty-transcripts-sharegpt
+Model: beatajackowska/DialoGPT-RickBot
+Dataset: theneuralmaze/rick-and-morty-transcripts-sharegpt
+Model: beatajackowska/DialoGPT-RickBot
+Dataset: theneuralmaze/rick-and-morty-transcripts-sharegpt
+Model: beatajackowska/DialoGPT-RickBot
+Dataset: theneuralmaze/rick-and-morty-transcripts-sharegpt
