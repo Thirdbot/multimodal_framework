@@ -91,7 +91,7 @@ class Main:
 
 if __name__ == "__main__":
     main = Main()
-    # main.runtrain()
+    main.runtrain()
       # Example usage
     inference = ModelInference()
     

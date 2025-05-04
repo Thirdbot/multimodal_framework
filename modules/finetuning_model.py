@@ -54,11 +54,11 @@ from huggingface_hub import HfApi
 class FinetuneModel:
     def __init__(self):
         # Training parameters
-        self.per_device_train_batch_size = 2
-        self.per_device_eval_batch_size = 2
-        self.gradient_accumulation_steps = 8
+        self.per_device_train_batch_size = 32
+        self.per_device_eval_batch_size = 32
+        self.gradient_accumulation_steps = 2
         self.learning_rate = 2e-4
-        self.num_train_epochs = 3
+        self.num_train_epochs = 100
         self.save_strategy = "epoch"
         
         # Define paths
@@ -84,6 +84,8 @@ class FinetuneModel:
         self.dataset_name = None
         self.metric = evaluate.load("accuracy")
         self.model_task = None
+        self.last_checkpoint = None
+        self.resume_from_checkpoint = False
     
     def get_model_architecture(self, model_id):
         """Detect the model architecture and return appropriate LoRA configuration"""
@@ -135,18 +137,50 @@ class FinetuneModel:
             print(f"{Fore.YELLOW}Warning: Could not determine model task, using default: {str(e)}{Style.RESET_ALL}")
             return "text-generation"
 
-    def load_model(self,model_id):
+    def find_last_checkpoint(self, model_name):
+        """Find the last checkpoint for a model"""
+        try:
+            model_task = self.get_model_task(model_name)
+            checkpoint_dir = self.CHECKPOINT_DIR / model_task / model_name
+            
+            if not checkpoint_dir.exists():
+                return None
+            
+            # Get all checkpoint directories
+            checkpoints = [d for d in checkpoint_dir.iterdir() if d.is_dir() and d.name.startswith("checkpoint-")]
+            
+            if not checkpoints:
+                return None
+            
+            # Sort by checkpoint number and get the latest
+            latest_checkpoint = max(checkpoints, key=lambda x: int(x.name.split("-")[1]))
+            return latest_checkpoint
+            
+        except Exception as e:
+            print(f"{Fore.YELLOW}Warning: Could not find last checkpoint: {str(e)}{Style.RESET_ALL}")
+            return None
+
+    def load_model(self, model_id, resume_from_checkpoint=False):
         print(f"{Fore.CYAN}retrieve model {model_id}{Style.RESET_ALL}")
-        #load model 
         self.model_id = model_id
+        self.resume_from_checkpoint = resume_from_checkpoint
+        
         try:
             # Get model task
             self.model_task = self.get_model_task(model_id)
             print(f"{Fore.CYAN}Model task detected: {self.model_task}{Style.RESET_ALL}")
             
-            # Create task-specific model directory
+            # Create task-specific directories
             self.TASK_MODEL_DIR = self.MODEL_DIR / self.model_task
             self.TASK_MODEL_DIR.mkdir(parents=True, exist_ok=True)
+            
+            # Find last checkpoint if resuming
+            if resume_from_checkpoint:
+                self.last_checkpoint = self.find_last_checkpoint(model_id)
+                if self.last_checkpoint:
+                    print(f"{Fore.CYAN}Resuming from checkpoint: {self.last_checkpoint}{Style.RESET_ALL}")
+                else:
+                    print(f"{Fore.YELLOW}No checkpoint found, starting from scratch{Style.RESET_ALL}")
             
             # Load tokenizer first
             tokenizer = AutoTokenizer.from_pretrained(
@@ -156,7 +190,7 @@ class FinetuneModel:
                 truncation_side="right"
             )
             
-            # Configure quantization with balanced settings
+            # Configure quantization
             quantization_config = BitsAndBytesConfig(
                 load_in_4bit=True,
                 bnb_4bit_compute_dtype=torch.float16,
@@ -166,7 +200,7 @@ class FinetuneModel:
                 llm_int8_has_fp16_weight=False,
             )
             
-            # Load model config first to modify settings
+            # Load model config
             config = AutoConfig.from_pretrained(
                 model_id,
                 trust_remote_code=True,
@@ -175,7 +209,7 @@ class FinetuneModel:
                 low_cpu_mem_usage=True
             )
             
-            # Load base model with balanced settings
+            # Load base model
             model = AutoModelForCausalLM.from_pretrained(
                 model_id,
                 config=config,
@@ -195,10 +229,10 @@ class FinetuneModel:
                 use_gradient_checkpointing=True
             )
             
-            # Get appropriate target modules for the model architecture
+            # Get target modules
             target_modules = self.get_model_architecture(model_id)
             
-            # Configure LoRA with balanced settings
+            # Configure LoRA
             lora_config = LoraConfig(
                 r=8,
                 lora_alpha=16,
@@ -217,12 +251,13 @@ class FinetuneModel:
             # Print trainable parameters
             model.print_trainable_parameters()
             
-            # Set padding token if not set
+            # Set padding token if needed
             if tokenizer.pad_token is None:
                 tokenizer.pad_token = tokenizer.eos_token
                 model.config.pad_token_id = tokenizer.pad_token_id
             
             return model, tokenizer
+            
         except Exception as e:
             print(f"{Fore.RED}Error loading model {model_id}: {str(e)}{Style.RESET_ALL}")
             return None, None
@@ -311,10 +346,10 @@ class FinetuneModel:
     #     config = AutoConfig.from_pretrained(self.model_id,trust_remote_code=True)
     #     return config
     
-    def runtuning(self):
+    def runtuning(self, resume_from_checkpoint=False):
         try:
             print(f"{Fore.YELLOW}run tuning:{self.model_id, self.dataset_name}{Style.RESET_ALL}")
-            model, tokenizer = self.load_model(self.model_id)
+            model, tokenizer = self.load_model(self.model_id, resume_from_checkpoint)
             if model is None or tokenizer is None:
                 raise ValueError("Failed to load model or tokenizer")
             
@@ -343,7 +378,8 @@ class FinetuneModel:
                     "r": 8,
                     "alpha": 16,
                     "dropout": 0.05
-                }
+                },
+                "last_checkpoint": str(self.last_checkpoint) if self.last_checkpoint else None
             }
             
             with open(model_save_path / "model_info.json", "w") as f:
@@ -359,8 +395,8 @@ class FinetuneModel:
         
     def train_args(self):
         return TrainingArguments(
-            output_dir=self.MODEL_DIR,
-            eval_strategy="no",  # Changed from "epoch" to "no" since we don't have proper eval data
+            output_dir=self.CHECKPOINT_DIR / self.model_task / Path(self.model_id).name,
+            eval_strategy="no",
             learning_rate=self.learning_rate,
             per_device_train_batch_size=self.per_device_train_batch_size,
             per_device_eval_batch_size=self.per_device_eval_batch_size,
@@ -371,7 +407,7 @@ class FinetuneModel:
             save_steps=100,
             save_only_model=True,
             logging_dir=self.CHECKPOINT_DIR,
-            logging_strategy="steps",  # Changed from "epoch" to "steps"
+            logging_strategy="steps",
             logging_steps=100,
             logging_first_step=True,
             gradient_accumulation_steps=self.gradient_accumulation_steps,
@@ -390,7 +426,8 @@ class FinetuneModel:
             max_grad_norm=1.0,
             group_by_length=True,
             length_column_name="length",
-            report_to="none"
+            report_to="none",
+            resume_from_checkpoint=self.last_checkpoint if self.resume_from_checkpoint else None
         )
     def compute_metrics(self,eval_pred):
         logits, labels = eval_pred
