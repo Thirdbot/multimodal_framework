@@ -57,6 +57,9 @@ class Main:
         self.model_data_params = {
             "model_name":["beatajackowska/DialoGPT-RickBot"],
             "datasets_name":["theneuralmaze/rick-and-morty-transcripts-sharegpt"]
+            # "task":["text-generation"],
+            # "model_amount":2,
+            # "datasets_amount":4
         }
 
     def run(self):

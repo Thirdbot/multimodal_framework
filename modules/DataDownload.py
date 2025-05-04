@@ -7,6 +7,7 @@ from pathlib import Path
 from colorama import Fore, Style, init
 from modules.DatasetHandler import APIFetch,Convert
 from modules.DatasetHandler import Manager
+from transformers import AutoModelForCausalLM
 # Initialize colorama
 init(autoreset=True)
 
@@ -100,18 +101,7 @@ class DataLoader():
                 print(f"{Fore.YELLOW}No data model found. Creating new one...{Style.RESET_ALL}")
                 manager = Manager()
                 return manager.handle_data(self.datamodel_filepath,params)
-                # model_api = APIFetch(
-                #     web_address="https://huggingface.co/api/",
-                #     type=self.data_type,
-                #     # task_categories=['text-generation','image-to-text'],
-                #     model_name=["beatajackowska/DialoGPT-RickBot"],
-                #     datasets_name=["theneuralmaze/rick-and-morty-transcripts-sharegpt"]
-                #     # model_name=["Orenguteng/Llama-3-8B-Lexi-Uncensored"],
-                #     # datasets_name=["nomic-ai/nomic-embed-text"]
-                # )
-                # all_model_name = model_api.get_api_json()
-                # converter = Convert(data_model=all_model_name, keyword="id", model_amount=10, datasets_amount=10)
-                # return converter.convert_to_json(self.datamodel_filepath)
+
 
     def load(self,install, depth=0):
         installed = []
@@ -143,19 +133,22 @@ class DataLoader():
             for i, row in diff_model.iterrows():
                 try:
                     model = row['model']
+                    download_model = self.model.load_model(model)
                     datasets = row['datasets']
                     print(f"{Fore.CYAN}Processing model: {model} with datasets: {datasets}{Style.RESET_ALL}")
+
                     if isinstance(datasets,list):
                         for dataset in datasets:
-                            pass
+                            download_dataset = self.dataset.load(dataset)
                     else:
-                        pass
+                        download_dataset = self.dataset.load(dataset)
+                        
                     
                     datadict = {
                         'model': model,
                         'datasets': datasets
+                  
                     }
-
                     installed.append(datadict)
 
                 except Exception as e:
