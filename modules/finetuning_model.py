@@ -52,11 +52,10 @@ import re
 
 class FinetuneModel:
     def __init__(self):
-
         # Training parameters
         self.per_device_train_batch_size = 1
         self.per_device_eval_batch_size = 1
-        self.gradient_accumulation_steps = 4
+        self.gradient_accumulation_steps = 8  # Increased to reduce memory usage
         self.learning_rate = 2e-4
         self.num_train_epochs = 3
         self.save_strategy = "epoch"
@@ -70,6 +69,10 @@ class FinetuneModel:
         self.CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
         
         self.device_map = "cuda:0" if torch.cuda.is_available() else "cpu"
+        
+        # Set memory optimization environment variables
+        os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True,max_split_size_mb:512"
+        os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
         
         self.model_id = None
         self.dataset_name = None
@@ -126,41 +129,61 @@ class FinetuneModel:
                 truncation_side="right"
             )
             
-            # Configure quantization
+            # Configure quantization with more aggressive settings
             quantization_config = BitsAndBytesConfig(
                 load_in_4bit=True,
                 bnb_4bit_compute_dtype=torch.float16,
                 bnb_4bit_quant_type="nf4",
                 bnb_4bit_use_double_quant=True,
+                llm_int8_threshold=6.0,
+                llm_int8_has_fp16_weight=False,
             )
             
-            # Load base model
+            # Load model config first to modify settings
+            config = AutoConfig.from_pretrained(
+                model_id,
+                trust_remote_code=True,
+                use_cache=False  # Disable cache for gradient checkpointing
+            )
+            
+            # Load base model with memory optimization settings
             model = AutoModelForCausalLM.from_pretrained(
                 model_id,
+                config=config,
                 quantization_config=quantization_config,
                 device_map=self.device_map,
                 trust_remote_code=True,
-                torch_dtype=torch.float16
+                torch_dtype=torch.float16,
+                low_cpu_mem_usage=True,
+                offload_folder="offload",
+                offload_state_dict=True
             )
             
-            # Prepare model for k-bit training
-            model = prepare_model_for_kbit_training(model)
+            # Prepare model for k-bit training with memory optimization
+            model = prepare_model_for_kbit_training(
+                model,
+                use_gradient_checkpointing=True
+            )
             
             # Get appropriate target modules for the model architecture
             target_modules = self.get_model_architecture(model_id)
             
-            # Configure LoRA
+            # Configure LoRA with memory-efficient settings
             lora_config = LoraConfig(
-                r=16,  # rank
-                lora_alpha=32,
+                r=8,  # Reduced rank for memory efficiency
+                lora_alpha=16,
                 target_modules=target_modules,
                 lora_dropout=0.05,
                 bias="none",
-                task_type="CAUSAL_LM"
+                task_type="CAUSAL_LM",
+                
             )
             
             # Get PEFT model
             model = get_peft_model(model, lora_config)
+            
+            # Enable gradient checkpointing
+            model.gradient_checkpointing_enable()
             
             # Print trainable parameters
             model.print_trainable_parameters()
@@ -298,14 +321,19 @@ class FinetuneModel:
             logging_strategy="epoch",
             logging_steps=100,
             logging_first_step=True,
-            # Add these parameters to ensure proper training
             gradient_accumulation_steps=self.gradient_accumulation_steps,
             fp16=True,
             optim="adamw_torch",
             lr_scheduler_type="cosine",
             warmup_ratio=0.1,
             remove_unused_columns=False,
-            label_names=["labels"]
+            label_names=["labels"],
+            gradient_checkpointing=True,
+            gradient_checkpointing_kwargs={"use_reentrant": False},
+            ddp_find_unused_parameters=False,
+            ddp_bucket_cap_mb=200,
+            dataloader_pin_memory=False,
+            dataloader_num_workers=0
         )
     def compute_metrics(self,eval_pred):
         logits, labels = eval_pred
