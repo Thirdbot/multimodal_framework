@@ -6,6 +6,7 @@ from huggingface_hub import hf_hub_download,HfApi
 from pathlib import Path
 from colorama import Fore, Style, init
 from modules.DatasetHandler import APIFetch,Convert
+from modules.DatasetHandler import Manager
 # Initialize colorama
 init(autoreset=True)
 
@@ -75,11 +76,12 @@ class DataLoader():
         
         self.datadict = {'model':'',"datasets":[]}
         
-        self.datamodel = self.datamodel_load()
+        
         # self.load(self.datamodel)
     
-    def run(self):
-        return self.load(self.datamodel)
+    def run(self,params):
+        datamodel = self.datamodel_load(params)
+        return self.load(datamodel)
         
     def datainstall_load(self):
         if self.installed_filepath.exists():
@@ -89,25 +91,27 @@ class DataLoader():
             else:
                 return pd.DataFrame(columns=['model','datasets'])
 
-    def datamodel_load(self):
+    def datamodel_load(self,params):
         if self.datamodel_filepath.exists():
             if self.datamodel_filepath.stat().st_size > 0:
                 df = pd.read_json(self.datamodel_filepath)
                 return df
             else:
                 print(f"{Fore.YELLOW}No data model found. Creating new one...{Style.RESET_ALL}")
-                model_api = APIFetch(
-                    web_address="https://huggingface.co/api/",
-                    type=self.data_type,
-                    # task_categories=['text-generation','image-to-text'],
-                    model_name=["beatajackowska/DialoGPT-RickBot"],
-                    datasets_name=["theneuralmaze/rick-and-morty-transcripts-sharegpt"]
-                    # model_name=["Orenguteng/Llama-3-8B-Lexi-Uncensored"],
-                    # datasets_name=["nomic-ai/nomic-embed-text"]
-                )
-                all_model_name = model_api.get_api_json()
-                converter = Convert(data_model=all_model_name, keyword="id", model_amount=10, datasets_amount=10)
-                return converter.convert_to_json(self.datamodel_filepath)
+                manager = Manager()
+                return manager.handle_data(self.datamodel_filepath,params)
+                # model_api = APIFetch(
+                #     web_address="https://huggingface.co/api/",
+                #     type=self.data_type,
+                #     # task_categories=['text-generation','image-to-text'],
+                #     model_name=["beatajackowska/DialoGPT-RickBot"],
+                #     datasets_name=["theneuralmaze/rick-and-morty-transcripts-sharegpt"]
+                #     # model_name=["Orenguteng/Llama-3-8B-Lexi-Uncensored"],
+                #     # datasets_name=["nomic-ai/nomic-embed-text"]
+                # )
+                # all_model_name = model_api.get_api_json()
+                # converter = Convert(data_model=all_model_name, keyword="id", model_amount=10, datasets_amount=10)
+                # return converter.convert_to_json(self.datamodel_filepath)
 
     def load(self,install, depth=0):
         installed = []

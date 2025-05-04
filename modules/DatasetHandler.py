@@ -34,10 +34,10 @@ class APIFetch(BaseModel):
     
     def __init__(self, **data):
         super().__init__(**data)
-        forbid_key = ['model_name','type','datasets_name','web_address','list_key']
+        forbid_key = ['model_name','type','datasets_name','web_address','list_key','task_categories']
         # Only set attributes that were actually passed in
         for key, value in data.items():
-            if value is not None and key not in forbid_key:
+            if (value is not None or value != []) and key not in forbid_key:
                 self.list_key.append(key)
             setattr(self,key,value)
         
@@ -92,6 +92,7 @@ class APIFetch(BaseModel):
                 params[key] = getattr(self,key)
             
             if params:
+                print(f"{Fore.WHITE}Params: {params}{Style.RESET_ALL}")
                 param_string = '&'.join(f"{k}={v}" for k, v in params.items() if k != "task_categories")
                     
                 if len(self.task_categories) >= 1:
@@ -264,7 +265,7 @@ class Manager:
 
         self.data_type = ["models","datasets"]
     
-    def handle_data(self,file_path):
+    def handle_data(self,file_path,model_name:Optional[list]=[],datasets_name:Optional[list]=[],task:Optional[list]=[]):
         
         if os.path.exists(file_path):
             os.remove(file_path)
@@ -278,10 +279,13 @@ class Manager:
         model_api = APIFetch(
             web_address="https://huggingface.co/api/",
             type=self.data_type,
+            task_categories=task,
+            model_name=model_name,
+            datasets_name=datasets_name,
             # task_categories=['text-generation','image-generation'],
             # author="huggingface",
-            model_name=["beatajackowska/DialoGPT-RickBot"],
-            datasets_name=["theneuralmaze/rick-and-morty-transcripts-sharegpt"]
+            # model_name=["beatajackowska/DialoGPT-RickBot"],
+            # datasets_name=["theneuralmaze/rick-and-morty-transcripts-sharegpt"]
         )
         
         all_model_name = model_api.get_api_json()
@@ -290,7 +294,9 @@ class Manager:
         # all_datasets_name = datasets_api.get_api_json()
         converter = Convert(data_model=all_model_name
                             ,keyword="id",model_amount=2,datasets_amount=4)
-        converter.convert_to_json(file_path)
+        return    converter.convert_to_json(file_path)
+        
+    
         
 
         

@@ -54,6 +54,10 @@ class Main:
         self.data_loader = DataLoader()
         self.finetune_model = FinetuneModel(model_data_json_path=self.model_data_json_path)
         
+        self.model_data_params = {
+            "model_name":["beatajackowska/DialoGPT-RickBot"],
+            "datasets_name":["theneuralmaze/rick-and-morty-transcripts-sharegpt"]
+        }
 
     def run(self):
         model = None
@@ -61,9 +65,9 @@ class Main:
         failed_models = None
         try:
             #fetch api data
-            self.dataset_handler.handle_data(self.temporal_file_path)
+            self.dataset_handler.handle_data(self.temporal_file_path,**self.model_data_params)
             #load data from api
-            failed_models = self.data_loader.run()
+            failed_models = self.data_loader.run(self.model_data_params)
             self.list_model_data = self.finetune_model.generate_model_data()
             #finetune model
             model,dataset = self.finetune_model.run_finetune(self.list_model_data)
