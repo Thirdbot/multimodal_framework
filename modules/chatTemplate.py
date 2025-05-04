@@ -17,129 +17,209 @@ import os
 from typing import List, Dict, Optional, Union
 from datasets import load_dataset
 from transformers import AutoTokenizer, AutoModelForCausalLM
+from datasets import Dataset
+from colorama import Fore, Style, init
 
 # Set environment variables for better performance
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 os.environ['OMP_NUM_THREADS'] = '0'
 os.environ['TOKENIZERS_PARALLELISM'] = 'false'
 
+# Initialize colorama
+init(autoreset=True)
+
 class ChatTemplate:
     """Class for handling chat templates and conversation formatting"""
     
-    def __init__(
-        self,
-        model_name: Optional[str] = None,
-        device: str = "auto",
-        template: Optional[str] = None
-    ):
-        self.model_name = model_name
-        self.device = device
-        self.tokenizer = None
-        self.model = None
-        
-        # Initialize tokenizer and model if model_name is provided
-        if model_name:
-            self.initialize_model(model_name, device)
-        
-        # Set default template if none provided
-        self.default_template = template or """{% for message in messages %}
-            {% if message['role'] == 'user' %}
-                {{ message['content'] }}
-            {% elif message['role'] == 'assistant' %}
-                {{ message['content'] }}
-            {% endif %}
-        {% endfor %}"""
-        
-        if self.tokenizer:
-            self.tokenizer.chat_template = self.default_template
+    def __init__(self, tokenizer=None, model_name=None, template=None):
+        """
+        Initialize ChatTemplate with either a tokenizer or model name
+        Args:
+            tokenizer: Pre-initialized tokenizer
+            model_name: Model name to load tokenizer from
+            template: Optional custom chat template
+        """
+        try:
+            if tokenizer is not None:
+                self.tokenizer = tokenizer
+            elif model_name is not None:
+                self.tokenizer = AutoTokenizer.from_pretrained(
+                    model_name,
+                    trust_remote_code=True,
+                    padding_side="right",
+                    truncation_side="right"
+                )
+            else:
+                # Initialize with a default tokenizer if none provided
+                self.tokenizer = AutoTokenizer.from_pretrained(
+                    "gpt2",  # Default model
+                    trust_remote_code=True,
+                    padding_side="right",
+                    truncation_side="right"
+                )
+                print(f"{Fore.YELLOW}Warning: No tokenizer or model_name provided, using default GPT-2 tokenizer{Style.RESET_ALL}")
+            
+            # Set chat template
+            if template is not None:
+                self.tokenizer.chat_template = template
+                print(f"{Fore.CYAN}Set custom chat template{Style.RESET_ALL}")
+            elif not hasattr(self.tokenizer, "chat_template") or self.tokenizer.chat_template is None:
+                self.tokenizer.chat_template = self._get_default_chat_template()
+                print(f"{Fore.CYAN}Set default chat template{Style.RESET_ALL}")
+            
+        except Exception as e:
+            print(f"{Fore.RED}Error initializing ChatTemplate: {str(e)}{Style.RESET_ALL}")
+            raise
     
-    def initialize_model(self, model_name: str, device: str = "auto"):
-        """Initialize model and tokenizer"""
-        self.model_name = model_name
-        self.device = device
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self.model = AutoModelForCausalLM.from_pretrained(model_name, device_map=device)
-        self.tokenizer.chat_template = self.default_template
-    
-    def format_conversation(
-        self,
-        messages: Union[List[Dict[str, str]], Dict[str, str]],
-        tokenize: bool = False,
-        add_generation_prompt: bool = False
-    ) -> Union[str, Dict]:
-        """Format a conversation using the chat template"""
-        if not self.tokenizer:
-            raise ValueError("Tokenizer not initialized. Call initialize_model() first.")
-        
-        return self.tokenizer.apply_chat_template(
-            messages,
-            tokenize=tokenize,
-            add_generation_prompt=add_generation_prompt
-        )
-    
-    def load_and_format_dataset(
-        self,
-        dataset_name: str,
-        split: str = "train",
-        conversation_field: str = "conversations"
-    ):
-        """Load and format a dataset using the chat template"""
-        dataset = load_dataset(dataset_name, split=split)
-        
-        # Format the conversations
-        dataset = dataset.map(
-            lambda x: {
-                "formatted_chat": self.format_conversation(x[conversation_field])
-            }
-        )
-        
-        return dataset
-    
-    def set_template(self, template: str):
-        """Set a custom chat template"""
-        self.default_template = template
-        if self.tokenizer:
-            self.tokenizer.chat_template = template
-    
-    def get_template(self) -> str:
-        """Get the current chat template"""
-        return self.default_template
-    
-    def is_chat_dataset(self, dataset) -> bool:
-        """Check if a dataset contains chat/conversation data"""
-        first_example = dataset["train"][0] if "train" in dataset else dataset[0]
-        return "conversations" in first_example or "messages" in first_example
-    
-    def get_conversation_field(self, dataset) -> Optional[str]:
-        """Get the field name containing conversations"""
-        first_example = dataset["train"][0] if "train" in dataset else dataset[0]
-        if "conversations" in first_example:
-            return "conversations"
-        elif "messages" in first_example:
-            return "messages"
-        return None
-
-def main():
-    # Example usage
-    chat_template = ChatTemplate(
-        model_name="beatajackowska/DialoGPT-RickBot",
-        template="""{% for message in messages %}
+    def _get_default_chat_template(self):
+        """Get a default chat template if none is set"""
+        return """{% for message in messages %}
             {% if message['role'] == 'user' %}
                 User: {{ message['content'] }}
             {% elif message['role'] == 'assistant' %}
                 Assistant: {{ message['content'] }}
+            {% elif message['role'] == 'system' %}
+                System: {{ message['content'] }}
             {% endif %}
         {% endfor %}"""
-    )
     
-    # Load and format dataset
-    dataset = chat_template.load_and_format_dataset(
-        "theneuralmaze/rick-and-morty-transcripts-sharegpt"
-    )
+    def format_conversation(self, conversation):
+        """Format a single conversation into a string"""
+        try:
+            if isinstance(conversation, str):
+                return conversation
+            
+            formatted = []
+            for message in conversation:
+                if isinstance(message, dict):
+                    role = message.get('role', 'user')
+                    content = message.get('content', '')
+                    formatted.append(f"{role}: {content}")
+                elif isinstance(message, str):
+                    formatted.append(message)
+            
+            return "\n".join(formatted)
+        except Exception as e:
+            print(f"{Fore.YELLOW}Warning: Error formatting conversation: {str(e)}{Style.RESET_ALL}")
+            return str(conversation)
     
-    # Print first formatted conversation
-    print("First formatted conversation:")
-    print(dataset['formatted_chat'][0])
+    def prepare_dataset(self, dataset, max_length=384):
+        """
+        Prepare a dataset for training by formatting conversations and tokenizing
+        Args:
+            dataset: HuggingFace dataset
+            max_length: Maximum sequence length
+        Returns:
+            Tokenized dataset ready for training
+        """
+        try:
+            # Check if this is a chat/conversation dataset
+            first_example = dataset["train"][0] if "train" in dataset else dataset[0]
+            available_fields = list(first_example.keys())
+            
+            # Determine conversation field
+            conv_field = None
+            for field in ["conversations", "messages", "chat"]:
+                if field in available_fields:
+                    conv_field = field
+                    break
+            
+            if conv_field is None:
+                print(f"{Fore.YELLOW}No conversation field found, using first available field{Style.RESET_ALL}")
+                conv_field = available_fields[0]
+            
+            def process_examples(examples):
+                # Format conversations
+                formatted_texts = []
+                for conv in examples[conv_field]:
+                    formatted = self.format_conversation(conv)
+                    formatted_texts.append(formatted)
+                
+                # Tokenize
+                tokenized = self.tokenizer(
+                    formatted_texts,
+                    padding="max_length",
+                    truncation=True,
+                    max_length=max_length,
+                    return_tensors="pt"
+                )
+                
+                return tokenized
+            
+            # Process the dataset
+            tokenized_dataset = dataset.map(
+                process_examples,
+                batched=True,
+                remove_columns=dataset["train"].column_names if "train" in dataset else dataset.column_names,
+                num_proc=2
+            )
+            
+            print(f"{Fore.GREEN}Successfully prepared dataset with {len(tokenized_dataset)} examples{Style.RESET_ALL}")
+            return tokenized_dataset
+            
+        except Exception as e:
+            print(f"{Fore.RED}Error preparing dataset: {str(e)}{Style.RESET_ALL}")
+            raise
+    
+    def get_tokenizer(self):
+        """Get the tokenizer instance"""
+        return self.tokenizer
+    
+    def get_chat_template(self):
+        """Get the current chat template"""
+        return self.tokenizer.chat_template
+    
+    def set_chat_template(self, template):
+        """Set a custom chat template"""
+        self.tokenizer.chat_template = template
+        print(f"{Fore.CYAN}Set custom chat template{Style.RESET_ALL}")
+    
+    def tokenize_text(self, text, max_length=384):
+        """Tokenize a single text input"""
+        return self.tokenizer(
+            text,
+            padding="max_length",
+            truncation=True,
+            max_length=max_length,
+            return_tensors="pt"
+        )
+    
+    def decode_tokens(self, tokens):
+        """Decode tokenized input back to text"""
+        return self.tokenizer.decode(tokens, skip_special_tokens=True)
+
+def main():
+    # Example usage
+    try:
+        # Initialize with model name
+        chat_template = ChatTemplate(
+            model_name="gpt2",
+            template="""{% for message in messages %}
+                {% if message['role'] == 'user' %}
+                    User: {{ message['content'] }}
+                {% elif message['role'] == 'assistant' %}
+                    Assistant: {{ message['content'] }}
+                {% endif %}
+            {% endfor %}"""
+        )
+        
+        # Example conversation
+        conversation = [
+            {"role": "user", "content": "Hello!"},
+            {"role": "assistant", "content": "Hi there!"}
+        ]
+        
+        # Format and tokenize
+        formatted = chat_template.format_conversation(conversation)
+        tokenized = chat_template.tokenize_text(formatted)
+        
+        print("Formatted conversation:")
+        print(formatted)
+        print("\nTokenized output:")
+        print(tokenized)
+        
+    except Exception as e:
+        print(f"{Fore.RED}Error in main: {str(e)}{Style.RESET_ALL}")
 
 if __name__ == "__main__":
     main()
