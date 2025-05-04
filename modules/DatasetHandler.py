@@ -79,7 +79,7 @@ class APIFetch(BaseModel):
                     if len(target_url) > 1:
                         return target_url
                     
-                elif len(self.model_name) == 0 and len(self.datasets_name) == 1:
+                elif len(self.model_name) == 1 and len(self.datasets_name) == 1:
                     for datasets_name in self.datasets_name:
                         web_address = web_address + '/' + datasets_name
                         data_list.append(web_address)

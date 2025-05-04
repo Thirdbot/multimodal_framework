@@ -102,6 +102,8 @@ class DataLoader():
                     # task_categories=['text-generation','image-to-text'],
                     model_name=["beatajackowska/DialoGPT-RickBot"],
                     datasets_name=["theneuralmaze/rick-and-morty-transcripts-sharegpt"]
+                    # model_name=["Orenguteng/Llama-3-8B-Lexi-Uncensored"],
+                    # datasets_name=["nomic-ai/nomic-embed-text"]
                 )
                 all_model_name = model_api.get_api_json()
                 converter = Convert(data_model=all_model_name, keyword="id", model_amount=10, datasets_amount=10)
@@ -109,6 +111,7 @@ class DataLoader():
 
     def load(self,install, depth=0):
         installed = []
+        failed_models = []  # Initialize failed_models at the start
         datadict = {'model':str,'datasets':[]}
         base_df = pd.DataFrame(install)
         compare_df = pd.DataFrame(self.datainstall_load())
@@ -118,6 +121,7 @@ class DataLoader():
             return failed_models
         if base_df.equals(compare_df):
             print(f"{Fore.GREEN}Data already installed{Style.RESET_ALL}")
+            return failed_models
         else:
             base_df['datasets'] = base_df['datasets'].apply(lambda x: sorted(x))
             compare_df['datasets'] = compare_df['datasets'].apply(lambda x: sorted(x))
@@ -130,8 +134,7 @@ class DataLoader():
 
             if diff_model.empty:
                 print(f"{Fore.YELLOW}No new models to install{Style.RESET_ALL}")
-                return
-            failed_models = []
+                return failed_models
 
             for i, row in diff_model.iterrows():
                 try:
@@ -166,6 +169,8 @@ class DataLoader():
             if failed_models:
                 print(f"{Fore.YELLOW}Retrying {len(failed_models)} failed installs...{Style.RESET_ALL}")
                 self.load(failed_models, depth=depth + 1)
+            
+            return failed_models  # Always return failed_models
 
 if __name__ == "__main__":
     from DatasetHandler import APIFetch,Convert
