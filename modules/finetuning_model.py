@@ -25,7 +25,7 @@ import evaluate
 
 import numpy as np
 from transformers import  AutoModel,AutoTokenizer,AutoConfig,BitsAndBytesConfig,DataCollatorForLanguageModeling,AutoModelForCausalLM, Trainer, TrainingArguments,pipeline
-from datasets import load_dataset
+from datasets import load_dataset, concatenate_datasets, DatasetDict
 import re
 
 # --fine-tune and merge with base-model through finetuning_model.py with custom multimodal embedding
@@ -314,7 +314,7 @@ class FinetuneModel:
     def train_args(self):
         return TrainingArguments(
             output_dir=self.MODEL_DIR,
-            eval_strategy="epoch",
+            eval_strategy="no",  # Changed from "epoch" to "no" since we don't have proper eval data
             learning_rate=self.learning_rate,
             per_device_train_batch_size=self.per_device_train_batch_size,
             per_device_eval_batch_size=self.per_device_eval_batch_size,
@@ -325,7 +325,7 @@ class FinetuneModel:
             save_steps=100,
             save_only_model=True,
             logging_dir=self.CHECKPOINT_DIR,
-            logging_strategy="epoch",
+            logging_strategy="steps",  # Changed from "epoch" to "steps"
             logging_steps=100,
             logging_first_step=True,
             gradient_accumulation_steps=self.gradient_accumulation_steps,
@@ -338,9 +338,9 @@ class FinetuneModel:
             gradient_checkpointing=True,
             gradient_checkpointing_kwargs={"use_reentrant": False},
             ddp_find_unused_parameters=False,
-            ddp_bucket_cap_mb=200,  # Increased from 100
-            dataloader_pin_memory=True,  # Enabled for better performance
-            dataloader_num_workers=2,  # Increased from 0
+            ddp_bucket_cap_mb=200,
+            dataloader_pin_memory=True,
+            dataloader_num_workers=2,
             max_grad_norm=1.0,
             group_by_length=True,
             length_column_name="length",
@@ -357,13 +357,19 @@ class FinetuneModel:
             mlm=False  # We're doing causal language modeling, not masked language modeling
         )
         
+        # Handle dataset splitting
+        if isinstance(dataset, DatasetDict):
+            train_dataset = dataset['train']
+        else:
+            # If it's a single dataset, use it directly for training
+            train_dataset = dataset
+        
         return Trainer(
             model=model,
             args=self.train_args(),
-            train_dataset=dataset['train'],
-            eval_dataset=dataset['train'],
+            train_dataset=train_dataset,
             data_collator=data_collator,
-            compute_metrics=self.compute_metrics,
+            compute_metrics=None  # Disabled metrics since we're not evaluating
         )
 
 class Manager:
@@ -382,18 +388,33 @@ class Manager:
             model = None
             dataset = None
             for el in list_model_data:
-                for key,value in el.items():
-                    if key == "model":
-                        model = value
-                        self.finetune_model.load_model(model)
-                    elif key == "datasets":
-                        for dataset in value:
-                            self.finetune_model.load_dataset(dataset)
-                            self.finetune_model.runtuning()
-            return model,dataset
+                # First, load the model
+                if "model" in el:
+                    model = el["model"]
+                    self.finetune_model.load_model(model)
+                
+                # Then, combine all datasets for this model
+                if "datasets" in el:
+                    datasets = el["datasets"]
+                    combined_dataset = None
+                    for dataset_name in datasets:
+                        current_dataset = self.finetune_model.load_dataset(dataset_name)
+                        if current_dataset is not None:
+                            if combined_dataset is None:
+                                combined_dataset = current_dataset
+                            else:
+                                # Combine datasets if they have the same structure
+                                if current_dataset.features == combined_dataset.features:
+                                    combined_dataset = concatenate_datasets([combined_dataset, current_dataset])
+                    
+                    if combined_dataset is not None:
+                        dataset = combined_dataset
+                        self.finetune_model.runtuning()
+                
+            return model, dataset
         except Exception as e:
             print(f"{Fore.RED}Error running finetune: {str(e)}{Style.RESET_ALL}")
-            return model,dataset
+            return model, dataset
                         
                         
 if __name__ == "__main__":
