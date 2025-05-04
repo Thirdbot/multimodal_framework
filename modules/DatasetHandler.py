@@ -34,12 +34,12 @@ class APIFetch(BaseModel):
     
     def __init__(self, **data):
         super().__init__(**data)
-        forbid_key = ['model_name','type','datasets_name','web_address','list_key','task_categories']
+        forbid_key = ['model_name','type','datasets_name','web_address','list_key']
         # Only set attributes that were actually passed in
         for key, value in data.items():
-            if (value is not None or value != []) and key not in forbid_key:
+            if (value is not None and len(value) > 0) and key not in forbid_key:
                 self.list_key.append(key)
-            setattr(self,key,value)
+                setattr(self,key,value)
         
                 
                 
@@ -181,8 +181,8 @@ class Convert(BaseModel):
     data_model:Optional[list] = Field(default=None)
     keyword:Optional[str] = Field(default='id')
     list_key:Optional[list] = Field(default=[])
-    model_amount:Optional[int] = Field(default=None)
-    datasets_amount:Optional[int] = Field(default=None)
+    model_amount:Optional[int] = Field(default=1)
+    datasets_amount:Optional[int] = Field(default=1)
     
 
 
@@ -225,11 +225,11 @@ class Convert(BaseModel):
                                             dataset_used = True
                                             break
                                     
-                                    if not dataset_used and len(model_entry['datasets']) < self.datasets_amount:
+                                    if not dataset_used and (self.datasets_amount is None or len(model_entry['datasets']) < self.datasets_amount):
                                         model_entry['datasets'].append(dataset[self.keyword])
                                         
                            
-                                if i < self.model_amount:
+                                if self.model_amount is None or i < self.model_amount:
                                     name_list.append(model_entry)
                                     
 
@@ -245,7 +245,7 @@ class Convert(BaseModel):
                         
                             # Add all datasets for this model
                             for dataset in value['datasets']:
-                                if len(model_entry['datasets']) < self.datasets_amount:
+                                if self.datasets_amount is None or len(model_entry['datasets']) < self.datasets_amount:
                                     model_entry['datasets'].append(dataset[self.keyword])
                         
                         # Add the model entry if we haven't reached the limit
@@ -265,7 +265,7 @@ class Manager:
 
         self.data_type = ["models","datasets"]
     
-    def handle_data(self,file_path,model_name:Optional[list]=[],datasets_name:Optional[list]=[],task:Optional[list]=[]):
+    def handle_data(self,file_path,model_name:Optional[list]=[],datasets_name:Optional[list]=[],task:Optional[list]=[],model_amount:Optional[int]=1,datasets_amount:Optional[int]=1):
         
         if os.path.exists(file_path):
             os.remove(file_path)
@@ -276,6 +276,7 @@ class Manager:
             Path(file_path).touch(exist_ok=True)
             print(f"{Fore.GREEN}File {file_path} has been created.{Style.RESET_ALL}")
         # task = "text-generation"
+        
         model_api = APIFetch(
             web_address="https://huggingface.co/api/",
             type=self.data_type,
@@ -293,7 +294,7 @@ class Manager:
 
         # all_datasets_name = datasets_api.get_api_json()
         converter = Convert(data_model=all_model_name
-                            ,keyword="id",model_amount=2,datasets_amount=4)
+                            ,keyword="id",model_amount=model_amount,datasets_amount=datasets_amount)
         return    converter.convert_to_json(file_path)
         
     
