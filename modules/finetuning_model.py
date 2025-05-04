@@ -3,6 +3,7 @@ import json
 from colorama import Fore, Style, init
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 from modules.defect import Report
+from modules.chatTemplate import ChatTemplate
 # Initialize colorama
 init(autoreset=True)
 
@@ -86,6 +87,7 @@ class FinetuneModel:
         self.model_task = None
         self.last_checkpoint = None
         self.resume_from_checkpoint = False
+        self.chat_template = ChatTemplate()
     
     def get_model_architecture(self, model_id):
         """Detect the model architecture and return appropriate LoRA configuration"""
@@ -189,6 +191,11 @@ class FinetuneModel:
                 padding_side="right",
                 truncation_side="right"
             )
+            
+            # Set chat template if not already set
+            if not hasattr(tokenizer, "chat_template") or tokenizer.chat_template is None:
+                tokenizer.chat_template = self.chat_template.tokenizer.chat_template
+                print(f"{Fore.CYAN}Set chat template from ChatTemplate class{Style.RESET_ALL}")
             
             # Configure quantization
             quantization_config = BitsAndBytesConfig(
@@ -297,44 +304,78 @@ class FinetuneModel:
             first_example = dataset["train"][0] if "train" in dataset else dataset[0]
             available_fields = list(first_example.keys())
             
-            # Common text field names in datasets
-            possible_text_fields = ["text", "content", "sentence", "input", "prompt"]
+            # Check if this is a chat/conversation dataset
+            is_chat_dataset = "conversations" in available_fields or "messages" in available_fields
             
-            # Find the first matching text field
-            text_field = next((field for field in possible_text_fields if field in available_fields), available_fields[0])
-            
-            if text_field is None:
-                print(f"{Fore.YELLOW}Available fields in dataset: {available_fields}{Style.RESET_ALL}")
-                raise ValueError("No suitable text field found in dataset. Please check dataset structure.")
-            
-            print(f"{Fore.CYAN}Using field '{text_field}' for tokenization{Style.RESET_ALL}")
-            
-            def tokenize_function(examples):
-                # Ensure the input is a string or list of strings
-                texts = examples[text_field]
-                if isinstance(texts, (int, float)):
-                    texts = str(texts)
-                elif isinstance(texts, list):
-                    texts = [str(text) if not isinstance(text, str) else text for text in texts]
-                elif not isinstance(texts, str):
-                    texts = str(texts)
+            if is_chat_dataset:
+                print(f"{Fore.CYAN}Detected chat/conversation dataset{Style.RESET_ALL}")
                 
-                return tokenizer(
-                    texts,
-                    padding="max_length",
-                    truncation=True,
-                    max_length=max_length,
-                    return_tensors="pt"
+                # Use the ChatTemplate class to format conversations
+                def tokenize_chat_function(examples):
+                    # Format conversations using ChatTemplate
+                    formatted_chats = self.chat_template.format_conversation(
+                        examples["conversations"] if "conversations" in examples else examples["messages"]
+                    )
+                    
+                    # Tokenize the formatted chats
+                    return tokenizer(
+                        formatted_chats,
+                        padding="max_length",
+                        truncation=True,
+                        max_length=max_length,
+                        return_tensors="pt"
+                    )
+                
+                tokenized_dataset = dataset.map(
+                    tokenize_chat_function,
+                    batched=True,
+                    remove_columns=dataset["train"].column_names if "train" in dataset else dataset.column_names,
+                    num_proc=2
+                )
+                
+            else:
+                # Handle regular text datasets
+                print(f"{Fore.CYAN}Detected regular text dataset{Style.RESET_ALL}")
+                
+                # Common text field names in datasets
+                possible_text_fields = ["text", "content", "sentence", "input", "prompt"]
+                
+                # Find the first matching text field
+                text_field = next((field for field in possible_text_fields if field in available_fields), available_fields[0])
+                
+                if text_field is None:
+                    print(f"{Fore.YELLOW}Available fields in dataset: {available_fields}{Style.RESET_ALL}")
+                    raise ValueError("No suitable text field found in dataset. Please check dataset structure.")
+                
+                print(f"{Fore.CYAN}Using field '{text_field}' for tokenization{Style.RESET_ALL}")
+                
+                def tokenize_function(examples):
+                    # Ensure the input is a string or list of strings
+                    texts = examples[text_field]
+                    if isinstance(texts, (int, float)):
+                        texts = str(texts)
+                    elif isinstance(texts, list):
+                        texts = [str(text) if not isinstance(text, str) else text for text in texts]
+                    elif not isinstance(texts, str):
+                        texts = str(texts)
+                    
+                    return tokenizer(
+                        texts,
+                        padding="max_length",
+                        truncation=True,
+                        max_length=max_length,
+                        return_tensors="pt"
+                    )
+                
+                tokenized_dataset = dataset.map(
+                    tokenize_function,
+                    batched=True,
+                    remove_columns=dataset["train"].column_names if "train" in dataset else dataset.column_names,
+                    num_proc=2
                 )
             
-            tokenized_dataset = dataset.map(
-                tokenize_function,
-                batched=True,
-                remove_columns=dataset["train"].column_names if "train" in dataset else dataset.column_names,
-                num_proc=2  # Increased from 1 for better performance
-            )
-            
             return tokenized_dataset
+            
         except Exception as e:
             print(f"{Fore.RED}Error tokenizing dataset: {str(e)}{Style.RESET_ALL}")
             return None
