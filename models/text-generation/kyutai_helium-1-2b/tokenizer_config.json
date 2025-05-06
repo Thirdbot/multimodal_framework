@@ -1,0 +1,879 @@
+{
+  "add_bos_token": true,
+  "add_eos_token": false,
+  "add_prefix_space": null,
+  "added_tokens_decoder": {
+    "0": {
+      "content": "<unk>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": false,
+      "special": true
+    },
+    "1": {
+      "content": "<s>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": true
+    },
+    "2": {
+      "content": "</s>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": true
+    },
+    "3": {
+      "content": "<pad>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": true
+    },
+    "4": {
+      "content": "<|im_start|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "5": {
+      "content": "<|im_end|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "6": {
+      "content": "<|im_sp_00|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "7": {
+      "content": "<|im_sp_01|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "8": {
+      "content": "<|im_sp_02|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "9": {
+      "content": "<|im_sp_03|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "10": {
+      "content": "<|im_sp_04|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "11": {
+      "content": "<|im_sp_05|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "12": {
+      "content": "<|im_sp_06|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "13": {
+      "content": "<|im_sp_07|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "14": {
+      "content": "<|im_sp_08|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "15": {
+      "content": "<|im_sp_09|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "16": {
+      "content": "<|im_sp_10|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "17": {
+      "content": "<|im_sp_11|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "18": {
+      "content": "<|im_sp_12|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "19": {
+      "content": "<|im_sp_13|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "20": {
+      "content": "<|im_sp_14|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "21": {
+      "content": "<|im_sp_15|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "22": {
+      "content": "<|im_sp_16|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "23": {
+      "content": "<|im_sp_17|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "24": {
+      "content": "<|im_sp_18|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "25": {
+      "content": "<|im_sp_19|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "26": {
+      "content": "<|im_sp_20|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "27": {
+      "content": "<|im_sp_21|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "28": {
+      "content": "<|im_sp_22|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "29": {
+      "content": "<|im_sp_23|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "30": {
+      "content": "<|im_sp_24|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "31": {
+      "content": "<|im_sp_25|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "32": {
+      "content": "<|im_sp_26|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "33": {
+      "content": "<|im_sp_27|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "34": {
+      "content": "<|im_sp_28|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "35": {
+      "content": "<|im_sp_29|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "36": {
+      "content": "<|im_sp_30|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "37": {
+      "content": "<|im_sp_31|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "38": {
+      "content": "<|im_sp_32|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "39": {
+      "content": "<|im_sp_33|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "40": {
+      "content": "<|im_sp_34|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "41": {
+      "content": "<|im_sp_35|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "42": {
+      "content": "<|im_sp_36|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "43": {
+      "content": "<|im_sp_37|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "44": {
+      "content": "<|im_sp_38|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "45": {
+      "content": "<|im_sp_39|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "46": {
+      "content": "<|im_sp_40|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "47": {
+      "content": "<|im_sp_41|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "48": {
+      "content": "<|im_sp_42|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "49": {
+      "content": "<|im_sp_43|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "50": {
+      "content": "<|im_sp_44|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "51": {
+      "content": "<|im_sp_45|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "52": {
+      "content": "<|im_sp_46|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "53": {
+      "content": "<|im_sp_47|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "54": {
+      "content": "<|im_sp_48|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "55": {
+      "content": "<|im_sp_49|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "56": {
+      "content": "<|im_sp_50|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "57": {
+      "content": "<|im_sp_51|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "58": {
+      "content": "<|im_sp_52|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "59": {
+      "content": "<|im_sp_53|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "60": {
+      "content": "<|im_sp_54|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "61": {
+      "content": "<|im_sp_55|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "62": {
+      "content": "<|im_sp_56|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "63": {
+      "content": "<|im_sp_57|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "64": {
+      "content": "<|im_sp_58|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "65": {
+      "content": "<|im_sp_59|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "66": {
+      "content": "<|im_sp_60|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "67": {
+      "content": "<|im_sp_61|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "68": {
+      "content": "<|im_sp_62|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "69": {
+      "content": "<|im_sp_63|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "70": {
+      "content": "<|im_sp_64|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "71": {
+      "content": "<|im_sp_65|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "72": {
+      "content": "<|im_sp_66|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "73": {
+      "content": "<|im_sp_67|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "74": {
+      "content": "<|im_sp_68|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "75": {
+      "content": "<|im_sp_69|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "76": {
+      "content": "<|im_sp_70|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "77": {
+      "content": "<|im_sp_71|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "78": {
+      "content": "<|im_sp_72|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "79": {
+      "content": "<|im_sp_73|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "80": {
+      "content": "<|im_sp_74|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "81": {
+      "content": "<|im_sp_75|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "82": {
+      "content": "<|im_sp_76|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "83": {
+      "content": "<|im_sp_77|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "84": {
+      "content": "<|im_sp_78|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "85": {
+      "content": "<|im_sp_79|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "86": {
+      "content": "<|im_sp_80|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "87": {
+      "content": "<|im_sp_81|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "88": {
+      "content": "<|im_sp_82|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "89": {
+      "content": "<|im_sp_83|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "90": {
+      "content": "<|im_sp_84|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "91": {
+      "content": "<|im_sp_85|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "92": {
+      "content": "<|im_sp_86|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "93": {
+      "content": "<|im_sp_87|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "94": {
+      "content": "<|im_sp_88|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "95": {
+      "content": "<|im_sp_89|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "96": {
+      "content": "<|im_sp_90|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "97": {
+      "content": "<|im_sp_91|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "98": {
+      "content": "<|im_sp_92|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "99": {
+      "content": "<|im_sp_93|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "100": {
+      "content": "<|im_sp_94|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "101": {
+      "content": "<|im_sp_95|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "102": {
+      "content": "<|im_sp_96|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "103": {
+      "content": "<|im_sp_97|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "104": {
+      "content": "<|im_sp_98|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "105": {
+      "content": "<|im_sp_99|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": true,
+      "special": false
+    },
+    "116": {
+      "content": "\n",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": false,
+      "special": false
+    }
+  },
+  "bos_token": "<s>",
+  "chat_template": "{% for message in messages %}\n            {% if message['role'] == 'user' %}\n                User: {{ message['content'] }}\n            {% elif message['role'] == 'assistant' %}\n                Assistant: {{ message['content'] }}\n            {% elif message['role'] == 'system' %}\n                System: {{ message['content'] }}\n            {% endif %}\n        {% endfor %}",
+  "clean_up_tokenization_spaces": false,
+  "eos_token": "</s>",
+  "extra_special_tokens": {},
+  "legacy": true,
+  "max_length": null,
+  "model_max_length": 1000000000000000019884624838656,
+  "pad_to_multiple_of": null,
+  "pad_token": "<pad>",
+  "pad_token_type_id": 0,
+  "padding_side": "right",
+  "tokenizer_class": "LlamaTokenizer",
+  "truncation_side": "right",
+  "unk_token": "<unk>",
+  "use_default_system_prompt": false
+}
