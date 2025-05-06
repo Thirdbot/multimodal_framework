@@ -75,9 +75,10 @@ class APIFetch(BaseModel):
                             web_address = self.web_address + type
                         target_url[idx]['datasets'] = data_list
                         data_list = []
-                    
                     if len(target_url) > 1:
                         return target_url
+                    
+                    
                 
                 elif len(self.model_name) > 1 and len(self.datasets_name) > 1:
                     for datasets_name in self.datasets_name:
@@ -88,15 +89,27 @@ class APIFetch(BaseModel):
                     data_list = []
                     if len(target_url) > 1:
                         return target_url
-                    
+                
+                elif len(self.model_name) > 1 and len(self.datasets_name) == 1:
+                    for idx,model_name in enumerate(self.model_name):
+                        web_address = web_address + '/' + self.datasets_name[0]
+                        data_list.append(web_address)
+                        target_url[idx]['datasets'] = data_list
+                        data_list = []
+                        # web_address = self.web_address + type
+                    if len(target_url) > 1:
+                        return target_url
+
+
                 elif len(self.model_name) == 1 and len(self.datasets_name) > 1:
                     for datasets_name in self.datasets_name:
                         web_address = web_address + '/' + datasets_name
                         data_list.append(web_address)
                         web_address = self.web_address + type
                     target_url[0]['datasets'] = data_list
-                    if len(target_url) > 1:
-                        return target_url
+                    # if len(target_url) > 1:
+                    #     return target_url
+                    return target_url
                     
                 elif len(self.model_name) == 1 and len(self.datasets_name) == 1:
                     for datasets_name in self.datasets_name:
@@ -104,9 +117,10 @@ class APIFetch(BaseModel):
                         data_list.append(web_address)
                         web_address = self.web_address + type
                     target_url = [{**trt, 'datasets': data_list} for trt in target_url]
-                    if len(target_url) > 1:
-                        return target_url
-           
+                    return target_url
+
+                
+                
             for key in self.list_key:
                 params[key] = getattr(self,key)
             
