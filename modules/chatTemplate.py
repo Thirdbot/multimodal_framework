@@ -143,7 +143,7 @@ class ChatTemplate:
                 formatted_texts = []
                 for conv in examples[conv_field]:
                     formatted = self.format_conversation(conv)
-                    # print(f"{formatted}")
+                    print(f"{formatted}")
                     formatted_texts.append(formatted)
                 # Tokenize
                 tokenized = self.tokenizer(
