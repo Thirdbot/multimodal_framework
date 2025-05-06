@@ -61,7 +61,8 @@ class Main:
         self.model_data_params = {
             "model_name":["beatajackowska/DialoGPT-RickBot","kyutai/helium-1-2b"],
             "datasets_name":[["theneuralmaze/rick-and-morty-transcripts-sharegpt"],["OpenAssistant/oasst2"]],
-            # "datasets_name":["OpenAssistant/oasst2"]
+            # "datasets_name":["OpenAssistant/oasst2"],
+            # "task":["text-generation","image-generation"]
         }
         
         # Initialize ChatTemplate
