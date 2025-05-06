@@ -51,6 +51,7 @@ class ChatTemplate:
                 )
             else:
                 # Initialize with a default tokenizer if none provided
+                #may be use from save model or gpt
                 self.tokenizer = AutoTokenizer.from_pretrained(
                     "gpt2",  # Default model
                     trust_remote_code=True,
