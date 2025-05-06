@@ -332,6 +332,7 @@ class FinetuneModel:
                 possible_text_fields = ["text", "content", "sentence", "input", "prompt"]
                 possible_text_extends_columns = ['text']
                 # Find the first matching text field
+                print(available_fields)
                 text_field = next((field for field in possible_text_fields if field in available_fields), available_fields[0])
                 
 
@@ -342,26 +343,35 @@ class FinetuneModel:
                 print(f"{Fore.CYAN}Using field '{text_field}' for tokenization{Style.RESET_ALL}")
                 
                 def tokenize_function(examples):
-                    # Ensure the input is a string or list of strings
+                    possible_extends_word = ['role']
                     texts = examples[text_field]
+            
                     if isinstance(texts, (int, float)):
                         texts = str(texts)
                         
                     elif isinstance(texts, list):
                         holder = []
-                        for role,text in zip(examples['role'],texts):
-                            combined_text = role + ':' + text
-                            holder.append(combined_text)
-                        texts = holder
+                        if text_field in possible_text_extends_columns:
+                            for word in possible_extends_word:
+                                if word in available_fields:
+                                    for role,text in zip(examples[word],texts):
+                                        combined_text = role + ':' + text
+                                        holder.append(combined_text)
+                                    texts = holder
+                                else:
+                                    texts = texts
                     elif isinstance(texts, str):
                         #not testing this yet
                         if text_field in possible_text_extends_columns:
-                            if 'role' in available_fields:
-                                texts = examples['role'] + ':' + texts
+                            for word in possible_extends_word:
+                                if word in available_fields:
+                                    texts = examples[word] + ':' + texts
+                                else:
+                                    texts = texts
                     
                         texts = str(texts)
                     
-                    
+                    print(texts)
                     return tokenizer(
                         texts,
                         padding="max_length",
@@ -369,7 +379,7 @@ class FinetuneModel:
                         max_length=max_length,
                         return_tensors="pt"
                     )
-                
+        
                 tokenized_dataset = dataset.map(
                     tokenize_function,
                     batched=True,
@@ -390,17 +400,17 @@ class FinetuneModel:
     #     config = AutoConfig.from_pretrained(self.model_id,trust_remote_code=True)
     #     return config
     
-    def runtuning(self,modelname,datasetname):
+    def runtuning(self,model,tokenizer,dataset,modelname):
         try:
-            print(f"{Fore.YELLOW}run tuning:{modelname, datasetname}{Style.RESET_ALL}")
-            model, tokenizer = self.load_model(modelname,self.resume_from_checkpoint)
-            if model is None or tokenizer is None:
-                raise ValueError("Failed to load model or tokenizer")
+            # model, tokenizer = self.load_model(self.model_id,self.resume_from_checkpoint)
+            # if model is None or tokenizer is None:
+            #     raise ValueError("Failed to load model or tokenizer")
             
-            dataset = self.load_dataset(datasetname)
-            tokenized_dataset = self.map_tokenizer(tokenizer, dataset)
+            # dataset = self.load_dataset(datasetname)
+
+            # tokenized_dataset = self.map_tokenizer(tokenizer, dataset)
             
-            trainer = self.Trainer(model=model, dataset=tokenized_dataset, tokenizer=tokenizer,modelname=modelname,datasetname=datasetname)
+            trainer = self.Trainer(model=model, dataset=dataset, tokenizer=tokenizer,modelname=modelname)
             trainer.train()
             
             # Save the model in task-specific directory
@@ -434,10 +444,10 @@ class FinetuneModel:
         except Exception as e:
             print(f"{Fore.RED}Error running tuning: {str(e)}{Style.RESET_ALL}")
             report = Report()
-            report.store_problem(model=modelname, dataset=datasetname)
+            report.store_problem(model=modelname, dataset=dataset)
             return None
         
-    def train_args(self,modelname,datasetname):
+    def train_args(self,modelname):
         model_folder =  self.CHECKPOINT_DIR / self.model_task
         output_dir = model_folder / modelname if '/' not in modelname else model_folder / modelname.replace('/', '_')
         return TrainingArguments(
@@ -482,7 +492,7 @@ class FinetuneModel:
         predictions = np.argmax(logits, axis=-1)
         return self.metric.compute(predictions=predictions, references=labels)
     
-    def Trainer(self, model, dataset, tokenizer,modelname,datasetname):
+    def Trainer(self, model, dataset, tokenizer,modelname):
         # Create data collator for language modeling
         data_collator = DataCollatorForLanguageModeling(
             tokenizer=tokenizer,
@@ -498,7 +508,7 @@ class FinetuneModel:
         
         return Trainer(
             model=model,
-            args=self.train_args(modelname,datasetname),
+            args=self.train_args(modelname),
             train_dataset=train_dataset,
             data_collator=data_collator,
             compute_metrics=None  # Disabled metrics since we're not evaluating
@@ -522,28 +532,39 @@ class Manager:
             for el in list_model_data:
                 # First, load the model
                 if "model" in el:
-                    model = el["model"]
-                    self.finetune_model.load_model(model,self.finetune_model.resume_from_checkpoint)
+                    modelname = el["model"]
+                    model,tokenizer = self.finetune_model.load_model(modelname,self.finetune_model.resume_from_checkpoint)
                 
                 # Then, combine all datasets for this model
                 if "datasets" in el:
                     datasets = el["datasets"]
                     combined_dataset = None
                     for dataset_name in datasets:
-                        current_dataset = self.finetune_model.load_dataset(dataset_name)
-                        if current_dataset is not None:
-                            if combined_dataset is None:
-                                combined_dataset = current_dataset
-                            else:
-                                # Combine datasets if they have the same structure
-                                if current_dataset.features == combined_dataset.features:
-                                    combined_dataset = concatenate_datasets([combined_dataset, current_dataset])
-                    
-                    if combined_dataset is not None:
+                        dataset = self.finetune_model.load_dataset(dataset_name)
+                       
+                        # Process and tokenize the dataset
+                        processed_dataset = self.finetune_model.map_tokenizer(tokenizer, dataset)
                         
-                        self.finetune_model.runtuning(model,combined_dataset)
-                
-            return model, combined_dataset
+                        # Combine datasets
+                        if combined_dataset is None:
+                            combined_dataset = processed_dataset
+                        else:
+                            # Concatenate train splits if both datasets have them
+                            if "train" in combined_dataset and "train" in processed_dataset:
+                                combined_dataset["train"] = concatenate_datasets([
+                                    combined_dataset["train"], 
+                                    processed_dataset["train"]
+                                ])
+                            # If only one has train split, use that
+                            elif "train" in processed_dataset:
+                                combined_dataset["train"] = processed_dataset["train"]
+                    
+                    # Set the final combined dataset
+                    dataset = combined_dataset
+                    
+                    self.finetune_model.runtuning(model,tokenizer,dataset,modelname)
+               
+            return model, dataset
         except Exception as e:
             print(f"{Fore.RED}Error running finetune: {str(e)}{Style.RESET_ALL}")
             return model, dataset
