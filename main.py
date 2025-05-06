@@ -59,9 +59,9 @@ class Main:
         self.finetune_model = FinetuneModel(model_data_json_path=self.model_data_json_path)
         
         self.model_data_params = {
-            "model_name":["beatajackowska/DialoGPT-RickBot"],
-            # "datasets_name":["theneuralmaze/rick-and-morty-transcripts-sharegpt"]
-            "datasets_name":["OpenAssistant/oasst2"]
+            "model_name":["beatajackowska/DialoGPT-RickBot","kyutai/helium-1-2b"],
+            "datasets_name":[["theneuralmaze/rick-and-morty-transcripts-sharegpt"],["OpenAssistant/oasst2"]],
+            # "datasets_name":["OpenAssistant/oasst2"]
         }
         
         # Initialize ChatTemplate

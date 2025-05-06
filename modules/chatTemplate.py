@@ -142,7 +142,7 @@ class ChatTemplate:
                 formatted_texts = []
                 for conv in examples[conv_field]:
                     formatted = self.format_conversation(conv)
-                    print(f"{formatted}")
+                    # print(f"{formatted}")
                     formatted_texts.append(formatted)
                 # Tokenize
                 tokenized = self.tokenizer(
@@ -157,7 +157,7 @@ class ChatTemplate:
             
             # Process the dataset
             tokenized_dataset = dataset.map(
-                self.tokenizer.apply_chat_template(process_examples, tokenize=False, add_generation_prompt=False),
+                process_examples,
                 batched=True,
                 remove_columns=dataset["train"].column_names if "train" in dataset else dataset.column_names,
                 num_proc=2
