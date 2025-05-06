@@ -98,11 +98,11 @@ class Main:
 
 if __name__ == "__main__":
     main = Main()
-    main.runtrain()
+    # main.runtrain()
       # Example usage
     inference = ModelInference()
     
-    model_name = "kyutai_helium-1-2b"
+    model_name = "beatajackowska_DialoGPT-RickBot"
     if inference.load_model(model_name):
         # Get model info
         info = inference.get_model_info()
@@ -110,7 +110,7 @@ if __name__ == "__main__":
         print(json.dumps(info, indent=2))
         
         # Generate text
-        prompt = "Have the mathematics and principles introduced during the 16th and 17th century also been superseded, and to what extend do we understand these same phenomena today?"
+        prompt = "hello"
         results = inference.generate(prompt)
         if results:
             print(f"{Fore.CYAN}Generated Text:{Style.RESET_ALL}")
