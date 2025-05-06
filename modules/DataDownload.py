@@ -100,7 +100,7 @@ class DataLoader():
             else:
                 print(f"{Fore.YELLOW}No data model found. Creating new one...{Style.RESET_ALL}")
                 manager = Manager()
-                return manager.handle_data(self.datamodel_filepath,params)
+                return manager.handle_data(self.datamodel_filepath,**params)
 
 
     def load(self,install, depth=0):
@@ -141,7 +141,7 @@ class DataLoader():
                         for dataset in datasets:
                             download_dataset = self.dataset.load(dataset)
                     else:
-                        download_dataset = self.dataset.load(dataset)
+                        download_dataset = self.dataset.load(datasets)
                         
                     
                     datadict = {
