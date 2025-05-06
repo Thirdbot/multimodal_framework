@@ -528,6 +528,7 @@ class Manager:
     def run_finetune(self,list_model_data):
         try:
             model = None
+            combined_dataset = None
             dataset = None
             for el in list_model_data:
                 # First, load the model
@@ -538,7 +539,7 @@ class Manager:
                 # Then, combine all datasets for this model
                 if "datasets" in el:
                     datasets = el["datasets"]
-                    combined_dataset = None
+                    
                     for dataset_name in datasets:
                         dataset = self.finetune_model.load_dataset(dataset_name)
                        
@@ -562,7 +563,7 @@ class Manager:
                     # Set the final combined dataset
                     dataset = combined_dataset
                     
-                    self.finetune_model.runtuning(model,tokenizer,dataset,modelname)
+                self.finetune_model.runtuning(model,tokenizer,dataset,modelname)
                
             return model, dataset
         except Exception as e:

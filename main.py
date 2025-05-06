@@ -98,11 +98,11 @@ class Main:
 
 if __name__ == "__main__":
     main = Main()
-    main.runtrain()
+    # main.runtrain()
       # Example usage
     inference = ModelInference()
     
-    model_name = "beatajackowska_DialoGPT-RickBot"
+    model_name = "kyutai_helium-1-2b"
     if inference.load_model(model_name):
         # Get model info
         info = inference.get_model_info()
