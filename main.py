@@ -60,7 +60,8 @@ class Main:
         
         self.model_data_params = {
             "model_name":["beatajackowska/DialoGPT-RickBot"],
-            "datasets_name":["theneuralmaze/rick-and-morty-transcripts-sharegpt"]
+            # "datasets_name":["theneuralmaze/rick-and-morty-transcripts-sharegpt"]
+            "datasets_name":["OpenAssistant/oasst2"]
         }
         
         # Initialize ChatTemplate
@@ -78,7 +79,6 @@ class Main:
             self.list_model_data = self.finetune_model.generate_model_data()
             #finetune model
             model,dataset = self.finetune_model.run_finetune(self.list_model_data)
-
 
            
         except Exception as e:
@@ -99,7 +99,7 @@ if __name__ == "__main__":
       # Example usage
     inference = ModelInference()
     
-    model_name = "DialoGPT-RickBot"
+    model_name = "beatajackowska_DialoGPT-RickBot"
     if inference.load_model(model_name):
         # Get model info
         info = inference.get_model_info()
@@ -107,7 +107,7 @@ if __name__ == "__main__":
         print(json.dumps(info, indent=2))
         
         # Generate text
-        prompt = "who are you rick"
+        prompt = "who are you"
         results = inference.generate(prompt)
         if results:
             print(f"{Fore.CYAN}Generated Text:{Style.RESET_ALL}")
