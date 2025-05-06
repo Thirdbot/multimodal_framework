@@ -94,6 +94,7 @@ class APIFetch(BaseModel):
                     for idx,model_name in enumerate(self.model_name):
                         web_address = web_address + '/' + self.datasets_name[0]
                         data_list.append(web_address)
+                        web_address = self.web_address + type
                         target_url[idx]['datasets'] = data_list
                         data_list = []
                         # web_address = self.web_address + type

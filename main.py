@@ -61,6 +61,8 @@ class Main:
         self.model_data_params = {
             "model_name":["beatajackowska/DialoGPT-RickBot","kyutai/helium-1-2b"],
             "datasets_name":["OpenAssistant/oasst2"],
+            "model_amount":10,
+            "datasets_amount":10,
             # "datasets_name":["OpenAssistant/oasst2"],
             # "task":["text-generation","image-generation"]
         }
@@ -96,7 +98,7 @@ class Main:
 
 if __name__ == "__main__":
     main = Main()
-    # main.runtrain()
+    main.runtrain()
       # Example usage
     inference = ModelInference()
     
