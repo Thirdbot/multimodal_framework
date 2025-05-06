@@ -59,7 +59,7 @@ class FinetuneModel:
         self.per_device_eval_batch_size = 32
         self.gradient_accumulation_steps = 2
         self.learning_rate = 2e-4
-        self.num_train_epochs = 100
+        self.num_train_epochs = 1
         self.save_strategy = "epoch"
         
         # Define paths
@@ -85,8 +85,8 @@ class FinetuneModel:
         self.dataset_name = None
         self.metric = evaluate.load("accuracy")
         self.model_task = None
-        self.last_checkpoint = None
-        self.resume_from_checkpoint = False
+        self.resume_from_checkpoint = True
+
         self.chat_template = ChatTemplate()
     
     def get_model_architecture(self, model_id):
@@ -166,6 +166,7 @@ class FinetuneModel:
         print(f"{Fore.CYAN}retrieve model {model_id}{Style.RESET_ALL}")
         self.model_id = model_id
         self.resume_from_checkpoint = resume_from_checkpoint
+        print(f"Load from last checkpoint at :{self.resume_from_checkpoint}")
         
         try:
             # Get model task
@@ -327,10 +328,11 @@ class FinetuneModel:
                 
                 # Common text field names in datasets
                 possible_text_fields = ["text", "content", "sentence", "input", "prompt"]
-                
+                possible_text_extends_columns = ['text']
                 # Find the first matching text field
                 text_field = next((field for field in possible_text_fields if field in available_fields), available_fields[0])
                 
+
                 if text_field is None:
                     print(f"{Fore.YELLOW}Available fields in dataset: {available_fields}{Style.RESET_ALL}")
                     raise ValueError("No suitable text field found in dataset. Please check dataset structure.")
@@ -342,10 +344,22 @@ class FinetuneModel:
                     texts = examples[text_field]
                     if isinstance(texts, (int, float)):
                         texts = str(texts)
+                        
                     elif isinstance(texts, list):
-                        texts = [str(text) if not isinstance(text, str) else text for text in texts]
-                    elif not isinstance(texts, str):
+                        holder = []
+                        for role,text in zip(examples['role'],texts):
+                            texts = role + ':' + text
+                            holder.append(texts)
+                        texts = holder
+                        # print(f"{Fore.CYAN}texts: {texts}{Style.RESET_ALL}")
+                    elif isinstance(texts, str):
+                        #not testing this yet
+                        if text_field in possible_text_extends_columns:
+                            if 'role' in available_fields:
+                                texts = examples['role'] + ':' + texts
+                    
                         texts = str(texts)
+                    
                     
                     return tokenizer(
                         texts,
@@ -375,10 +389,10 @@ class FinetuneModel:
     #     config = AutoConfig.from_pretrained(self.model_id,trust_remote_code=True)
     #     return config
     
-    def runtuning(self, resume_from_checkpoint=False):
+    def runtuning(self):
         try:
             print(f"{Fore.YELLOW}run tuning:{self.model_id, self.dataset_name}{Style.RESET_ALL}")
-            model, tokenizer = self.load_model(self.model_id, resume_from_checkpoint)
+            model, tokenizer = self.load_model(self.model_id,self.resume_from_checkpoint)
             if model is None or tokenizer is None:
                 raise ValueError("Failed to load model or tokenizer")
             
@@ -389,7 +403,7 @@ class FinetuneModel:
             trainer.train()
             
             # Save the model in task-specific directory
-            model_save_path = self.TASK_MODEL_DIR / Path(self.model_id).name
+            model_save_path = self.TASK_MODEL_DIR / self.model_id.replace('/', '_')
             model_save_path.mkdir(parents=True, exist_ok=True)
             
             # Save model and tokenizer
@@ -431,6 +445,7 @@ class FinetuneModel:
             per_device_eval_batch_size=self.per_device_eval_batch_size,
             num_train_epochs=self.num_train_epochs,
             weight_decay=0.01,
+            max_steps=100,
             save_strategy=self.save_strategy,
             save_total_limit=2,
             save_steps=100,
@@ -503,7 +518,7 @@ class Manager:
                 # First, load the model
                 if "model" in el:
                     model = el["model"]
-                    self.finetune_model.load_model(model)
+                    self.finetune_model.load_model(model,self.finetune_model.resume_from_checkpoint)
                 
                 # Then, combine all datasets for this model
                 if "datasets" in el:
@@ -529,14 +544,14 @@ class Manager:
             return model, dataset
                         
                         
-if __name__ == "__main__":
-    HomePath = Path(__file__).parent.parent.absolute()
-    DataModelFolder = f"{HomePath}/DataModel_config"
-    datafile = 'installed.json'
-    model_data_json_path = f"{DataModelFolder}/{datafile}"
-    manager = Manager(model_data_json_path)
-    list_model_data = manager.generate_model_data()
-    manager.run_finetune(list_model_data)
+# if __name__ == "__main__":
+#     HomePath = Path(__file__).parent.parent.absolute()
+#     DataModelFolder = f"{HomePath}/DataModel_config"
+#     datafile = 'installed.json'
+#     model_data_json_path = f"{DataModelFolder}/{datafile}"
+#     manager = Manager(model_data_json_path)
+#     list_model_data = manager.generate_model_data()
+#     manager.run_finetune(list_model_data)
                     
     # finetune_model = FinetuneModel(model_id="")
     # print(finetune_model.tokenizer())

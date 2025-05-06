@@ -87,15 +87,24 @@ class ChatTemplate:
         """Format a single conversation into a string"""
         try:
             if isinstance(conversation, str):
+                print(f"{conversation}")
                 return conversation
             
             formatted = []
+            possible_keys = [('role','content'),('user','text'),('sender','message'),('author','body'),('from','value')]
             for message in conversation:
                 if isinstance(message, dict):
-                    role = message.get('role', 'user')
-                    content = message.get('content', '')
-                    formatted.append(f"{role}: {content}")
+                    for keysend,keyrecv in possible_keys:
+                        try:
+                            role = message[keysend]
+                            content = message[keyrecv]
+                                   
+                        except Exception as e:
+                            continue
+                        print(f"{role}: {content}")
+                        formatted.append(f"{role}: {content}")
                 elif isinstance(message, str):
+                    print(f"{message}")
                     formatted.append(message)
             
             return "\n".join(formatted)
@@ -133,8 +142,8 @@ class ChatTemplate:
                 formatted_texts = []
                 for conv in examples[conv_field]:
                     formatted = self.format_conversation(conv)
+                    print(f"{formatted}")
                     formatted_texts.append(formatted)
-                
                 # Tokenize
                 tokenized = self.tokenizer(
                     formatted_texts,
@@ -148,7 +157,7 @@ class ChatTemplate:
             
             # Process the dataset
             tokenized_dataset = dataset.map(
-                process_examples,
+                self.tokenizer.apply_chat_template(process_examples, tokenize=False, add_generation_prompt=False),
                 batched=True,
                 remove_columns=dataset["train"].column_names if "train" in dataset else dataset.column_names,
                 num_proc=2
