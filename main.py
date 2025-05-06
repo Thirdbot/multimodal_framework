@@ -60,7 +60,7 @@ class Main:
         
         self.model_data_params = {
             "model_name":["beatajackowska/DialoGPT-RickBot","kyutai/helium-1-2b"],
-            "datasets_name":[["theneuralmaze/rick-and-morty-transcripts-sharegpt"],["OpenAssistant/oasst2"]],
+            "datasets_name":["OpenAssistant/oasst2"],
             # "datasets_name":["OpenAssistant/oasst2"],
             # "task":["text-generation","image-generation"]
         }
@@ -96,7 +96,7 @@ class Main:
 
 if __name__ == "__main__":
     main = Main()
-    main.runtrain()
+    # main.runtrain()
       # Example usage
     inference = ModelInference()
     
@@ -108,7 +108,7 @@ if __name__ == "__main__":
         print(json.dumps(info, indent=2))
         
         # Generate text
-        prompt = "who are you"
+        prompt = "Have the mathematics and principles introduced during the 16th and 17th century also been superseded, and to what extend do we understand these same phenomena today?"
         results = inference.generate(prompt)
         if results:
             print(f"{Fore.CYAN}Generated Text:{Style.RESET_ALL}")
