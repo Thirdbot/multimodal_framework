@@ -59,8 +59,8 @@ class FinetuneModel:
         self.per_device_eval_batch_size = 32
         self.gradient_accumulation_steps = 2
         self.learning_rate = 2e-4
-        self.num_train_epochs = 1
-        self.save_strategy = "epoch"
+        self.num_train_epochs = 0.2
+        self.save_strategy = "best"
         
         # Define paths
         self.WORKSPACE_DIR = Path(__file__).parent.parent.absolute()
@@ -143,6 +143,8 @@ class FinetuneModel:
         """Find the last checkpoint for a model"""
         try:
             model_task = self.get_model_task(model_name)
+            model_name = model_name.replace('/', '_') if '/' in model_name else model_name
+            
             checkpoint_dir = self.CHECKPOINT_DIR / model_task / model_name
             
             if not checkpoint_dir.exists():
@@ -348,10 +350,9 @@ class FinetuneModel:
                     elif isinstance(texts, list):
                         holder = []
                         for role,text in zip(examples['role'],texts):
-                            texts = role + ':' + text
-                            holder.append(texts)
+                            combined_text = role + ':' + text
+                            holder.append(combined_text)
                         texts = holder
-                        # print(f"{Fore.CYAN}texts: {texts}{Style.RESET_ALL}")
                     elif isinstance(texts, str):
                         #not testing this yet
                         if text_field in possible_text_extends_columns:
@@ -437,8 +438,10 @@ class FinetuneModel:
             return None
         
     def train_args(self):
+        model_folder =  self.CHECKPOINT_DIR / self.model_task
+        output_dir = model_folder / self.model_id if '/' not in self.model_id else model_folder / self.model_id.replace('/', '_')
         return TrainingArguments(
-            output_dir=self.CHECKPOINT_DIR / self.model_task / Path(self.model_id).name,
+            output_dir=output_dir,
             eval_strategy="no",
             learning_rate=self.learning_rate,
             per_device_train_batch_size=self.per_device_train_batch_size,
@@ -471,7 +474,8 @@ class FinetuneModel:
             group_by_length=True,
             length_column_name="length",
             report_to="none",
-            resume_from_checkpoint=self.last_checkpoint if self.resume_from_checkpoint else None
+            resume_from_checkpoint=self.last_checkpoint if self.resume_from_checkpoint else None,
+            load_best_model_at_end=True,
         )
     def compute_metrics(self,eval_pred):
         logits, labels = eval_pred

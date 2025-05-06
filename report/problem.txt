@@ -60,3 +60,5 @@ Model: beatajackowska/DialoGPT-RickBot
 Dataset: OpenAssistant/oasst2
 Model: beatajackowska/DialoGPT-RickBot
 Dataset: OpenAssistant/oasst2
+Model: beatajackowska/DialoGPT-RickBot
+Dataset: OpenAssistant/oasst2
