@@ -371,7 +371,7 @@ class FinetuneModel:
                     
                         texts = str(texts)
                     
-                    # print(texts)
+                    print(f"{texts}\n")
                     return tokenizer(
                         texts,
                         padding="max_length",
@@ -458,7 +458,6 @@ class FinetuneModel:
             per_device_eval_batch_size=self.per_device_eval_batch_size,
             num_train_epochs=self.num_train_epochs,
             weight_decay=0.01,
-            max_steps=100,
             save_strategy=self.save_strategy,
             save_total_limit=2,
             save_steps=100,
