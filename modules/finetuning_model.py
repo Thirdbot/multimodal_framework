@@ -166,7 +166,7 @@ class FinetuneModel:
 
     def load_model(self, model_id, resume_from_checkpoint=False):
         print(f"{Fore.CYAN}retrieve model {model_id}{Style.RESET_ALL}")
-        self.model_id = model_id
+        
         self.resume_from_checkpoint = resume_from_checkpoint
         print(f"Load from last checkpoint at :{self.resume_from_checkpoint}")
         
@@ -390,21 +390,21 @@ class FinetuneModel:
     #     config = AutoConfig.from_pretrained(self.model_id,trust_remote_code=True)
     #     return config
     
-    def runtuning(self):
+    def runtuning(self,modelname,datasetname):
         try:
-            print(f"{Fore.YELLOW}run tuning:{self.model_id, self.dataset_name}{Style.RESET_ALL}")
-            model, tokenizer = self.load_model(self.model_id,self.resume_from_checkpoint)
+            print(f"{Fore.YELLOW}run tuning:{modelname, datasetname}{Style.RESET_ALL}")
+            model, tokenizer = self.load_model(modelname,self.resume_from_checkpoint)
             if model is None or tokenizer is None:
                 raise ValueError("Failed to load model or tokenizer")
             
-            dataset = self.load_dataset(self.dataset_name)
+            dataset = self.load_dataset(datasetname)
             tokenized_dataset = self.map_tokenizer(tokenizer, dataset)
             
-            trainer = self.Trainer(model=model, dataset=tokenized_dataset, tokenizer=tokenizer)
+            trainer = self.Trainer(model=model, dataset=tokenized_dataset, tokenizer=tokenizer,modelname=modelname,datasetname=datasetname)
             trainer.train()
             
             # Save the model in task-specific directory
-            model_save_path = self.TASK_MODEL_DIR / self.model_id.replace('/', '_')
+            model_save_path = self.TASK_MODEL_DIR / modelname.replace('/', '_')
             model_save_path.mkdir(parents=True, exist_ok=True)
             
             # Save model and tokenizer
@@ -413,9 +413,9 @@ class FinetuneModel:
             
             # Save model info for inference
             model_info = {
-                "model_id": self.model_id,
+                "model_id": modelname,
                 "model_task": self.model_task,
-                "base_model": self.model_id,
+                "base_model": modelname,
                 "finetuned": True,
                 "quantization": "4bit",
                 "lora_config": {
@@ -434,12 +434,12 @@ class FinetuneModel:
         except Exception as e:
             print(f"{Fore.RED}Error running tuning: {str(e)}{Style.RESET_ALL}")
             report = Report()
-            report.store_problem(model=self.model_id, dataset=self.dataset_name)
+            report.store_problem(model=modelname, dataset=datasetname)
             return None
         
-    def train_args(self):
+    def train_args(self,modelname,datasetname):
         model_folder =  self.CHECKPOINT_DIR / self.model_task
-        output_dir = model_folder / self.model_id if '/' not in self.model_id else model_folder / self.model_id.replace('/', '_')
+        output_dir = model_folder / modelname if '/' not in modelname else model_folder / modelname.replace('/', '_')
         return TrainingArguments(
             output_dir=output_dir,
             eval_strategy="no",
@@ -481,7 +481,8 @@ class FinetuneModel:
         logits, labels = eval_pred
         predictions = np.argmax(logits, axis=-1)
         return self.metric.compute(predictions=predictions, references=labels)
-    def Trainer(self, model, dataset, tokenizer):
+    
+    def Trainer(self, model, dataset, tokenizer,modelname,datasetname):
         # Create data collator for language modeling
         data_collator = DataCollatorForLanguageModeling(
             tokenizer=tokenizer,
@@ -497,7 +498,7 @@ class FinetuneModel:
         
         return Trainer(
             model=model,
-            args=self.train_args(),
+            args=self.train_args(modelname,datasetname),
             train_dataset=train_dataset,
             data_collator=data_collator,
             compute_metrics=None  # Disabled metrics since we're not evaluating
@@ -539,10 +540,10 @@ class Manager:
                                     combined_dataset = concatenate_datasets([combined_dataset, current_dataset])
                     
                     if combined_dataset is not None:
-                        dataset = combined_dataset
-                        self.finetune_model.runtuning()
+                        
+                        self.finetune_model.runtuning(model,combined_dataset)
                 
-            return model, dataset
+            return model, combined_dataset
         except Exception as e:
             print(f"{Fore.RED}Error running finetune: {str(e)}{Style.RESET_ALL}")
             return model, dataset
