@@ -55,11 +55,11 @@ from huggingface_hub import HfApi
 class FinetuneModel:
     def __init__(self):
         # Training parameters
-        self.per_device_train_batch_size = 32
-        self.per_device_eval_batch_size = 32
-        self.gradient_accumulation_steps = 2
+        self.per_device_train_batch_size = 64        
+        self.per_device_eval_batch_size = 64
+        self.gradient_accumulation_steps = 2    
         self.learning_rate = 2e-4
-        self.num_train_epochs = 0.2
+        self.num_train_epochs = 3
         self.save_strategy = "best"
         
         # Define paths
