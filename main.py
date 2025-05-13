@@ -70,15 +70,22 @@ class Main:
         # Initialize ChatTemplate
         self.chat_template = None
 
+        #place holder for load data
+        self.dataset_handler.handle_data(self.temporal_file_path,**self.model_data_params)
+        #load data from api
+        failed_models = self.data_loader.run(self.model_data_params)
+        
+        
+        
     def runtrain(self):
         model = None
         dataset = None
         failed_models = None
         try:
-            #fetch api data
-            self.dataset_handler.handle_data(self.temporal_file_path,**self.model_data_params)
-            #load data from api
-            failed_models = self.data_loader.run(self.model_data_params)
+            # #fetch api data
+            # self.dataset_handler.handle_data(self.temporal_file_path,**self.model_data_params)
+            # #load data from api
+            # failed_models = self.data_loader.run(self.model_data_params)
             self.list_model_data = self.finetune_model.generate_model_data()
             #finetune model
             model,dataset = self.finetune_model.run_finetune(self.list_model_data)
@@ -98,6 +105,8 @@ class Main:
 
 if __name__ == "__main__":
     main = Main()
+    
+    # do not run this if youre not have gpu ready
     # main.runtrain()
       # Example usage
     inference = ModelInference()
@@ -110,7 +119,7 @@ if __name__ == "__main__":
         print(json.dumps(info, indent=2))
         
         # Generate text
-        prompt = "hello"
+        prompt = "nigga"
         results = inference.generate(prompt)
         if results:
             print(f"{Fore.CYAN}Generated Text:{Style.RESET_ALL}")
@@ -121,10 +130,11 @@ if __name__ == "__main__":
 # What To do
 
 #this just addon.
-
-#create class to finetune model with its compatible dataset Multiple time and can be chain function
+# create api for model
+#app for multimodal
 
 #main stuff
+#merge dataset to multimodal
 #create event loop for use input and model input (should recieve multiple input type data as sametime)
 #create attention between event loop for filter unwanting data so runtime not interfere
 #create embbeding and en-router-attention with de-router-attention (shared attention or embed)
