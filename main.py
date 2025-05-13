@@ -59,7 +59,7 @@ class Main:
         self.finetune_model = FinetuneModel(model_data_json_path=self.model_data_json_path)
         
         self.model_data_params = {
-            "model_name":["beatajackowska/DialoGPT-RickBot","kyutai/helium-1-2b"],
+            "model_name":["beatajackowska/DialoGPT-RickBot"],
             "datasets_name":["OpenAssistant/oasst2"],
             "model_amount":10,
             "datasets_amount":10,
@@ -107,7 +107,7 @@ if __name__ == "__main__":
     main = Main()
     
     # do not run this if youre not have gpu ready
-    # main.runtrain()
+    main.runtrain()
       # Example usage
     inference = ModelInference()
     
@@ -134,6 +134,7 @@ if __name__ == "__main__":
 #app for multimodal
 
 #main stuff
+# create multimodal template
 #merge dataset to multimodal
 #create event loop for use input and model input (should recieve multiple input type data as sametime)
 #create attention between event loop for filter unwanting data so runtime not interfere
