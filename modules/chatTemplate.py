@@ -33,6 +33,33 @@ class ChatTemplate:
     
     def __init__(self,chainpipe, tokenizer=None, model_name=None, template=None):
         self.chainpipe = chainpipe
+        self.prompt =[
+                dict({  
+                    "role":"user",
+                    "content":[
+                        {"text":""},
+                        {"image":""}
+                    ]
+                }),
+                 dict({
+                    "role":"human",
+                    "content":[
+                        {"text":""},
+                        {"image":""}
+                    ]
+                }),
+                dict({
+                    "role":"assistant",
+                    "content":[{"text":""}]
+                }),
+                dict({
+                    "role":"system",
+                    "content":[{"text":""}]
+                })
+            ]
+        self.prompt_map = [key.get('role') for key in self.prompt]
+        self.prompt_map_content = [el for key in self.prompt for el in key.get('content') for el in el.keys()]
+        print(self.prompt_map_content)
         try:
             if tokenizer is not None:
                 self.tokenizer = tokenizer
@@ -69,62 +96,46 @@ class ChatTemplate:
     
     def _get_default_chat_template(self):
         """Get a default chat template if none is set"""
-        prompt =[
-                {
-                    "role":"user",
-                    "content":[
-                        {"type":"text",
-                         "text":"{text}"},
-                        {"type":"image",
-                         "image":"{image}"}
-                    ]
-                },
-                 {
-                    "role":"human",
-                    "content":[
-                        {"type":"text",
-                         "text":"{text}"},
-                        {"type":"image",
-                         "image":"{image}"}
-                    ]
-                },
-                {
-                    "role":"assistant",
-                    "content":"{answer}"
-                },
-                {
-                    "role":"system",
-                    "content":"{system}"
-                }
-            ]
-        prompt = self.chainpipe.chat_template(prompt)
+        prompt = self.chainpipe.chat_template(self.prompt)
         return prompt
     
-    def format_conversation(self, conversation):
+    def format_conversation(self, conversation,mul_field=None):
         """Format a single conversation into a string"""
         try:
             if isinstance(conversation, str):
-                print(f"{conversation}")
                 return conversation
             
             formatted = []
-            possible_keys = [('role','content'),('user','text'),('sender','message'),('author','body'),('from','value')]
+            possible_keys = [('from','value'),('role','content'),('user','text'),('sender','message'),('author','body'),('from','value')]
             for message in conversation:
                 if isinstance(message, dict):
                     for keysend,keyrecv in possible_keys:
                         try:
+                           
                             role = message[keysend]
                             content = message[keyrecv]
-                                   
+                            if mul_field is not None:
+                                self.prompt[self.prompt_map.index(role)]['content'][self.prompt_map_content.index(mul_field)][mul_field] = content
+                                #set default
+                                mul_field = "text"
+                                
+                            else:
+                                mul_field = "text"
+                                self.prompt[self.prompt_map.index(role)]['content'][self.prompt_map_content.index(mul_field)][mul_field] = content
+                            
+                            print(self.prompt)
+                            # Convert the prompt to a string format
+                            formatted_prompt = self.chainpipe.chat_template(self.prompt)
+                            
+                            formatted.append(formatted_prompt)
                         except Exception as e:
                             continue
-                        print(f"{role}: {content}")
-                        formatted.append(f"{role}: {content}")
                 elif isinstance(message, str):
-                    print(f"{message}")
                     formatted.append(message)
             
-            return "\n".join(formatted)
+            str_formatted = "\n".join(str(msg) for msg in formatted)
+            # Join all formatted messages with newlines
+            return str_formatted
         except Exception as e:
             print(f"{Fore.YELLOW}Warning: Error formatting conversation: {str(e)}{Style.RESET_ALL}")
             return str(conversation)
@@ -143,7 +154,9 @@ class ChatTemplate:
             first_example = dataset["train"][0] if "train" in dataset else dataset[0]
             available_fields = list(first_example.keys())
             
-            # Determine conversation field
+           
+            
+            
             conv_field = None
             for field in ["conversations", "messages", "chat"]:
                 if field in available_fields:
@@ -155,11 +168,23 @@ class ChatTemplate:
                 conv_field = available_fields[0]
             
             def process_examples(examples):
+                
+                multimodal_fields = ['image','audio','video']
+        
+                mul_field=None
+                for field in multimodal_fields:
+                    if field in available_fields:
+                        mul_field = field
+                        break
+                    
                 # Format conversations
                 formatted_texts = []
                 for conv in examples[conv_field]:
-                    formatted = self.format_conversation(conv)
-                    print(f"{formatted}")
+                    if mul_field is not None:
+                        formatted = self.format_conversation(conv,mul_field)
+                    else:
+                        formatted = self.format_conversation(conv)
+                    
                     formatted_texts.append(formatted)
                 # Tokenize
                 tokenized = self.tokenizer(
