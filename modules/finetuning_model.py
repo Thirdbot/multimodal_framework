@@ -270,13 +270,16 @@ class FinetuneModel:
             print(f"{Fore.RED}Error loading model {model_id}: {str(e)}{Style.RESET_ALL}")
             return None, None
 
-    def load_dataset(self,dataset_name):
+    def load_dataset(self,dataset_name,config):
         print(f"{Fore.CYAN}retrieve dataset {dataset_name}{Style.RESET_ALL}")
         
         try:
             # Load dataset from Hugging Face
             self.dataset_name = dataset_name
-            dataset = load_dataset(dataset_name,trust_remote_code=True)
+            if config is not None:
+                dataset = load_dataset(dataset_name,config,trust_remote_code=True)
+            else:
+                dataset = load_dataset(dataset_name,trust_remote_code=True)
             # print(Fore.YELLOW+"Dataset feature: "+str(dataset.features)+Fore.RESET)
             return dataset
         except Exception as e:
@@ -524,7 +527,7 @@ class Manager:
         with open(self.data_json_path, "r") as f:
             data = json.load(f)
             return data
-    def run_finetune(self,list_model_data):
+    def run_finetune(self,list_model_data,config):
         try:
             model = None
             combined_dataset = None
@@ -540,7 +543,7 @@ class Manager:
                     datasets = el["datasets"]
                     
                     for dataset_name in datasets:
-                        dataset = self.finetune_model.load_dataset(dataset_name)
+                        dataset = self.finetune_model.load_dataset(dataset_name,config)
                        
                         # Process and tokenize the dataset
                         processed_dataset = self.finetune_model.map_tokenizer(tokenizer, dataset)

@@ -59,12 +59,14 @@ class Main:
         self.finetune_model = FinetuneModel(model_data_json_path=self.model_data_json_path)
         
         self.model_data_params = {
-            "model_name":["beatajackowska/DialoGPT-RickBot"],
-            "datasets_name":["OpenAssistant/oasst2"],
-            "model_amount":10,
-            "datasets_amount":10,
+        #     "model_name":["beatajackowska/DialoGPT-RickBot"],
+        #     "datasets_name":["OpenAssistant/oasst2"],
+            "model_amount":1,
+            "datasets_amount":1,
             # "datasets_name":["OpenAssistant/oasst2"],
-            # "task":["text-generation","image-generation"]
+            "task":["image-to-text"],
+            "search":"image",
+            # "modality":"image"
         }
         
         # Initialize ChatTemplate
@@ -74,6 +76,8 @@ class Main:
         self.dataset_handler.handle_data(self.temporal_file_path,**self.model_data_params)
         #load data from api
         failed_models = self.data_loader.run(self.model_data_params)
+        self.config = self.data_loader.config
+        print(f"{Fore.CYAN}Dataset Config:{Style.RESET_ALL} {self.config}")
         
         
         
@@ -88,7 +92,7 @@ class Main:
             # failed_models = self.data_loader.run(self.model_data_params)
             self.list_model_data = self.finetune_model.generate_model_data()
             #finetune model
-            model,dataset = self.finetune_model.run_finetune(self.list_model_data)
+            model,dataset = self.finetune_model.run_finetune(self.list_model_data,self.config)
 
            
         except Exception as e:
