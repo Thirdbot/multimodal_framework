@@ -31,14 +31,8 @@ init(autoreset=True)
 class ChatTemplate:
     """Class for handling chat templates and conversation formatting"""
     
-    def __init__(self, tokenizer=None, model_name=None, template=None):
-        """
-        Initialize ChatTemplate with either a tokenizer or model name
-        Args:
-            tokenizer: Pre-initialized tokenizer
-            model_name: Model name to load tokenizer from
-            template: Optional custom chat template
-        """
+    def __init__(self,chainpipe, tokenizer=None, model_name=None, template=None):
+        self.chainpipe = chainpipe
         try:
             if tokenizer is not None:
                 self.tokenizer = tokenizer
@@ -62,7 +56,8 @@ class ChatTemplate:
             
             # Set chat template
             if template is not None:
-                self.tokenizer.chat_template = template
+                #replace template with custom template
+                self.tokenizer.chat_template = self._get_default_chat_template()
                 print(f"{Fore.CYAN}Set custom chat template{Style.RESET_ALL}")
             elif not hasattr(self.tokenizer, "chat_template") or self.tokenizer.chat_template is None:
                 self.tokenizer.chat_template = self._get_default_chat_template()
@@ -74,15 +69,36 @@ class ChatTemplate:
     
     def _get_default_chat_template(self):
         """Get a default chat template if none is set"""
-        return """{% for message in messages %}
-            {% if message['role'] == 'user' %}
-                User: {{ message['content'] }}
-            {% elif message['role'] == 'assistant' %}
-                Assistant: {{ message['content'] }}
-            {% elif message['role'] == 'system' %}
-                System: {{ message['content'] }}
-            {% endif %}
-        {% endfor %}"""
+        prompt =[
+                {
+                    "role":"user",
+                    "content":[
+                        {"type":"text",
+                         "text":"{text}"},
+                        {"type":"image",
+                         "image":"{image}"}
+                    ]
+                },
+                 {
+                    "role":"human",
+                    "content":[
+                        {"type":"text",
+                         "text":"{text}"},
+                        {"type":"image",
+                         "image":"{image}"}
+                    ]
+                },
+                {
+                    "role":"assistant",
+                    "content":"{answer}"
+                },
+                {
+                    "role":"system",
+                    "content":"{system}"
+                }
+            ]
+        prompt = self.chainpipe.chat_template(prompt)
+        return prompt
     
     def format_conversation(self, conversation):
         """Format a single conversation into a string"""
@@ -143,7 +159,7 @@ class ChatTemplate:
                 formatted_texts = []
                 for conv in examples[conv_field]:
                     formatted = self.format_conversation(conv)
-                    print(f"{formatted}/n")
+                    print(f"{formatted}")
                     formatted_texts.append(formatted)
                 # Tokenize
                 tokenized = self.tokenizer(

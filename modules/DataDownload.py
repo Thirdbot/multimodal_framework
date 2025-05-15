@@ -15,22 +15,25 @@ import os
 # os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 
 class FlexibleDatasetLoader:
-    def __init__(self, config=None, split='train',trust_remote_code=True):
+    def __init__(self, split='train',trust_remote_code=True):
         self.trust_remote_code = trust_remote_code
-        self.config = config
+        self.config = None
         self.split = split
         
-    def load(self,name):
-        if self.config:
-            return load_dataset(name, self.config, split=self.split,trust_remote_code=self.trust_remote_code)
+    def load(self,name,config):
+        if config is not None:
+            try:
+                return load_dataset(name, config, split=self.split,trust_remote_code=self.trust_remote_code)
+            except:
+                self.load(name,None)
         else:
             configs = get_dataset_config_names(name,trust_remote_code=self.trust_remote_code)
             if isinstance(configs,list):
                 print(f"{Fore.CYAN}Available configs: {configs}{Style.RESET_ALL}")
                 user_input = input(f"{Fore.YELLOW}Enter the config you want to use: {Style.RESET_ALL}")
                 self.config = user_input
-                self.load(name)
-                return user_input
+                self.load(name,user_input)
+                return self.config
 
     def get(self):
         return self.dataset
@@ -116,6 +119,20 @@ class DataLoader():
             return failed_models
         if base_df.equals(compare_df):
             print(f"{Fore.GREEN}Data already installed{Style.RESET_ALL}")
+            for i, row in compare_df.iterrows():
+                try:
+                    model = row['model']
+                    datasets = row['datasets']
+                    print(f"{Fore.CYAN}Processing model: {model} with datasets: {datasets}{Style.RESET_ALL}")
+
+                    if isinstance(datasets,list):
+                        for dataset in datasets:
+                            self.config = self.dataset.load(dataset,self.config)
+                    else:
+                        self.config = self.dataset.load(datasets,self.config)
+                except Exception as e:
+                    print(f"{Fore.RED}Error processing model as installed {model}: {str(e)}{Style.RESET_ALL}")
+                    failed_models.append(row)
             return failed_models
         else:
             base_df['datasets'] = base_df['datasets'].apply(lambda x: sorted(x))
@@ -129,6 +146,7 @@ class DataLoader():
 
             if diff_model.empty:
                 print(f"{Fore.YELLOW}No new models to install{Style.RESET_ALL}")
+                self.config = self.dataset.load()
                 return failed_models
 
             for i, row in diff_model.iterrows():
@@ -140,9 +158,9 @@ class DataLoader():
 
                     if isinstance(datasets,list):
                         for dataset in datasets:
-                            self.config = self.dataset.load(dataset)
+                            self.config = self.dataset.load(dataset,self.config)
                     else:
-                        self.config = self.dataset.load(datasets)
+                        self.config = self.dataset.load(datasets,self.config)
                         
                     
                     datadict = {

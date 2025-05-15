@@ -29,7 +29,7 @@ from transformers import  AutoModel,AutoTokenizer,AutoConfig,BitsAndBytesConfig,
 from datasets import load_dataset, concatenate_datasets, DatasetDict
 import re
 from huggingface_hub import HfApi
-
+from modules.chainpipe import Chainpipe
 # --fine-tune and merge with base-model through finetuning_model.py with custom multimodal embedding
 
 # -- finetume with  any model that compatible with base-model architecture with autoclass to make same architecture from base-model
@@ -86,8 +86,8 @@ class FinetuneModel:
         self.metric = evaluate.load("accuracy")
         self.model_task = None
         self.resume_from_checkpoint = True
-
-        self.chat_template = ChatTemplate()
+        self.chainpipe = Chainpipe()
+    
     
     def get_model_architecture(self, model_id):
         """Detect the model architecture and return appropriate LoRA configuration"""
@@ -195,8 +195,11 @@ class FinetuneModel:
                 truncation_side="right"
             )
             
-            # Initialize ChatTemplate with the already loaded tokenizer
-            self.chat_template = ChatTemplate(tokenizer=tokenizer)
+            # Initialize ChatTemplate with the tokenizer and chainpipe
+            self.chat_template = ChatTemplate(
+                tokenizer=tokenizer,
+                chainpipe=self.chainpipe  # Set to None for now, can be configured based on model requirements
+            )
             
             # Configure quantization
             quantization_config = BitsAndBytesConfig(

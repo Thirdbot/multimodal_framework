@@ -59,13 +59,13 @@ class Main:
         self.finetune_model = FinetuneModel(model_data_json_path=self.model_data_json_path)
         
         self.model_data_params = {
-        #     "model_name":["beatajackowska/DialoGPT-RickBot"],
-        #     "datasets_name":["OpenAssistant/oasst2"],
+            "model_name":["beatajackowska/DialoGPT-RickBot"],
+            "datasets_name":["facebook/PLM-Image-Auto"],
             "model_amount":1,
             "datasets_amount":1,
             # "datasets_name":["OpenAssistant/oasst2"],
-            "task":["image-to-text"],
-            "search":"image",
+            # "task":["image-to-text"],
+            # "search":"image",
             # "modality":"image"
         }
         
@@ -76,7 +76,7 @@ class Main:
         self.dataset_handler.handle_data(self.temporal_file_path,**self.model_data_params)
         #load data from api
         failed_models = self.data_loader.run(self.model_data_params)
-        self.config = self.data_loader.config
+        self.config = self.data_loader.config 
         print(f"{Fore.CYAN}Dataset Config:{Style.RESET_ALL} {self.config}")
         
         
