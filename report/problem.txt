@@ -21,3 +21,12 @@ Dataset: DatasetDict({
 Model: ahyar002/image_classification
 Model: ahyar002/image_classification
 Model: ahyar002/image_classification
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
