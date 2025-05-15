@@ -348,52 +348,60 @@ class FinetuneModel:
                 
                 print(f"{Fore.CYAN}Using field '{text_field}' for tokenization{Style.RESET_ALL}")
                 
-                def tokenize_function(examples):
-                    possible_extends_word = ['role']
-                    texts = examples[text_field]
-            
-                    if isinstance(texts, (int, float)):
-                        texts = str(texts)
-                        
-                    elif isinstance(texts, list):
-                        holder = []
-                        if text_field in possible_text_extends_columns:
-                            for word in possible_extends_word:
-                                if word in available_fields:
-                                    for role,text in zip(examples[word],texts):
-                                        combined_text = role + ':' + text
-                                        holder.append(combined_text)
-                                    texts = holder
-                                else:
-                                    texts = texts
-                    elif isinstance(texts, str):
-                        #not testing this yet
-                        if text_field in possible_text_extends_columns:
-                            for word in possible_extends_word:
-                                if word in available_fields:
-                                    texts = examples[word] + ':' + texts
-                                else:
-                                    texts = texts
-                    
-                        texts = str(texts)
-                    
-                    print(f"{texts}\n")
-                    return tokenizer(
-                        texts,
-                        padding="max_length",
-                        truncation=True,
-                        max_length=max_length,
-                        return_tensors="pt"
-                    )
-        
-                tokenized_dataset = dataset.map(
-                    tokenize_function,
-                    batched=True,
-                    remove_columns=dataset["train"].column_names if "train" in dataset else dataset.column_names,
-                    num_proc=2
-                )
                 
+            
+                tokenized_dataset = self.chat_template.prepare_dataset(
+                        dataset,
+                        max_length=max_length
+                    )
+                print(f"{Fore.GREEN}Successfully prepared chat dataset{Style.RESET_ALL}")
                 return tokenized_dataset
+                # def tokenize_function(examples):
+                #     possible_extends_word = ['role']
+                #     texts = examples[text_field]
+            
+                #     if isinstance(texts, (int, float)):
+                #         texts = str(texts)
+                        
+                #     elif isinstance(texts, list):
+                #         holder = []
+                #         if text_field in possible_text_extends_columns:
+                #             for word in possible_extends_word:
+                #                 if word in available_fields:
+                #                     for role,text in zip(examples[word],texts):
+                #                         combined_text = role + ':' + text
+                #                         holder.append(combined_text)
+                #                     texts = holder
+                #                 else:
+                #                     texts = texts
+                #     elif isinstance(texts, str):
+                #         #not testing this yet
+                #         if text_field in possible_text_extends_columns:
+                #             for word in possible_extends_word:
+                #                 if word in available_fields:
+                #                     texts = examples[word] + ':' + texts
+                #                 else:
+                #                     texts = texts
+                    
+                #         texts = str(texts)
+                    
+                #     print(f"{texts}\n")
+                #     return tokenizer(
+                #         texts,
+                #         padding="max_length",
+                #         truncation=True,
+                #         max_length=max_length,
+                #         return_tensors="pt"
+                #     )
+        
+                # tokenized_dataset = dataset.map(
+                #     tokenize_function,
+                #     batched=True,
+                #     remove_columns=dataset["train"].column_names if "train" in dataset else dataset.column_names,
+                #     num_proc=2
+                # )
+                
+                # return tokenized_dataset
             
         except Exception as e:
             print(f"{Fore.RED}Error tokenizing dataset: {str(e)}{Style.RESET_ALL}")

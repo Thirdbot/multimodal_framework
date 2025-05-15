@@ -32,3 +32,46 @@ Model: beatajackowska/DialoGPT-RickBot
 Model: beatajackowska/DialoGPT-RickBot
 Model: beatajackowska/DialoGPT-RickBot
 Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Dataset: DatasetDict({
+    train: Dataset({
+        features: ['input_ids', 'attention_mask'],
+        num_rows: 1730070
+    })
+})
+Model: beatajackowska/DialoGPT-RickBot
+Dataset: DatasetDict({
+    train: Dataset({
+        features: ['input_ids', 'attention_mask'],
+        num_rows: 128575
+    })
+    validation: Dataset({
+        features: ['input_ids', 'attention_mask'],
+        num_rows: 6599
+    })
+})
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Dataset: DatasetDict({
+    train: Dataset({
+        features: ['input_ids', 'attention_mask'],
+        num_rows: 128575
+    })
+    validation: Dataset({
+        features: ['input_ids', 'attention_mask'],
+        num_rows: 6599
+    })
+})
+Model: beatajackowska/DialoGPT-RickBot
+Dataset: DatasetDict({
+    train: Dataset({
+        features: ['input_ids', 'attention_mask'],
+        num_rows: 128575
+    })
+    validation: Dataset({
+        features: ['input_ids', 'attention_mask'],
+        num_rows: 6599
+    })
+})
+Model: beatajackowska/DialoGPT-RickBot

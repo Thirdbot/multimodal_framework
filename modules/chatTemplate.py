@@ -140,7 +140,7 @@ class ChatTemplate:
                                 if mul_field in content_types:
                                     field_idx = content_types.index(mul_field)
                                     self.prompt[role_idx]['content'][field_idx][mul_field] = content
-                            
+                            print(f"Updated prompt: {self.prompt}")
                             # Convert the prompt to a string format
                             formatted_prompt = self.chainpipe.chat_template(self.prompt)
                             formatted.append(formatted_prompt)
