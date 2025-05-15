@@ -554,6 +554,7 @@ class Manager:
                         # Combine datasets
                         if combined_dataset is None:
                             combined_dataset = processed_dataset
+                            print(combined_dataset)
                         else:
                             # Concatenate train splits if both datasets have them
                             if "train" in combined_dataset and "train" in processed_dataset:
