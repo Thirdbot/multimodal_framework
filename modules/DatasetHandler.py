@@ -26,7 +26,7 @@ class APIFetch(BaseModel):
     task_categories: Optional[list] = Field(default=[])
     tag: Optional[str] = Field(default=None)
     list_key:Optional[list] = Field(default=[])
-    
+    modality: Optional[str] = Field(default=None)
     model_name:list = Field(default=[])
     datasets_name:list = Field(default=[])
 
@@ -299,7 +299,10 @@ class Manager:
 
         self.data_type = ["models","datasets"]
     
-    def handle_data(self,file_path,model_name:Optional[list]=[],datasets_name:Optional[list]=[],task:Optional[list]=[],model_amount:Optional[int]=1,datasets_amount:Optional[int]=1):
+    def handle_data(self,file_path,model_name:Optional[list]=[],
+                    datasets_name:Optional[list]=[],task:Optional[list]=[],
+                    model_amount:Optional[int]=1,datasets_amount:Optional[int]=1,
+                    modality:Optional[str]=None,search:Optional[str]=None):
         
         if os.path.exists(file_path):
             os.remove(file_path)
@@ -317,6 +320,8 @@ class Manager:
             task_categories=task,
             model_name=model_name,
             datasets_name=datasets_name,
+            modality="modality%3A"+modality if modality else None,
+            search=search,
             # task_categories=['text-generation','image-generation'],
             # author="huggingface",
             # model_name=["beatajackowska/DialoGPT-RickBot"],

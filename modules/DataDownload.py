@@ -30,6 +30,7 @@ class FlexibleDatasetLoader:
                 user_input = input(f"{Fore.YELLOW}Enter the config you want to use: {Style.RESET_ALL}")
                 self.config = user_input
                 self.load(name)
+                return user_input
 
     def get(self):
         return self.dataset
@@ -76,7 +77,7 @@ class DataLoader():
         self.dataset = FlexibleDatasetLoader()
         
         self.datadict = {'model':'',"datasets":[]}
-        
+        self.config = None
         
         # self.load(self.datamodel)
     
@@ -139,9 +140,9 @@ class DataLoader():
 
                     if isinstance(datasets,list):
                         for dataset in datasets:
-                            self.dataset.load(dataset)
+                            self.config = self.dataset.load(dataset)
                     else:
-                        self.dataset.load(datasets)
+                        self.config = self.dataset.load(datasets)
                         
                     
                     datadict = {
