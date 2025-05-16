@@ -19,21 +19,31 @@ class FlexibleDatasetLoader:
         self.trust_remote_code = trust_remote_code
         self.config = None
         self.split = split
+        self.saved_config = {}  # Changed to dict to store configs per dataset
+        self.dataset = None
         
     def load(self,name,config):
         if config is not None:
             try:
-                return load_dataset(name, config, split=self.split,trust_remote_code=self.trust_remote_code)
+                self.dataset = load_dataset(name, config, split=self.split,trust_remote_code=self.trust_remote_code)
+                self.config = config
+                self.saved_config[name] = config  # Store config per dataset
+                return self.config
             except:
-                self.load(name,None)
+                # Try to use a previously saved config for this dataset
+                if name in self.saved_config:
+                    return self.load(name, self.saved_config[name])
+                return self.load(name,None)
+                    
         else:
             configs = get_dataset_config_names(name,trust_remote_code=self.trust_remote_code)
             if isinstance(configs,list):
-                print(f"{Fore.CYAN}Available configs: {configs}{Style.RESET_ALL}")
+                print(f"{Fore.CYAN}Available configs for {name}: {configs}{Style.RESET_ALL}")
                 user_input = input(f"{Fore.YELLOW}Enter the config you want to use: {Style.RESET_ALL}")
                 self.config = user_input
-                self.load(name,user_input)
-                return self.config
+                self.saved_config[name] = user_input  # Store config per dataset
+                return self.load(name,user_input)
+            # return None
 
     def get(self):
         return self.dataset
@@ -80,7 +90,8 @@ class DataLoader():
         self.dataset = FlexibleDatasetLoader()
         
         self.datadict = {'model':'',"datasets":[]}
-        self.config = None
+        self.saved_config = self.dataset.saved_config
+        self.config = self.dataset.config
         
         # self.load(self.datamodel)
     
@@ -146,9 +157,20 @@ class DataLoader():
 
             if diff_model.empty:
                 print(f"{Fore.YELLOW}No new models to install{Style.RESET_ALL}")
-                self.config = self.dataset.load()
-                return failed_models
+                try:
+                    for i, row in compare_df.iterrows():
+                        model = row['model']
+                        datasets = row['datasets']
+                        print(f"{Fore.CYAN}Processing model: {model} with datasets: {datasets}{Style.RESET_ALL}")
 
+                        if isinstance(datasets,list):
+                            for dataset in datasets:
+                                self.config = self.dataset.load(dataset,self.config)
+                        else:
+                            self.config = self.dataset.load(datasets,self.config)
+                except Exception as e:
+                    print(f"{Fore.RED}Error processing model {model}: {str(e)}{Style.RESET_ALL}")
+                    failed_models.append(row)
             for i, row in diff_model.iterrows():
                 try:
                     model = row['model']
@@ -158,9 +180,9 @@ class DataLoader():
 
                     if isinstance(datasets,list):
                         for dataset in datasets:
-                            self.config = self.dataset.load(dataset,self.config)
+                             self.dataset.load(dataset,self.config)
                     else:
-                        self.config = self.dataset.load(datasets,self.config)
+                        self.dataset.load(datasets,self.config)
                         
                     
                     datadict = {
