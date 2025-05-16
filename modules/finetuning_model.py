@@ -280,14 +280,19 @@ class FinetuneModel:
             # Load dataset from Hugging Face
             self.dataset_name = dataset_name
             if config is not None:
-                dataset = load_dataset(dataset_name,config,trust_remote_code=True)
+                    try:
+                        dataset = load_dataset(dataset_name,config[dataset_name],trust_remote_code=True)
+                    except Exception as e:
+                        print(f"{Fore.RED}Error loading dataset {dataset_name}: {str(e)}{Style.RESET_ALL}")
+                        return None
             else:
                 dataset = load_dataset(dataset_name,trust_remote_code=True)
             # print(Fore.YELLOW+"Dataset feature: "+str(dataset.features)+Fore.RESET)
             return dataset
         except Exception as e:
             print(f"{Fore.RED}Error loading dataset {dataset_name}: {str(e)}{Style.RESET_ALL}")
-            return None
+            
+            return load_dataset(dataset_name,config,trust_remote_code=True)
         
     def tokenizer(self):
         try:
