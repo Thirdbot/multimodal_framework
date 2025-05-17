@@ -301,3 +301,10 @@ Dataset: DatasetDict({
         num_rows: 1507
     })
 })
+Model: beatajackowska/DialoGPT-RickBot
+Dataset: DatasetDict({
+    train: Dataset({
+        features: ['input_ids', 'attention_mask'],
+        num_rows: 1507
+    })
+})

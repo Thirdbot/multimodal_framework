@@ -342,7 +342,7 @@ class FinetuneModel:
                 
                 # Common text field names in datasets
                 possible_text_fields = ["text", "content", "sentence", "input", "prompt"]
-                possible_text_extends_columns = ['text']
+                possible_text_extends_columns = ['role']
                 # Find the first matching text field
                 # print(available_fields)
                 text_field = next((field for field in possible_text_fields if field in available_fields), available_fields[0])

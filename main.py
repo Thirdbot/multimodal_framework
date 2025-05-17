@@ -59,9 +59,9 @@ class Main:
         
         self.model_data_params = {
             "model_name":["beatajackowska/DialoGPT-RickBot"],
-            "datasets_name":["facebook/PLM-Image-Auto","theneuralmaze/rick-and-morty-transcripts-sharegpt"],
+            "datasets_name":["OpenAssistant/oasst2","facebook/PLM-Image-Auto"],
             "model_amount":1,
-            "datasets_amount":1,
+            "datasets_amount":2,
             # "datasets_name":["OpenAssistant/oasst2"],
             # "task":["image-to-text"],
             # "search":"image",
@@ -110,6 +110,8 @@ class Main:
 if __name__ == "__main__":
     main = Main()
 
+    main.load_datas()
+    main.runtrain()
     
     manager = ConversationManager(
         model_name="beatajackowska_DialoGPT-RickBot",
