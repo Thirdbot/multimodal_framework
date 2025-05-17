@@ -427,19 +427,23 @@ class FinetuneModel:
     def train_args(self,modelname):
         model_folder =  self.CHECKPOINT_DIR / self.model_task
         output_dir = model_folder / modelname if '/' not in modelname else model_folder / modelname.replace('/', '_')
+        
+        # Ensure checkpoint directory exists
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
         return TrainingArguments(
-            output_dir=output_dir,
-            eval_strategy="no",
+            output_dir=str(output_dir),  # Convert Path to string
+            evaluation_strategy="steps",  # Evaluate every N steps
+            eval_steps=100,  # Evaluate every 100 steps
             learning_rate=self.learning_rate,
             per_device_train_batch_size=self.per_device_train_batch_size,
             per_device_eval_batch_size=self.per_device_eval_batch_size,
             num_train_epochs=self.num_train_epochs,
             weight_decay=0.01,
-            save_strategy=self.save_strategy,
-            save_total_limit=2,
-            save_steps=100,
-            save_only_model=True,
-            logging_dir=self.CHECKPOINT_DIR,
+            save_strategy="steps",  # Save every N steps
+            save_steps=100,  # Save every 100 steps
+            save_total_limit=3,  # Keep last 3 checkpoints
+            logging_dir=str(self.CHECKPOINT_DIR),  # Convert Path to string
             logging_strategy="steps",
             logging_steps=100,
             logging_first_step=True,
@@ -461,7 +465,12 @@ class FinetuneModel:
             length_column_name="length",
             report_to="none",
             resume_from_checkpoint=self.last_checkpoint if self.resume_from_checkpoint else None,
-            load_best_model_at_end=True,
+            load_best_model_at_end=True,  # Load the best model at the end of training
+            metric_for_best_model="eval_loss",  # Use evaluation loss to determine best model
+            greater_is_better=False,  # Lower loss is better
+            save_safetensors=True,  # Save in safetensors format
+            save_only_model=True,  # Only save the model, not the optimizer state
+            overwrite_output_dir=True,  # Overwrite the output directory
         )
     def compute_metrics(self,eval_pred):
         logits, labels = eval_pred
