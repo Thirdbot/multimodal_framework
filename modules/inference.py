@@ -129,20 +129,13 @@ class ModelInference:
             print(f"{Fore.RED}Error loading model: {str(e)}{Style.RESET_ALL}")
             return False
 
-    def generate(self, prompt, max_length=512, temperature=0.7, top_p=0.9, num_return_sequences=1):
+    def generate(self, tokenized_inpnut, max_length=512, temperature=0.7, top_p=0.9, num_return_sequences=1):
         """Generate text based on the prompt"""
         try:
             if self.model is None or self.tokenizer is None:
                 raise ValueError("Model and tokenizer must be loaded first")
             
-            # Tokenize input
-            inputs = self.tokenizer(
-                prompt,
-                return_tensors="pt",
-                padding=True,
-                truncation=True,
-                max_length=max_length
-            ).to(self.device)
+            inputs = tokenized_inpnut.to(self.device)
             
             # Generate
             with torch.no_grad():
