@@ -60,7 +60,7 @@ class Main:
         
         self.model_data_params = {
             "model_name":["beatajackowska/DialoGPT-RickBot"],
-            "datasets_name":["OpenAssistant/oasst2"],
+            "datasets_name":["theneuralmaze/rick-and-morty-transcripts-sharegpt"],
             "model_amount":1,
             "datasets_amount":1,
             # "datasets_name":["OpenAssistant/oasst2"],
@@ -68,14 +68,15 @@ class Main:
             # "search":"image",
             # "modality":"image"
         }
+        self.config = None
         
         # Initialize ChatTemplate
         self.chat_template = None
-
+    def load_datas(self):
         #place holder for load data
         self.dataset_handler.handle_data(self.temporal_file_path,**self.model_data_params)
         #load data from api
-        failed_models = self.data_loader.run(self.model_data_params)
+        self.data_loader.run(self.model_data_params)
         self.config = self.data_loader.saved_config 
         print(f"{Fore.CYAN}Dataset Config:{Style.RESET_ALL} {self.config}")
         
@@ -111,7 +112,8 @@ if __name__ == "__main__":
     main = Main()
     
     # do not run this if youre not have gpu ready
-    main.runtrain()
+    #main.load_datas()
+    # main.runtrain()
       # Example usage
     inference = ModelInference()
     
@@ -122,9 +124,28 @@ if __name__ == "__main__":
         print(f"{Fore.CYAN}Model Info:{Style.RESET_ALL}")
         print(json.dumps(info, indent=2))
         
-        # Generate text
-        prompt = "nigga"
-        results = inference.generate(prompt)
+        # Initialize ChatTemplate with the loaded model's tokenizer
+        chat_template = ChatTemplate(
+            chainpipe=inference.model,
+            tokenizer=inference.tokenizer
+        )
+        
+        # Example of text-only input first to test
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"text": "nigga"}
+                ]
+            }
+        ]
+        
+        # Format the conversation
+        formatted_prompt = chat_template.format_conversation(messages)
+        tokenized_input = chat_template.tokenize_text(formatted_prompt)
+        
+        # Generate text with formatted prompt
+        results = inference.generate(tokenized_input)
         if results:
             print(f"{Fore.CYAN}Generated Text:{Style.RESET_ALL}")
             for i, result in enumerate(results):

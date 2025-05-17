@@ -31,33 +31,33 @@ init(autoreset=True)
 class ChatTemplate:
     """Class for handling chat templates and conversation formatting"""
     
-    def __init__(self,chainpipe, tokenizer=None, model_name=None, template=None):
+    def __init__(self, chainpipe, tokenizer=None, model_name=None, template=None):
         self.chainpipe = chainpipe
-        self.prompt =[
-                dict({  
-                    "role":"user",
-                    "content":[
-                        {"text":""},
-                        {"image":""}
-                    ]
-                }),
-                 dict({
-                    "role":"human",
-                    "content":[
-                        {"text":""},
-                        {"image":""}
-                    ]
-                }),
-                dict({
-                    "role":"assistant",
-                    "content":[{"text":""}]
-                }),
-                dict({
-                    "role":"system",
-                    "content":[{"text":""}]
-                })
-            ]
-       
+        self.tokenizer = tokenizer
+        self.prompt = [
+            dict({  
+                "role": "user",
+                "content": [
+                    {"text": ""},
+                    {"image": ""}
+                ]
+            }),
+            dict({
+                "role": "human",
+                "content": [
+                    {"text": ""},
+                    {"image": ""}
+                ]
+            }),
+            dict({
+                "role": "assistant",
+                "content": [{"text": ""}]
+            }),
+            dict({
+                "role": "system",
+                "content": [{"text": ""}]
+            })
+        ]
         
         self.prompt_map = [key.get('role') for key in self.prompt]
         
@@ -71,44 +71,6 @@ class ChatTemplate:
             self.prompt_map_content[role] = content_types
             
         print(f"Prompt map content: {self.prompt_map_content}")
-        try:
-            if tokenizer is not None:
-                self.tokenizer = tokenizer
-            elif model_name is not None:
-                self.tokenizer = AutoTokenizer.from_pretrained(
-                    model_name,
-                    trust_remote_code=True,
-                    padding_side="right",
-                    truncation_side="right"
-                )
-            else:
-                # Initialize with a default tokenizer if none provided
-                #may be use from save model or gpt
-                self.tokenizer = AutoTokenizer.from_pretrained(
-                    "gpt2",  # Default model
-                    trust_remote_code=True,
-                    padding_side="right",
-                    truncation_side="right"
-                )
-                print(f"{Fore.YELLOW}Warning: No tokenizer or model_name provided, using default GPT-2 tokenizer{Style.RESET_ALL}")
-            
-            # Set chat template
-            if template is not None:
-                #replace template with custom template
-                self.tokenizer.chat_template = self._get_default_chat_template()
-                print(f"{Fore.CYAN}Set custom chat template{Style.RESET_ALL}")
-            elif not hasattr(self.tokenizer, "chat_template") or self.tokenizer.chat_template is None:
-                self.tokenizer.chat_template = self._get_default_chat_template()
-                print(f"{Fore.CYAN}Set default chat template{Style.RESET_ALL}")
-            
-        except Exception as e:
-            print(f"{Fore.RED}Error initializing ChatTemplate: {str(e)}{Style.RESET_ALL}")
-            raise
-    
-    def _get_default_chat_template(self):
-        """Get a default chat template if none is set"""
-        prompt = self.chainpipe.chat_template(self.prompt)
-        return prompt
     
     def format_conversation(self, conversation, mul_field=None, ex_data=None):
         """Format a single conversation into a string"""
@@ -118,40 +80,44 @@ class ChatTemplate:
             
             formatted = []
             possible_keys = [('from','value'),('role','content'),('user','text'),('sender','message'),('author','body')]
+            
             for message in conversation:
                 if isinstance(message, dict):
-                    for keysend,keyrecv in possible_keys:
+                    for keysend, keyrecv in possible_keys:
                         try:
                             role = message[keysend]
                             content = message[keyrecv]
-                            if mul_field is not None and ex_data is not None:
-                                role_idx = self.prompt_map.index(role)
-                                content_types = self.prompt_map_content[role]
-                                if mul_field in content_types:
-                                    field_idx = content_types.index(mul_field)
-                                    self.prompt[role_idx]['content'][field_idx][mul_field] = ex_data
-                                if 'text' in content_types:
-                                    field_idx = content_types.index('text')
-                                    self.prompt[role_idx]['content'][field_idx]['text'] = content
-                            else:
-                                mul_field = "text"
-                                role_idx = self.prompt_map.index(role)
-                                content_types = self.prompt_map_content[role]
-                                if mul_field in content_types:
-                                    field_idx = content_types.index(mul_field)
-                                    self.prompt[role_idx]['content'][field_idx][mul_field] = content
-                            print(f"Updated prompt: {self.prompt}")
+                            
+                            # Find the role index in prompt_map
+                            if role not in self.prompt_map:
+                                continue
+                                
+                            role_idx = self.prompt_map.index(role)
+                            content_types = self.prompt_map_content[role]
+                            
+                            # Update the prompt with content
+                            if 'text' in content_types:
+                                field_idx = content_types.index('text')
+                                self.prompt[role_idx]['content'][field_idx]['text'] = content
+                            
+                            # Update multimodal content if provided
+                            if mul_field is not None and ex_data is not None and mul_field in content_types:
+                                field_idx = content_types.index(mul_field)
+                                self.prompt[role_idx]['content'][field_idx][mul_field] = ex_data
+                            
                             # Convert the prompt to a string format
                             formatted_prompt = self.chainpipe.chat_template(self.prompt)
                             formatted.append(formatted_prompt)
+                            break  # Break after successful formatting
+                            
                         except Exception as e:
-                            # print(f"Error processing message: {str(e)}")
                             continue
                 elif isinstance(message, str):
                     formatted.append(message)
             
             str_formatted = "\n".join(str(msg) for msg in formatted)
             return str_formatted
+            
         except Exception as e:
             print(f"{Fore.YELLOW}Warning: Error formatting conversation: {str(e)}{Style.RESET_ALL}")
             return str(conversation)
