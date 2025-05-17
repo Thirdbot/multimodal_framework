@@ -59,7 +59,7 @@ class FinetuneModel:
         self.per_device_eval_batch_size = 64
         self.gradient_accumulation_steps = 2    
         self.learning_rate = 2e-4
-        self.num_train_epochs = 3
+        self.num_train_epochs =  100      
         self.save_strategy = "best"
         
         # Define paths
