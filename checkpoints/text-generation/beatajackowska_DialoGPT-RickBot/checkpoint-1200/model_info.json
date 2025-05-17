@@ -1,0 +1,13 @@
+{
+    "model_id": "beatajackowska/DialoGPT-RickBot",
+    "model_task": "text-generation",
+    "base_model": "beatajackowska/DialoGPT-RickBot",
+    "finetuned": true,
+    "quantization": "4bit",
+    "lora_config": {
+        "r": 8,
+        "alpha": 16,
+        "dropout": 0.05
+    },
+    "last_checkpoint": null
+}

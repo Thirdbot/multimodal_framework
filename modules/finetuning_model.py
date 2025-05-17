@@ -433,7 +433,7 @@ class FinetuneModel:
         
         return TrainingArguments(
             output_dir=str(output_dir),  # Convert Path to string
-            evaluation_strategy="steps",  # Evaluate every N steps
+            eval_strategy="steps",  # Evaluate every N steps
             eval_steps=100,  # Evaluate every 100 steps
             learning_rate=self.learning_rate,
             per_device_train_batch_size=self.per_device_train_batch_size,
@@ -495,6 +495,7 @@ class FinetuneModel:
             model=model,
             args=self.train_args(modelname),
             train_dataset=train_dataset,
+            eval_dataset=dataset,
             data_collator=data_collator,
             compute_metrics=None  # Disabled metrics since we're not evaluating
         )
