@@ -23,8 +23,7 @@ from modules.defect import Report
 from modules.DataDownload import DataLoader
 from modules.DatasetHandler import Manager as DatasetHandler
 from modules.finetuning_model import Manager as FinetuneModel
-from modules.inference import ModelInference
-from modules.interference import Inference
+from modules.interference import ConversationManager
 from modules.chatTemplate import ChatTemplate
 import argparse
 
@@ -60,7 +59,7 @@ class Main:
         
         self.model_data_params = {
             "model_name":["beatajackowska/DialoGPT-RickBot"],
-            "datasets_name":["theneuralmaze/rick-and-morty-transcripts-sharegpt"],
+            "datasets_name":["facebook/PLM-Image-Auto","theneuralmaze/rick-and-morty-transcripts-sharegpt"],
             "model_amount":1,
             "datasets_amount":1,
             # "datasets_name":["OpenAssistant/oasst2"],
@@ -68,7 +67,7 @@ class Main:
             # "search":"image",
             # "modality":"image"
         }
-        self.config = None
+        self.config = dict()
         
         # Initialize ChatTemplate
         self.chat_template = None
@@ -110,48 +109,39 @@ class Main:
 
 if __name__ == "__main__":
     main = Main()
+
     
-    # do not run this if youre not have gpu ready
-    #main.load_datas()
-    # main.runtrain()
-      # Example usage
-    inference = ModelInference()
+    manager = ConversationManager(
+        model_name="beatajackowska_DialoGPT-RickBot",
+        max_length=100,
+        temperature=0.7,
+        top_p=0.9
+    )
     
-    model_name = "beatajackowska_DialoGPT-RickBot"
-    if inference.load_model(model_name):
-        # Get model info
-        info = inference.get_model_info()
-        print(f"{Fore.CYAN}Model Info:{Style.RESET_ALL}")
-        print(json.dumps(info, indent=2))
+    print(f"{Fore.CYAN}Starting conversation. Type 'quit' to exit.{Style.RESET_ALL}")
+    
+    while True:
+        # Get user input
+        user_input = input(f"{Fore.YELLOW}You: {Style.RESET_ALL}")
+        if user_input.lower() == 'quit':
+            break
         
-        # Initialize ChatTemplate with the loaded model's tokenizer
-        chat_template = ChatTemplate(
-            chainpipe=inference.model,
-            tokenizer=inference.tokenizer
-        )
+        # Generate response
+        response = manager.chat(user_input)
+        if response:
+            print(f"{Fore.GREEN}Assistant: {response}{Style.RESET_ALL}")
+    
+    # Save conversation history
+    conversation_history = manager.get_memory()
+    if conversation_history:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        history_file = main.HomePath / "conversation_history" / f"chat_{timestamp}.json"
+        history_file.parent.mkdir(parents=True, exist_ok=True)
         
-        # Example of text-only input first to test
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {"text": "nigga"}
-                ]
-            }
-        ]
-        
-        # Format the conversation
-        formatted_prompt = chat_template.format_conversation(messages)
-        tokenized_input = chat_template.tokenize_text(formatted_prompt)
-        
-        # Generate text with formatted prompt
-        results = inference.generate(tokenized_input)
-        if results:
-            print(f"{Fore.CYAN}Generated Text:{Style.RESET_ALL}")
-            for i, result in enumerate(results):
-                print(f"{Fore.GREEN}Result {i+1}:{Style.RESET_ALL}")
-                print(result)
-# 
+        with open(history_file, 'w') as f:
+            json.dump(conversation_history, f, indent=2)
+        print(f"{Fore.CYAN}Conversation history saved to {history_file}{Style.RESET_ALL}")
+
 # What To do
 
 #this just addon.

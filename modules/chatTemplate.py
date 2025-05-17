@@ -1,17 +1,3 @@
-# class chatTemplate:
-#     def __init__(self,messages:list[str],role:list[str]=['user','assistant']):
-#         self.messages = messages
-#         self.role = role
-
-#     def createTemplate(self):
-#         for idx, message in enumerate(self.messages):
-#             if message['role'] == 'user':
-#                 print(' ')
-#             print(message['content'])
-#             if not idx == len(self.messages) - 1:  # Check for the last message in the conversation
-#                 print('  ')
-#         print(eos_token)
-
 import os
 # import torch
 from typing import List, Dict, Optional, Union
@@ -72,7 +58,7 @@ class ChatTemplate:
             
         print(f"Prompt map content: {self.prompt_map_content}")
     
-    def format_conversation(self, conversation, mul_field=None, ex_data=None):
+    def format_conversation(self, dataset_name=None, conversation=None, mul_field=None, ex_data=None):
         """Format a single conversation into a string"""
         try:
             if isinstance(conversation, str):
@@ -81,39 +67,74 @@ class ChatTemplate:
             formatted = []
             possible_keys = [('from','value'),('role','content'),('user','text'),('sender','message'),('author','body')]
             
+            # Reset prompt to initial state
+            self.prompt = [
+                dict({  
+                    "role": "user",
+                    "content": [
+                        {"text": ""},
+                        {"image": ""}
+                    ]
+                }),
+                dict({
+                    "role": "human",
+                    "content": [
+                        {"text": ""},
+                        {"image": ""}
+                    ]
+                }),
+                dict({
+                    "role": "assistant",
+                    "content": [{"text": ""}]
+                }),
+                dict({
+                    "role": "system",
+                    "content": [{"text": "You are Rick from Rick and Morty. Respond in character."}]
+                })
+            ]
+            
+            # Build conversation history
+            conversation_text = ""
             for message in conversation:
                 if isinstance(message, dict):
-                    for keysend, keyrecv in possible_keys:
-                        try:
-                            role = message[keysend]
-                            content = message[keyrecv]
-                            
-                            # Find the role index in prompt_map
-                            if role not in self.prompt_map:
-                                continue
-                                
-                            role_idx = self.prompt_map.index(role)
-                            content_types = self.prompt_map_content[role]
-                            
-                            # Update the prompt with content
-                            if 'text' in content_types:
-                                field_idx = content_types.index('text')
-                                self.prompt[role_idx]['content'][field_idx]['text'] = content
-                            
-                            # Update multimodal content if provided
-                            if mul_field is not None and ex_data is not None and mul_field in content_types:
-                                field_idx = content_types.index(mul_field)
-                                self.prompt[role_idx]['content'][field_idx][mul_field] = ex_data
-                            
-                            # Convert the prompt to a string format
-                            formatted_prompt = self.chainpipe.chat_template(self.prompt)
-                            formatted.append(formatted_prompt)
-                            break  # Break after successful formatting
-                            
-                        except Exception as e:
+                    # Handle the new message format
+                    if 'role' in message and 'content' in message:
+                        role = message['role']
+                        content = message['content']
+                        
+                        # Find the role index in prompt_map
+                        if role not in self.prompt_map:
                             continue
-                elif isinstance(message, str):
-                    formatted.append(message)
+                            
+                        role_idx = self.prompt_map.index(role)
+                        content_types = self.prompt_map_content[role]
+                        
+                        # Handle content as a list of dicts
+                        if isinstance(content, list):
+                            for content_item in content:
+                                for field, value in content_item.items():
+                                    if field in content_types:
+                                        field_idx = content_types.index(field)
+                                        self.prompt[role_idx]['content'][field_idx][field] = value
+                                        print(f"{Fore.CYAN}Updated {field} for {role}: {value}{Style.RESET_ALL}")
+                        
+                        # Add to conversation history
+                        if role in ['user', 'human']:
+                            for content_item in content:
+                                if 'text' in content_item and content_item['text']:
+                                    conversation_text += f"Human: {content_item['text']}\n"
+                        elif role == 'assistant':
+                            for content_item in content:
+                                if 'text' in content_item and content_item['text']:
+                                    conversation_text += f"Assistant: {content_item['text']}\n"
+            
+            # Add system prompt and conversation history
+            formatted_prompt = "You are Rick from Rick and Morty. Respond in character.\n\n"
+            formatted_prompt += conversation_text
+            formatted_prompt += "Assistant:"
+            
+            print(f"{Fore.CYAN}Formatted prompt:{Style.RESET_ALL}\n{formatted_prompt}")
+            formatted.append(formatted_prompt)
             
             str_formatted = "\n".join(str(msg) for msg in formatted)
             return str_formatted
@@ -122,7 +143,7 @@ class ChatTemplate:
             print(f"{Fore.YELLOW}Warning: Error formatting conversation: {str(e)}{Style.RESET_ALL}")
             return str(conversation)
     
-    def prepare_dataset(self, dataset, max_length=384):
+    def prepare_dataset(self,dataset_name, dataset, max_length=384):
         """
         Prepare a dataset for training by formatting conversations and tokenizing
         Args:
@@ -159,11 +180,11 @@ class ChatTemplate:
                 formatted_texts = []
                 if mul_field is not None:
                     for conv, ex_data in zip(examples[conv_field], examples[mul_field]):
-                        formatted = self.format_conversation(conv, mul_field, ex_data)
+                        formatted = self.format_conversation(dataset_name,conv, mul_field, ex_data)
                         formatted_texts.append(formatted)
                 else:
                     for conv in examples[conv_field]:
-                        formatted = self.format_conversation(conv)
+                        formatted = self.format_conversation(dataset_name,conv)
                         formatted_texts.append(formatted)
                 
                 # Tokenize
