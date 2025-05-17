@@ -2,9 +2,9 @@
   "best_global_step": 1000,
   "best_metric": 4.734446577003837e-07,
   "best_model_checkpoint": "c:\\Users\\user\\Desktop\\multimodal_agentic\\checkpoints\\text-generation\\beatajackowska_DialoGPT-RickBot\\checkpoint-1000",
-  "epoch": 91.66666666666667,
+  "epoch": 100.0,
   "eval_steps": 100,
-  "global_step": 1100,
+  "global_step": 1200,
   "is_hyper_param_search": false,
   "is_local_process_zero": true,
   "is_world_process_zero": true,
@@ -180,6 +180,21 @@
       "eval_train_samples_per_second": 38.268,
       "eval_train_steps_per_second": 0.609,
       "step": 1100
+    },
+    {
+      "epoch": 100.0,
+      "grad_norm": 0.0007127722492441535,
+      "learning_rate": 4.2307945137265435e-10,
+      "loss": 0.0001,
+      "step": 1200
+    },
+    {
+      "epoch": 100.0,
+      "eval_train_loss": 4.78677748105838e-07,
+      "eval_train_runtime": 36.5002,
+      "eval_train_samples_per_second": 41.287,
+      "eval_train_steps_per_second": 0.658,
+      "step": 1200
     }
   ],
   "logging_steps": 100,
@@ -194,12 +209,12 @@
         "should_evaluate": false,
         "should_log": false,
         "should_save": true,
-        "should_training_stop": false
+        "should_training_stop": true
       },
       "attributes": {}
     }
   },
-  "total_flos": 2.733343877903155e+16,
+  "total_flos": 2.98141242753024e+16,
   "train_batch_size": 64,
   "trial_name": null,
   "trial_params": null

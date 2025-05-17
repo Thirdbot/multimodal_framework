@@ -9,5 +9,5 @@
         "alpha": 16,
         "dropout": 0.05
     },
-    "last_checkpoint": null
+    "last_checkpoint": "c:\\Users\\user\\Desktop\\multimodal_agentic\\checkpoints\\text-generation\\beatajackowska_DialoGPT-RickBot\\checkpoint-1100"
 }
