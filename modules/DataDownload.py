@@ -2,51 +2,98 @@
 import pandas as pd 
 import json
 from datasets import load_dataset, get_dataset_config_names
-from huggingface_hub import hf_hub_download,HfApi
+from huggingface_hub import hf_hub_download, HfApi
 from pathlib import Path
 from colorama import Fore, Style, init
-from modules.DatasetHandler import APIFetch,Convert
+from modules.DatasetHandler import APIFetch, Convert
 from modules.DatasetHandler import Manager
 from transformers import AutoModelForCausalLM
+import os
+import requests
+from urllib.parse import urlparse
+
 # Initialize colorama
 init(autoreset=True)
 
-import os
 # os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 
 class FlexibleDatasetLoader:
-    def __init__(self, split='train',trust_remote_code=True):
+    def __init__(self, split='train', trust_remote_code=True):
         self.trust_remote_code = trust_remote_code
         self.config = None
         self.split = split
         self.saved_config = {}  # Changed to dict to store configs per dataset
         self.dataset = None
+        self.file_paths = {}
+        self.api = HfApi()
         
-    def load(self,name,config):
+        # Set up local repository paths
+        self.WORKSPACE_DIR = Path(__file__).parent.parent.absolute()
+        self.REPO_DIR = self.WORKSPACE_DIR / "repositories"
+        self.DATASETS_DIR = self.REPO_DIR / "datasets" 
+        
+    def load(self, name, config):
         if config is not None:
             try:
-                self.dataset = load_dataset(name, config, split=self.split,trust_remote_code=self.trust_remote_code)
+                # Create dataset directory with name and config
+                dataset_dir = self.DATASETS_DIR / f"{name.replace('/', '_')}_{config}"
+                dataset_dir.mkdir(parents=True, exist_ok=True)
+                
+                # Get the dataset info to find the actual files
+                dataset_info = self.api.dataset_info(name)
+                
+                self.dataset = load_dataset(
+                    name,
+                    config,
+                    split=self.split,
+                    trust_remote_code=self.trust_remote_code
+                )
+                print(f"{Fore.GREEN}Successfully loaded dataset {name} with config {config}{Style.RESET_ALL}")
                 self.config = config
-                self.saved_config[name] = config  # Store config per dataset
-                return self.config
-            except:
-                # Try to use a previously saved config for this dataset
+                self.saved_config[name] = config
+               
+                    
+                # Download each file from the dataset
+                for file_info in dataset_info.siblings:
+                    try:
+                        # Create the target directory if it doesn't exist
+                        target_dir = dataset_dir / os.path.dirname(file_info.rfilename)
+                        target_dir.mkdir(parents=True, exist_ok=True)
+                        
+                        # Download directly to dataset directory
+                        file_path = hf_hub_download(
+                            repo_id=name,
+                            filename=file_info.rfilename,
+                            repo_type="dataset",
+                            local_dir=str(dataset_dir),
+                            local_dir_use_symlinks=False
+                        )
+                        self.file_paths[file_info.rfilename] = file_path
+                        print(f"{Fore.GREEN}Downloaded {file_info.rfilename} to: {file_path}{Style.RESET_ALL}")
+                    except Exception as e:
+                        print(f"{Fore.YELLOW}Warning: Could not download {file_info.rfilename}: {str(e)}{Style.RESET_ALL}")
+                        continue
+                
+            except Exception as e:
                 if name in self.saved_config:
                     return self.load(name, self.saved_config[name])
-                return self.load(name,None)
+                return self.load(name, None)
                     
         else:
-            configs = get_dataset_config_names(name,trust_remote_code=self.trust_remote_code)
-            if isinstance(configs,list):
+            configs = get_dataset_config_names(name, trust_remote_code=self.trust_remote_code)
+            if isinstance(configs, list):
                 print(f"{Fore.CYAN}Available configs for {name}: {configs}{Style.RESET_ALL}")
                 user_input = input(f"{Fore.YELLOW}Enter the config you want to use: {Style.RESET_ALL}")
                 self.config = user_input
-                self.saved_config[name] = user_input  # Store config per dataset
-                return self.load(name,user_input)
-            # return None
+                self.saved_config[name] = user_input
+                return self.load(name, user_input)
 
     def get(self):
         return self.dataset
+
+    def get_local_files(self):
+        """Get the paths to the locally downloaded files"""
+        return self.file_paths
 
 class ModelLoader:
     def __init__(self):
@@ -54,17 +101,31 @@ class ModelLoader:
         self.file_paths = {}
         self.api = HfApi()
         
-    def load_model(self,name):
+        # Set up local repository paths
+        self.WORKSPACE_DIR = Path(__file__).parent.parent.absolute()
+        self.REPO_DIR = self.WORKSPACE_DIR / "repositories"
+        self.REPO_DIR.mkdir(parents=True, exist_ok=True)
+        
+    def load_model(self, name):
         try:
-            files = self.api.list_repo_files(name)
-            for file_info in files:
-                file_name = file_info.rsplit("/", 1)[-1]  # Extract filename
-                file_path = hf_hub_download(
-                    repo_id=name,
-                    filename=file_name
-                )
-                self.file_paths[file_name] = file_path
-                print(f"{Fore.GREEN}{file_name} downloaded to: {self.file_paths[file_name]}{Style.RESET_ALL}")
+    
+            # Get the model info to find the actual files
+            model_info = self.api.model_info(name)
+            
+            # Download each file from the model
+            for file_info in model_info.siblings:
+                try:
+                    file_path = hf_hub_download(
+                        repo_id=name,
+                        filename=file_info.rfilename,
+                        repo_type="model"
+                    )
+                    self.file_paths[file_info.rfilename] = file_path
+                    print(f"{Fore.GREEN}Downloaded {file_info.rfilename} to: {file_path}{Style.RESET_ALL}")
+                except Exception as e:
+                    print(f"{Fore.YELLOW}Warning: Could not download {file_info.rfilename}: {str(e)}{Style.RESET_ALL}")
+                    continue
+                    
         except Exception as e:
             print(f"{Fore.RED}Error downloading model {name}: {str(e)}{Style.RESET_ALL}")
             
