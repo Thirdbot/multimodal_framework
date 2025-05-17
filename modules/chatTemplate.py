@@ -163,7 +163,7 @@ class ChatTemplate:
                             conversation_text += f"Assistant: {content}\n"
                 
                         # Add system prompt and conversation history
-                        formatted_prompt = f"{system_prompt}\n\n" if system_prompt else ""
+                        # formatted_prompt = f"{system_prompt}\n\n" if system_prompt else ""
                         formatted_prompt += conversation_text
                         formatted_prompt += "Assistant:"
                         formatted_prompt = self.chainpipe.chat_template(formatted_prompt)
