@@ -11,7 +11,6 @@
     }
   },
   "bos_token": "<|endoftext|>",
-  "chat_template": "{% for message in messages %}\n            {% if message['role'] == 'user' %}\n                User: {{ message['content'] }}\n            {% elif message['role'] == 'assistant' %}\n                Assistant: {{ message['content'] }}\n            {% elif message['role'] == 'system' %}\n                System: {{ message['content'] }}\n            {% endif %}\n        {% endfor %}",
   "clean_up_tokenization_spaces": false,
   "eos_token": "<|endoftext|>",
   "errors": "replace",

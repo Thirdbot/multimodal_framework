@@ -60,9 +60,9 @@ class Main:
         
         self.model_data_params = {
             "model_name":["beatajackowska/DialoGPT-RickBot"],
-            "datasets_name":["theneuralmaze/rick-and-morty-transcripts-sharegpt"],
+            "datasets_name":["facebook/PLM-Image-Auto"],
             "model_amount":1,
-            "datasets_amount":1,
+            "datasets_amount":2,
             # "datasets_name":["OpenAssistant/oasst2"],
             # "task":["image-to-text"],
             # "search":"image",
@@ -112,8 +112,8 @@ if __name__ == "__main__":
     main = Main()
     
     # do not run this if youre not have gpu ready
-    #main.load_datas()
-    # main.runtrain()
+    main.load_datas()
+    main.runtrain()
       # Example usage
     inference = ModelInference()
     
