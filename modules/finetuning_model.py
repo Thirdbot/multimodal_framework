@@ -204,7 +204,8 @@ class FinetuneModel:
                         low_cpu_mem_usage=True,
                         offload_folder=str(self.OFFLOAD_DIR),
                         offload_state_dict=True,
-                        max_memory={0: "40GB"}
+                        max_memory={0: "40GB"},
+                        use_cache=False  # Disable KV cache during training
                     )
                     
                     # Load the PEFT model with adapter weights
