@@ -148,27 +148,36 @@ class FinetuneModel:
             checkpoint_dir = self.CHECKPOINT_DIR / model_task / model_name
             
             if not checkpoint_dir.exists():
+                print(f"{Fore.YELLOW}No checkpoint directory found at {checkpoint_dir}{Style.RESET_ALL}")
                 return None
             
             # Get all checkpoint directories
             checkpoints = [d for d in checkpoint_dir.iterdir() if d.is_dir() and d.name.startswith("checkpoint-")]
             
             if not checkpoints:
+                print(f"{Fore.YELLOW}No checkpoints found in {checkpoint_dir}{Style.RESET_ALL}")
                 return None
             
             # Sort by checkpoint number and get the latest
             latest_checkpoint = max(checkpoints, key=lambda x: int(x.name.split("-")[1]))
+            
+            # Verify checkpoint integrity
+            if not (latest_checkpoint / "model.safetensors").exists():
+                print(f"{Fore.YELLOW}Latest checkpoint {latest_checkpoint} is incomplete, starting from scratch{Style.RESET_ALL}")
+                return None
+                
+            print(f"{Fore.GREEN}Found valid checkpoint at {latest_checkpoint}{Style.RESET_ALL}")
             return latest_checkpoint
             
         except Exception as e:
-            print(f"{Fore.YELLOW}Warning: Could not find last checkpoint: {str(e)}{Style.RESET_ALL}")
+            print(f"{Fore.RED}Error finding last checkpoint: {str(e)}{Style.RESET_ALL}")
             return None
 
     def load_model(self, model_id, resume_from_checkpoint=False):
         print(f"{Fore.CYAN}retrieve model {model_id}{Style.RESET_ALL}")
         
         self.resume_from_checkpoint = resume_from_checkpoint
-        print(f"Load from last checkpoint at :{self.resume_from_checkpoint}")
+        print(f"Load from last checkpoint: {self.resume_from_checkpoint}")
         
         try:
             # Get model task
@@ -184,9 +193,29 @@ class FinetuneModel:
                 self.last_checkpoint = self.find_last_checkpoint(model_id)
                 if self.last_checkpoint:
                     print(f"{Fore.CYAN}Resuming from checkpoint: {self.last_checkpoint}{Style.RESET_ALL}")
+                    # Load model from checkpoint
+                    model = AutoModelForCausalLM.from_pretrained(
+                        str(self.last_checkpoint),
+                        device_map=self.device_map,
+                        trust_remote_code=True,
+                        torch_dtype=torch.float16,
+                        low_cpu_mem_usage=True,
+                        offload_folder=str(self.OFFLOAD_DIR),
+                        offload_state_dict=True,
+                        max_memory={0: "40GB"}
+                    )
+                    # Load tokenizer from checkpoint
+                    tokenizer = AutoTokenizer.from_pretrained(
+                        str(self.last_checkpoint),
+                        trust_remote_code=True,
+                        padding_side="right",
+                        truncation_side="right"
+                    )
+                    return model, tokenizer
                 else:
-                    print(f"{Fore.YELLOW}No checkpoint found, starting from scratch{Style.RESET_ALL}")
+                    print(f"{Fore.YELLOW}No valid checkpoint found, starting from scratch{Style.RESET_ALL}")
             
+            # If not resuming or no valid checkpoint found, load from base model
             # Load tokenizer first
             tokenizer = AutoTokenizer.from_pretrained(
                 model_id,
