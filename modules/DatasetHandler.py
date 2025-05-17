@@ -336,14 +336,6 @@ class Manager:
                             ,keyword="id",model_amount=model_amount,datasets_amount=datasets_amount)
         return    converter.convert_to_json(file_path)
         
-    
-        
-
-        
-        
-        
-        
-        
         
 # Example usage
 if __name__ == "__main__":

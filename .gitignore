@@ -4,4 +4,6 @@ __pycache__
 # checkpoints
 DataModel_config/
 
+conversation_history/
+repositories/
 # models/

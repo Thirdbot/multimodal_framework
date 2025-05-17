@@ -281,7 +281,7 @@ class FinetuneModel:
             self.dataset_name = dataset_name
             if config is not None:
                     try:
-                        dataset = load_dataset(dataset_name,config[dataset_name],trust_remote_code=True)
+                        dataset = load_dataset(dataset_name,config,trust_remote_code=True)
                     except Exception as e:
                         print(f"{Fore.RED}Error loading dataset {dataset_name}: {str(e)}{Style.RESET_ALL}")
                         return None
@@ -325,6 +325,7 @@ class FinetuneModel:
                 # Use ChatTemplate to prepare the dataset
                 try:
                     tokenized_dataset = self.chat_template.prepare_dataset(
+                        self.dataset_name,
                         dataset,
                         max_length=max_length
                     )
@@ -341,7 +342,7 @@ class FinetuneModel:
                 
                 # Common text field names in datasets
                 possible_text_fields = ["text", "content", "sentence", "input", "prompt"]
-                possible_text_extends_columns = ['text']
+                possible_text_extends_columns = ['role']
                 # Find the first matching text field
                 # print(available_fields)
                 text_field = next((field for field in possible_text_fields if field in available_fields), available_fields[0])
@@ -356,57 +357,12 @@ class FinetuneModel:
                 
             
                 tokenized_dataset = self.chat_template.prepare_dataset(
+                        self.dataset_name,
                         dataset,
                         max_length=max_length
                     )
                 print(f"{Fore.GREEN}Successfully prepared chat dataset{Style.RESET_ALL}")
                 return tokenized_dataset
-                # def tokenize_function(examples):
-                #     possible_extends_word = ['role']
-                #     texts = examples[text_field]
-            
-                #     if isinstance(texts, (int, float)):
-                #         texts = str(texts)
-                        
-                #     elif isinstance(texts, list):
-                #         holder = []
-                #         if text_field in possible_text_extends_columns:
-                #             for word in possible_extends_word:
-                #                 if word in available_fields:
-                #                     for role,text in zip(examples[word],texts):
-                #                         combined_text = role + ':' + text
-                #                         holder.append(combined_text)
-                #                     texts = holder
-                #                 else:
-                #                     texts = texts
-                #     elif isinstance(texts, str):
-                #         #not testing this yet
-                #         if text_field in possible_text_extends_columns:
-                #             for word in possible_extends_word:
-                #                 if word in available_fields:
-                #                     texts = examples[word] + ':' + texts
-                #                 else:
-                #                     texts = texts
-                    
-                #         texts = str(texts)
-                    
-                #     print(f"{texts}\n")
-                #     return tokenizer(
-                #         texts,
-                #         padding="max_length",
-                #         truncation=True,
-                #         max_length=max_length,
-                #         return_tensors="pt"
-                #     )
-        
-                # tokenized_dataset = dataset.map(
-                #     tokenize_function,
-                #     batched=True,
-                #     remove_columns=dataset["train"].column_names if "train" in dataset else dataset.column_names,
-                #     num_proc=2
-                # )
-                
-                # return tokenized_dataset
             
         except Exception as e:
             print(f"{Fore.RED}Error tokenizing dataset: {str(e)}{Style.RESET_ALL}")
@@ -559,7 +515,8 @@ class Manager:
                     datasets = el["datasets"]
                     
                     for dataset_name in datasets:
-                        dataset = self.finetune_model.load_dataset(dataset_name,config)
+                        print(f"{Fore.CYAN}Loading dataset'config: {dataset_name} {config[dataset_name]}{Style.RESET_ALL}")
+                        dataset = self.finetune_model.load_dataset(dataset_name,config[dataset_name])
                        
                         # Process and tokenize the dataset
                         processed_dataset = self.finetune_model.map_tokenizer(tokenizer, dataset)
