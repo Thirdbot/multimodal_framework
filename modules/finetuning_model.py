@@ -337,6 +337,7 @@ class FinetuneModel:
                     is_chat_dataset = False  # Fall back to regular processing
             
             if not is_chat_dataset:
+                #change it to conversation dataset instead no matter it type
                 # Handle regular text datasets
                 print(f"{Fore.CYAN}Detected regular text dataset{Style.RESET_ALL}")
                 
