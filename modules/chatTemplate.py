@@ -36,10 +36,6 @@ class ChatTemplate:
                 ]
             }),
             dict({
-                "role": "gpt",
-                "content": [{"text": ""}]
-            }),
-            dict({
                 "role": "assistant",
                 "content": [{"text": ""}]
             }),
@@ -57,13 +53,12 @@ class ChatTemplate:
             role = prompt['role']
             content_types = []
             for content in prompt['content']:
-                content_types.append(list(content.keys())[0])  # Get the first key from each content dict
+                content_types.append(list(content.keys())[0]) 
             self.prompt_map_content[role] = content_types
             
         print(f"Prompt map content: {self.prompt_map_content}")
     
-    def format_conversation(self, dataset_name=None, conversation=None, mul_field=None, ex_data=None,is_train=True):
-        
+    def format_conversation(self, dataset_name=None, conversation=None, mul_field=None, ex_data=None, is_train=True):
         """Format a single conversation into a string"""
         try:
             if isinstance(conversation, str):
@@ -74,14 +69,17 @@ class ChatTemplate:
             str_formatted = ""
             
             # Reset prompt to initial state but preserve system prompt if it exists
-            system_prompt = None
-            for msg in conversation:
-                if isinstance(msg, dict) and msg.get('role') == 'system':
-                    for content in msg.get('content', []):
-                        if 'text' in content:
-                            system_prompt = content['text']
-                            break
-                    break
+            # system_prompt = None
+            # for msg in conversation:
+            #     for key, value in possible_keys:
+            #         if isinstance(msg, dict) and msg.get(key) == 'system':
+            #             for content in msg.get('content', []):
+            #                 if 'text' in content:
+            #                     system_prompt = content['text']
+            #                     break
+            #         else:
+            #             continue
+            #     break
             
             self.prompt = [
                 dict({  
@@ -99,21 +97,14 @@ class ChatTemplate:
                     ]
                 }),
                 dict({
-                    "role": "gpt",
-                    "content": [{"text": ""}]
-                }),
-                dict({
                     "role": "assistant",
                     "content": [{"text": ""}]
                 }),
                 dict({
                     "role": "system",
-                    "content": [{"text": system_prompt if system_prompt else ""}]
+                    "content": [{"text": ""}]
                 })
             ]
-            
-            # Update prompt map after resetting prompt
-            # self.prompt_map = [key.get('role') for key in self.prompt]
             
             # Build conversation history
             conversation_text = ""
@@ -126,7 +117,10 @@ class ChatTemplate:
                                 role = message[key]
                                 content = message[value]
                                 
-                                # Find the role index in prompt_map
+                                
+                                if role == 'gpt':
+                                    role = 'assistant'
+                                
                                 if role not in self.prompt_map:
                                     continue
                                     
@@ -145,41 +139,37 @@ class ChatTemplate:
                                     # Handle single content value
                                     field_idx = content_types.index('text')
                                     self.prompt[role_idx]['content'][field_idx]['text'] = content
+                                    print(f"{Fore.CYAN}Updated text for {role}: {content}{Style.RESET_ALL}")
                                 
                                 # Handle multimodal data if present
                                 if mul_field is not None and ex_data is not None and mul_field in content_types:
                                     field_idx = content_types.index(mul_field)
                                     self.prompt[role_idx]['content'][field_idx][mul_field] = ex_data
-                                
+                                    
                                 formatted_prompt = self.chainpipe.chat_template(self.prompt)
-                                print(f"{Fore.CYAN}Current prompt state:{Style.RESET_ALL}\n{self.prompt}")
+                                print(f"{Fore.CYAN}Formatted prompt:{Style.RESET_ALL}\n{self.prompt}")
                                 formatted.append(formatted_prompt)
-                                
+                            
                             except Exception as e:
                                 continue
                     
                     if not is_train:
-                        role = message.get('role')
-                        content = message.get('content', [])
+                        role = message.get('role', message.get('from', ''))
+                        content = message.get('content', message.get('value', ''))
                         
                         if role in ['user', 'human']:
-                            for content_item in content:
-                                if 'text' in content_item and content_item['text']:
-                                    conversation_text += f"Human: {content_item['text']}\n"
-                        elif role == 'assistant':
-                            for content_item in content:
-                                if 'text' in content_item and content_item['text']:
-                                    conversation_text += f"Assistant: {content_item['text']}\n"
-            
-            if not is_train:
-                # Add system prompt and conversation history
-                formatted_prompt = f"{system_prompt}\n\n" if system_prompt else ""
-                formatted_prompt += conversation_text
-                formatted_prompt += "Assistant:"
+                            conversation_text += f"Human: {content}\n"
+                        elif role in ['assistant', 'gpt']:
+                            conversation_text += f"Assistant: {content}\n"
                 
-                print(f"{Fore.CYAN}Formatted prompt:{Style.RESET_ALL}\n{formatted_prompt}")
-                formatted.append(formatted_prompt)
-            
+                        # Add system prompt and conversation history
+                        # formatted_prompt = f"{system_prompt}\n\n" if system_prompt else ""
+                        formatted_prompt += conversation_text
+                        formatted_prompt += "Assistant:"
+                        formatted_prompt = self.chainpipe.chat_template(formatted_prompt)
+                        print(f"{Fore.CYAN}Formatted prompt:{Style.RESET_ALL}\n{formatted_prompt}")
+                        formatted.append(formatted_prompt)
+                    
             str_formatted = "\n".join(str(msg) for msg in formatted)
             return str_formatted
             
@@ -187,7 +177,7 @@ class ChatTemplate:
             print(f"{Fore.YELLOW}Warning: Error formatting conversation: {str(e)}{Style.RESET_ALL}")
             return str(conversation)
     
-    def prepare_dataset(self,dataset_name, dataset, max_length=384):
+    def prepare_dataset(self, dataset_name, dataset, max_length=384):
         """
         Prepare a dataset for training by formatting conversations and tokenizing
         Args:
@@ -211,7 +201,7 @@ class ChatTemplate:
                 print(f"{Fore.YELLOW}No conversation field found, using first available field{Style.RESET_ALL}")
                 conv_field = available_fields[0]
             
-            def process_examples(examples):
+            def process_examples(examples, batch_size=32):  # Increased batch size for CPU processing
                 multimodal_fields = ['image','audio','video']
         
                 mul_field = None
@@ -220,19 +210,31 @@ class ChatTemplate:
                         mul_field = field
                         break
                     
-                # Format conversations
+                # Format conversations in batches
                 formatted_texts = []
                 if mul_field is not None:
-                    for conv, ex_data in zip(examples[conv_field], examples[mul_field]):
-                        formatted = self.format_conversation(dataset_name,conv, mul_field, ex_data)
-                        formatted_texts.append(formatted)
+                    # Process multimodal data in batches
+                    for i in range(0, len(examples[conv_field]), batch_size):
+                        batch_convs = examples[conv_field][i:i + batch_size]
+                        batch_data = examples[mul_field][i:i + batch_size]
+                        
+                        batch_formatted = []
+                        for conv, ex_data in zip(batch_convs, batch_data):
+                            formatted = self.format_conversation(dataset_name, conv, mul_field, ex_data)
+                            batch_formatted.append(formatted)
+                        formatted_texts.extend(batch_formatted)
                 else:
-                    for conv in examples[conv_field]:
-                        formatted = self.format_conversation(dataset_name,conv)
-                        formatted_texts.append(formatted)
-                        print(f"{Fore.CYAN}Formatted text:{Style.RESET_ALL}\n{formatted}")
+                    # Process regular conversations in batches
+                    for i in range(0, len(examples[conv_field]), batch_size):
+                        batch_convs = examples[conv_field][i:i + batch_size]
+                        
+                        batch_formatted = []
+                        for conv in batch_convs:
+                            formatted = self.format_conversation(dataset_name, conv)
+                            batch_formatted.append(formatted)
+                        formatted_texts.extend(batch_formatted)
                 
-                # Tokenize
+                # Tokenize on CPU with larger batch size
                 tokenized = self.tokenizer(
                     formatted_texts,
                     padding="max_length",
@@ -241,15 +243,15 @@ class ChatTemplate:
                     return_tensors="pt"
                 )
                 
-                
                 return tokenized
             
-            # Process the dataset
+            # Process the dataset with CPU-based batched processing
             tokenized_dataset = dataset.map(
                 process_examples,
                 batched=True,
+                batch_size=32,  # Larger batch size for CPU processing
                 remove_columns=dataset["train"].column_names if "train" in dataset else dataset.column_names,
-                num_proc=2
+                num_proc=4  # Increased number of processes for CPU
             )
             
             print(f"{Fore.GREEN}Successfully prepared dataset with {len(tokenized_dataset)} examples{Style.RESET_ALL}")
