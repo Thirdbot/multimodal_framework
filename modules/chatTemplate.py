@@ -36,10 +36,6 @@ class ChatTemplate:
                 ]
             }),
             dict({
-                "role": "gpt",
-                "content": [{"text": ""}]
-            }),
-            dict({
                 "role": "assistant",
                 "content": [{"text": ""}]
             }),
@@ -57,7 +53,7 @@ class ChatTemplate:
             role = prompt['role']
             content_types = []
             for content in prompt['content']:
-                content_types.append(list(content.keys())[0])  # Get the first key from each content dict
+                content_types.append(list(content.keys())[0]) 
             self.prompt_map_content[role] = content_types
             
         print(f"Prompt map content: {self.prompt_map_content}")
@@ -99,10 +95,6 @@ class ChatTemplate:
                     ]
                 }),
                 dict({
-                    "role": "gpt",
-                    "content": [{"text": ""}]
-                }),
-                dict({
                     "role": "assistant",
                     "content": [{"text": ""}]
                 }),
@@ -111,9 +103,6 @@ class ChatTemplate:
                     "content": [{"text": system_prompt if system_prompt else ""}]
                 })
             ]
-            
-            # Update prompt map after resetting prompt
-            # self.prompt_map = [key.get('role') for key in self.prompt]
             
             # Build conversation history
             conversation_text = ""
@@ -127,6 +116,11 @@ class ChatTemplate:
                                 content = message[value]
                                 
                                 # Find the role index in prompt_map
+                                
+                                
+                                if role == 'gpt':
+                                    role = 'assistant'
+                                
                                 if role not in self.prompt_map:
                                     continue
                                     
@@ -150,11 +144,11 @@ class ChatTemplate:
                                 if mul_field is not None and ex_data is not None and mul_field in content_types:
                                     field_idx = content_types.index(mul_field)
                                     self.prompt[role_idx]['content'][field_idx][mul_field] = ex_data
-                                
+                                    
                                 formatted_prompt = self.chainpipe.chat_template(self.prompt)
-                                print(f"{Fore.CYAN}Current prompt state:{Style.RESET_ALL}\n{self.prompt}")
+                                print(f"{Fore.CYAN}Formatted prompt:{Style.RESET_ALL}\n{self.prompt}")
                                 formatted.append(formatted_prompt)
-                                
+                            
                             except Exception as e:
                                 continue
                     
@@ -176,7 +170,7 @@ class ChatTemplate:
                 formatted_prompt = f"{system_prompt}\n\n" if system_prompt else ""
                 formatted_prompt += conversation_text
                 formatted_prompt += "Assistant:"
-                
+                formatted_prompt = self.chainpipe.chat_template(formatted_prompt)
                 print(f"{Fore.CYAN}Formatted prompt:{Style.RESET_ALL}\n{formatted_prompt}")
                 formatted.append(formatted_prompt)
             
