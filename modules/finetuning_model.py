@@ -337,8 +337,10 @@ class FinetuneModel:
                     is_chat_dataset = False  # Fall back to regular processing
             
             if not is_chat_dataset:
+                #change it to conversation dataset instead no matter it type
                 # Handle regular text datasets
                 print(f"{Fore.CYAN}Detected regular text dataset{Style.RESET_ALL}")
+                
                 
                 # Common text field names in datasets
                 possible_text_fields = ["text", "content", "sentence", "input", "prompt"]
@@ -360,7 +362,7 @@ class FinetuneModel:
                         self.dataset_name,
                         dataset,
                         max_length=max_length
-                    )
+                )
                 print(f"{Fore.GREEN}Successfully prepared chat dataset{Style.RESET_ALL}")
                 return tokenized_dataset
             
