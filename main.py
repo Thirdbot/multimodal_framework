@@ -58,10 +58,15 @@ class Main:
         self.finetune_model = FinetuneModel(model_data_json_path=self.model_data_json_path)
         
         self.model_data_params = {
+<<<<<<< Updated upstream
             "model_name":["beatajackowska/DialoGPT-RickBot"],
             "datasets_name":["OpenAssistant/oasst2"],
             "model_amount":1,
             "datasets_amount":2,
+=======
+            "model_name":["beatajackowska/DialoGPT-RickBot","kyutai/helium-1-2b"],
+            "datasets_name":["theneuralmaze/rick-and-morty-transcripts-sharegpt","OpenAssistant/oasst2"],
+>>>>>>> Stashed changes
             # "datasets_name":["OpenAssistant/oasst2"],
             # "task":["image-to-text"],
             # "search":"image",
