@@ -64,22 +64,9 @@ class ChatTemplate:
             if isinstance(conversation, str):
                 return conversation
             
-            formatted = []
             possible_keys = [('from','value'),('role','content'),('user','text'),('sender','message'),('author','body')]
             str_formatted = ""
-            
-            # Reset prompt to initial state but preserve system prompt if it exists
-            # system_prompt = None
-            # for msg in conversation:
-            #     for key, value in possible_keys:
-            #         if isinstance(msg, dict) and msg.get(key) == 'system':
-            #             for content in msg.get('content', []):
-            #                 if 'text' in content:
-            #                     system_prompt = content['text']
-            #                     break
-            #         else:
-            #             continue
-            #     break
+    
             
             self.prompt = [
                 dict({  
@@ -107,39 +94,45 @@ class ChatTemplate:
             ]
             
             # Build conversation history
-            conversation_text = ""
+            prompt_text = ""
             for message in conversation:
                 if isinstance(message, dict):
+                    prompt_text = ""
                     # Handle the new message format
                     if is_train:
                         for key, value in possible_keys:
                             try:
-                                role = message[key]
-                                content = message[value]
-                                
-                                
-                                if role == 'gpt':
-                                    role = 'assistant'
-                                
-                                if role not in self.prompt_map:
-                                    continue
-                                    
-                                role_idx = self.prompt_map.index(role)
-                                content_types = self.prompt_map_content[role]
-                                
-                                # Handle content as a list of dicts
-                                if isinstance(content, list):
-                                    for content_item in content:
-                                        for field, value in content_item.items():
-                                            if field in content_types:
-                                                field_idx = content_types.index(field)
-                                                self.prompt[role_idx]['content'][field_idx][field] = value
-                                                #print(f"{Fore.CYAN}Updated {field} for {role}: {value}{Style.RESET_ALL}")
+                                valid_array = message.get(key,None)
+                                if "system" in valid_array:
+                                    #instruction dataset
+                                    pass
                                 else:
-                                    # Handle single content value
-                                    field_idx = content_types.index('text')
-                                    self.prompt[role_idx]['content'][field_idx]['text'] = content
-                                    #print(f"{Fore.CYAN}Updated text for {role}: {content}{Style.RESET_ALL}")
+                                    #chat converation without system
+                                    role = message[key]
+                                    content = message[value]
+                                    
+                                    if role == 'gpt':
+                                        role = 'assistant'
+                                    
+                                    if role not in self.prompt_map:
+                                        continue
+                                        
+                                    role_idx = self.prompt_map.index(role)
+                                    content_types = self.prompt_map_content[role]
+                                    
+                                    # Handle content as a list of dicts
+                                    if isinstance(content, list):
+                                        for content_item in content:
+                                            for field, value in content_item.items():
+                                                if field in content_types:
+                                                    field_idx = content_types.index(field)
+                                                    self.prompt[role_idx]['content'][field_idx][field] = value
+                                                    #print(f"{Fore.CYAN}Updated {field} for {role}: {value}{Style.RESET_ALL}")
+                                    else:
+                                        # Handle single content value
+                                        field_idx = content_types.index('text')
+                                        self.prompt[role_idx]['content'][field_idx]['text'] = content
+                                        #print(f"{Fore.CYAN}Updated text for {role}: {content}{Style.RESET_ALL}")
                                 
                                 # Handle multimodal data if present
                                 if mul_field is not None and ex_data is not None and mul_field in content_types:
@@ -147,8 +140,13 @@ class ChatTemplate:
                                     self.prompt[role_idx]['content'][field_idx][mul_field] = ex_data
                                     
                                 formatted_prompt = self.chainpipe.chat_template(self.prompt)
+                                
+                                for msg in formatted_prompt:
+                                    prompt_text += f"Role: {msg.__class__.__name__},Content: {msg.content}\n"
                                #  print(f"{Fore.CYAN}Formatted prompt:{Style.RESET_ALL}\n{self.prompt}")
-                                formatted.append(formatted_prompt)
+                                print(f"{Fore.CYAN}Formatted prompt:{Style.RESET_ALL}\n{prompt_text}")
+                                
+                                
                             
                             except Exception as e:
                                 continue
@@ -168,10 +166,9 @@ class ChatTemplate:
                         formatted_prompt += "Assistant:"
                         formatted_prompt = self.chainpipe.chat_template(formatted_prompt)
                         # print(f"{Fore.CYAN}Formatted prompt:{Style.RESET_ALL}\n{formatted_prompt}")
-                        formatted.append(formatted_prompt)
-                    
-            str_formatted = "\n".join(str(msg) for msg in formatted)
-            return str_formatted
+                        
+            
+            return prompt_text
             
         except Exception as e:
             print(f"{Fore.YELLOW}Warning: Error formatting conversation: {str(e)}{Style.RESET_ALL}")
@@ -191,8 +188,8 @@ class ChatTemplate:
             first_example = dataset["train"][0] if "train" in dataset else dataset[0]
             available_fields = list(first_example.keys())
             
-            conv_field = None
-            for field in ["conversations", "messages", "chat"]:
+        
+            for field in ["conversations", "messages", "chat","prompt"]:
                 if field in available_fields:
                     conv_field = field
                     break
@@ -202,7 +199,9 @@ class ChatTemplate:
                 conv_field = available_fields[0]
             
             def process_examples(examples, batch_size=32):  # Increased batch size for CPU processing
+                #since it outer column
                 multimodal_fields = ['image','audio','video']
+                preference_field = ['chosen','rejected']
         
                 mul_field = None
                 for field in multimodal_fields:

@@ -378,7 +378,9 @@ class FinetuneModel:
             available_fields = list(first_example.keys())
             
             # Check if this is a chat/conversation dataset
-            is_chat_dataset = "conversations" in available_fields or "messages" in available_fields
+            is_chat_dataset = "conversations" in available_fields or "messages" in available_fields or "propmt" in available_fields
+            is_text_dataset = "text" in available_fields
+            is_not_formatted_dataset = not is_chat_dataset or not is_text_dataset
             
             if is_chat_dataset:
                 print(f"{Fore.CYAN}Detected chat/conversation dataset{Style.RESET_ALL}")
@@ -397,7 +399,7 @@ class FinetuneModel:
                     print(f"{Fore.YELLOW}Falling back to regular text processing{Style.RESET_ALL}")
                     is_chat_dataset = False  # Fall back to regular processing
             
-            if not is_chat_dataset:
+            if is_text_dataset:
                 #change it to conversation dataset instead no matter it type
                 # Handle regular text datasets
                 print(f"{Fore.CYAN}Detected regular text dataset{Style.RESET_ALL}")
@@ -418,13 +420,18 @@ class FinetuneModel:
                 print(f"{Fore.CYAN}Using field '{text_field}' for tokenization{Style.RESET_ALL}")
                 
                 
+                
             
-                tokenized_dataset = self.chat_template.prepare_dataset(
-                        self.dataset_name,
-                        dataset,
-                        max_length=max_length
-                )
+                # tokenized_dataset = self.chat_template.prepare_dataset(
+                #         self.dataset_name,
+                #         dataset,
+                #         max_length=max_length
+                # )
                 print(f"{Fore.GREEN}Successfully prepared chat dataset{Style.RESET_ALL}")
+                return tokenized_dataset
+            
+            if is_not_formatted_dataset:
+                #formatted chat
                 return tokenized_dataset
             
         except Exception as e:
@@ -494,14 +501,14 @@ class FinetuneModel:
         
         return TrainingArguments(
             output_dir=str(output_dir),  # Convert Path to string
-            eval_strategy="steps",  # Evaluate every N steps
-            eval_steps=100,  # Evaluate every 100 steps
             learning_rate=self.learning_rate,
             per_device_train_batch_size=self.per_device_train_batch_size,
             per_device_eval_batch_size=self.per_device_eval_batch_size,
             num_train_epochs=self.num_train_epochs,
             weight_decay=0.01,
             save_strategy="steps",  # Save every N steps
+            eval_strategy="steps",  # Evaluate every N steps
+            eval_steps=100,  # Evaluate every 100 steps
             save_steps=100,  # Save every 100 steps
             save_total_limit=3,  # Keep last 3 checkpoints
             logging_dir=str(self.CHECKPOINT_DIR),  # Convert Path to string
@@ -546,20 +553,28 @@ class FinetuneModel:
             mlm=False  # We're doing causal language modeling, not masked language modeling
         )
         
-        # Handle dataset splitting
-        if isinstance(dataset, DatasetDict):
-            train_dataset = dataset['train']
-        else:
-            # If it's a single dataset, use it directly for training
-            train_dataset = dataset
-        
+        try:
+            if isinstance(dataset, DatasetDict):
+                train_dataset = dataset.get('train',dataset)
+                eval_dataset = dataset.get('test',dataset)
+            else:
+                  # If it's a single dataset, split it into train and validation
+                split_dataset = dataset.train_test_split(test_size=0.1, seed=42)
+                train_dataset = split_dataset['train']
+                eval_dataset = split_dataset['test']
+        except:
+                # If it's a single dataset, split it into train and validation
+                split_dataset = dataset.train_test_split(test_size=0.1, seed=42)
+                train_dataset = split_dataset['train']
+                eval_dataset = split_dataset['test']
+
         return Trainer(
             model=model,
             args=self.train_args(modelname),
             train_dataset=train_dataset,
-            eval_dataset=dataset,
+            eval_dataset=eval_dataset,
             data_collator=data_collator,
-            compute_metrics=None  # Disabled metrics since we're not evaluating
+            compute_metrics=self.compute_metrics
         )
 
 class Manager:
@@ -600,15 +615,15 @@ class Manager:
                             combined_dataset = processed_dataset
                             print(combined_dataset)
                         else:
-                            # Concatenate train splits if both datasets have them
-                            if "train" in combined_dataset and "train" in processed_dataset:
-                                combined_dataset["train"] = concatenate_datasets([
-                                    combined_dataset["train"], 
-                                    processed_dataset["train"]
-                                ])
-                            # If only one has train split, use that
-                            elif "train" in processed_dataset:
-                                combined_dataset["train"] = processed_dataset["train"]
+                            # Handle both train and validation splits
+                            for split in ['train', 'validation']:
+                                if split in combined_dataset and split in processed_dataset:
+                                    combined_dataset[split] = concatenate_datasets([
+                                        combined_dataset[split], 
+                                        processed_dataset[split]
+                                    ])
+                                elif split in processed_dataset:
+                                    combined_dataset[split] = processed_dataset[split]
                     
                     # Set the final combined dataset
                     dataset = combined_dataset

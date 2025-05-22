@@ -58,15 +58,10 @@ class Main:
         self.finetune_model = FinetuneModel(model_data_json_path=self.model_data_json_path)
         
         self.model_data_params = {
-<<<<<<< Updated upstream
             "model_name":["beatajackowska/DialoGPT-RickBot"],
-            "datasets_name":["OpenAssistant/oasst2"],
+            "datasets_name":["theneuralmaze/rick-and-morty-transcripts-sharegpt"],
             "model_amount":1,
             "datasets_amount":2,
-=======
-            "model_name":["beatajackowska/DialoGPT-RickBot","kyutai/helium-1-2b"],
-            "datasets_name":["theneuralmaze/rick-and-morty-transcripts-sharegpt","OpenAssistant/oasst2"],
->>>>>>> Stashed changes
             # "datasets_name":["OpenAssistant/oasst2"],
             # "task":["image-to-text"],
             # "search":"image",
@@ -116,7 +111,7 @@ if __name__ == "__main__":
     main = Main()
 
     main.load_datas()
-    # main.runtrain()
+    main.runtrain()
     
     manager = ConversationManager(
         model_name="beatajackowska_DialoGPT-RickBot",
@@ -150,10 +145,10 @@ if __name__ == "__main__":
         print(f"{Fore.CYAN}Conversation history saved to {history_file}{Style.RESET_ALL}")
 
 # What To do
-#fix datamodel config for newly add datasets or model to not be sensity on different model
-#try cut conner of chat template
+# #try cut conner of chat template
 #handle various of datasets downloadble files need each column
-
+#create template dataset
+#auto fallback dataset load request when failed to tokenize a dataset in case of naming convension
 
 #this just addon.
 # create api for model
