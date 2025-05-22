@@ -46,7 +46,8 @@ class FlexibleDatasetLoader:
                     name,
                     config,
                     split=self.split,
-                    trust_remote_code=self.trust_remote_code
+                    trust_remote_code=self.trust_remote_code,
+                    # cache_dir=dataset_dir
                 )
                 print(f"{Fore.GREEN}Successfully loaded dataset {name} with config {config}{Style.RESET_ALL}")
                 self.config = config
@@ -207,15 +208,48 @@ class DataLoader():
                     failed_models.append(row)
             return failed_models
         else:
+            
             base_df['datasets'] = base_df['datasets'].apply(lambda x: sorted(x))
             compare_df['datasets'] = compare_df['datasets'].apply(lambda x: sorted(x))
-            base_df['__row__'] = base_df.apply(lambda row: json.dumps(row.to_dict(), sort_keys=True), axis=1)
-            compare_df['__row__'] = compare_df.apply(lambda row: json.dumps(row.to_dict(), sort_keys=True), axis=1)
             
-            diff_model = base_df[~base_df['__row__'].isin(compare_df['__row__'])]
-            diff_model = diff_model.drop(columns='__row__').to_dict(orient='records')
-            diff_model = pd.DataFrame(diff_model)
-
+            # Group by model and combine datasets, explicitly removing duplicates
+            def combine_datasets(x):
+                # Flatten the list of lists and remove duplicates
+                all_datasets = [item for sublist in x for item in sublist]
+                # Remove empty or None datasets
+                all_datasets = [ds for ds in all_datasets if ds and isinstance(ds, str) and ds.strip()]
+                # Convert to lowercase for case-insensitive comparison
+                all_datasets = [ds for ds in all_datasets]
+                unique_datasets = sorted(list(set(all_datasets)))
+                print(f"{Fore.CYAN}Combining datasets for model. Original: {all_datasets}, After removing duplicates: {unique_datasets}{Style.RESET_ALL}")
+                return unique_datasets
+            
+            # Remove rows with empty model names
+            base_df = base_df[base_df['model'].notna() & (base_df['model'] != '')]
+            compare_df = compare_df[compare_df['model'].notna() & (compare_df['model'] != '')]
+            
+            base_df = base_df.groupby('model')['datasets'].agg(combine_datasets).reset_index()
+            compare_df = compare_df.groupby('model')['datasets'].agg(combine_datasets).reset_index()
+            
+            # Find models that are in base_df but not in compare_df (new models)
+            new_models = base_df[~base_df['model'].isin(compare_df['model'])]
+            
+            # Find existing models with different datasets
+            existing_models = base_df[base_df['model'].isin(compare_df['model'])]
+            updated_models = pd.DataFrame()
+            
+            for _, row in existing_models.iterrows():
+                model = row['model']
+                new_datasets = set(row['datasets'])
+                old_datasets = set(compare_df[compare_df['model'] == model]['datasets'].iloc[0])
+                
+                if new_datasets != old_datasets:
+                    # Only include models that have different datasets
+                    updated_models = pd.concat([updated_models, pd.DataFrame([row])], ignore_index=True)
+            
+            # Combine new models and updated models
+            diff_model = pd.concat([new_models, updated_models], ignore_index=True)
+            
             if diff_model.empty:
                 print(f"{Fore.YELLOW}No new models to install{Style.RESET_ALL}")
                 try:
@@ -261,7 +295,10 @@ class DataLoader():
             if installed:
                 prev_df = pd.DataFrame(self.datainstall_load())
                 new_installs_df = pd.DataFrame(installed)
+                # Combine previous and new installations
                 result_df = pd.concat([prev_df, new_installs_df], ignore_index=True)
+                # Group by model and combine datasets
+                result_df = result_df.groupby('model')['datasets'].agg(lambda x: sorted(list(set([item for sublist in x for item in sublist])))).reset_index()
                 with open(self.installed_filepath, 'w') as f:
                     json.dump(result_df.to_dict(orient='records'), f, indent=4)
                 print(f"{Fore.GREEN}Successfully updated installed.json{Style.RESET_ALL}")
