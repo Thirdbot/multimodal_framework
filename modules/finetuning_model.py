@@ -87,6 +87,8 @@ class FinetuneModel:
         self.model_task = None
         self.resume_from_checkpoint = True
         self.chainpipe = Chainpipe()
+        self.chat_template = None  # Initialize chat_template as None
+        self.last_checkpoint = None  # Initialize last_checkpoint as None
     
     
     def get_model_architecture(self, model_id):
@@ -162,7 +164,7 @@ class FinetuneModel:
             latest_checkpoint = max(checkpoints, key=lambda x: int(x.name.split("-")[1]))
             
             # Verify checkpoint integrity
-            if not (latest_checkpoint / "model.safetensors").exists():
+            if not (latest_checkpoint / "model.safetensors").exists() and not (latest_checkpoint / "adapter_model.safetensors").exists():
                 print(f"{Fore.YELLOW}Latest checkpoint {latest_checkpoint} is incomplete, starting from scratch{Style.RESET_ALL}")
                 return None
                 
@@ -193,17 +195,35 @@ class FinetuneModel:
                 self.last_checkpoint = self.find_last_checkpoint(model_id)
                 if self.last_checkpoint:
                     print(f"{Fore.CYAN}Resuming from checkpoint: {self.last_checkpoint}{Style.RESET_ALL}")
-                    # Load model from checkpoint
-                    model = AutoModelForCausalLM.from_pretrained(
-                        str(self.last_checkpoint),
+                    # Load base model first
+                    base_model = AutoModelForCausalLM.from_pretrained(
+                        model_id,  # Use original model_id as base
                         device_map=self.device_map,
                         trust_remote_code=True,
-                        torch_dtype=torch.float16,
+                        torch_dtype=torch.bfloat16,
                         low_cpu_mem_usage=True,
                         offload_folder=str(self.OFFLOAD_DIR),
                         offload_state_dict=True,
-                        max_memory={0: "40GB"}
+                        max_memory={0: "40GB"},
+                        use_cache=False  # Disable KV cache during training
                     )
+                    
+                    # Load the PEFT model with adapter weights
+                    model = PeftModel.from_pretrained(
+                        base_model,
+                        str(self.last_checkpoint),
+                        device_map=self.device_map,
+                        torch_dtype=torch.bfloat16
+                    )
+                    
+                    # Ensure model is in training mode and parameters are trainable
+                    model.train()
+                    for param in model.parameters():
+                        param.requires_grad = True
+                    
+                    # Enable gradient checkpointing
+                    model.gradient_checkpointing_enable()
+                    
                     # Load tokenizer from checkpoint
                     tokenizer = AutoTokenizer.from_pretrained(
                         str(self.last_checkpoint),
@@ -211,6 +231,13 @@ class FinetuneModel:
                         padding_side="right",
                         truncation_side="right"
                     )
+                    
+                    # Initialize ChatTemplate with the tokenizer and chainpipe
+                    self.chat_template = ChatTemplate(
+                        tokenizer=tokenizer,
+                        chainpipe=self.chainpipe
+                    )
+                    
                     return model, tokenizer
                 else:
                     print(f"{Fore.YELLOW}No valid checkpoint found, starting from scratch{Style.RESET_ALL}")
@@ -227,13 +254,13 @@ class FinetuneModel:
             # Initialize ChatTemplate with the tokenizer and chainpipe
             self.chat_template = ChatTemplate(
                 tokenizer=tokenizer,
-                chainpipe=self.chainpipe  # Set to None for now, can be configured based on model requirements
+                chainpipe=self.chainpipe
             )
             
             # Configure quantization
             quantization_config = BitsAndBytesConfig(
                 load_in_4bit=True,
-                bnb_4bit_compute_dtype=torch.float16,
+                bnb_4bit_compute_dtype=torch.bfloat16,
                 bnb_4bit_quant_type="nf4",
                 bnb_4bit_use_double_quant=True,
                 llm_int8_threshold=6.0,
@@ -245,7 +272,7 @@ class FinetuneModel:
                 model_id,
                 trust_remote_code=True,
                 use_cache=False,
-                torch_dtype=torch.float16,
+                torch_dtype=torch.bfloat16,
                 low_cpu_mem_usage=True
             )
             
@@ -256,7 +283,7 @@ class FinetuneModel:
                 quantization_config=quantization_config,
                 device_map=self.device_map,
                 trust_remote_code=True,
-                torch_dtype=torch.float16,
+                torch_dtype=torch.bfloat16,
                 low_cpu_mem_usage=True,
                 offload_folder=str(self.OFFLOAD_DIR),
                 offload_state_dict=True,
@@ -284,6 +311,11 @@ class FinetuneModel:
             
             # Get PEFT model
             model = get_peft_model(model, lora_config)
+            
+            # Ensure model is in training mode and parameters are trainable
+            model.train()
+            for param in model.parameters():
+                param.requires_grad = True
             
             # Enable gradient checkpointing
             model.gradient_checkpointing_enable()
@@ -477,7 +509,8 @@ class FinetuneModel:
             logging_steps=100,
             logging_first_step=True,
             gradient_accumulation_steps=self.gradient_accumulation_steps,
-            fp16=True,
+            fp16=False,
+            bf16=True,
             optim="adamw_torch",
             lr_scheduler_type="cosine",
             warmup_ratio=0.1,
@@ -495,7 +528,7 @@ class FinetuneModel:
             report_to="none",
             resume_from_checkpoint=self.last_checkpoint if self.resume_from_checkpoint else None,
             load_best_model_at_end=True,  # Load the best model at the end of training
-            metric_for_best_model="eval_loss",  # Use evaluation loss to determine best model
+            metric_for_best_model="eval_train_loss",  # Use evaluation loss to determine best model
             greater_is_better=False,  # Lower loss is better
             save_safetensors=True,  # Save in safetensors format
             save_only_model=True,  # Only save the model, not the optimizer state

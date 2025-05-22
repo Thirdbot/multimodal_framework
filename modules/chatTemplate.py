@@ -134,12 +134,12 @@ class ChatTemplate:
                                             if field in content_types:
                                                 field_idx = content_types.index(field)
                                                 self.prompt[role_idx]['content'][field_idx][field] = value
-                                                print(f"{Fore.CYAN}Updated {field} for {role}: {value}{Style.RESET_ALL}")
+                                                #print(f"{Fore.CYAN}Updated {field} for {role}: {value}{Style.RESET_ALL}")
                                 else:
                                     # Handle single content value
                                     field_idx = content_types.index('text')
                                     self.prompt[role_idx]['content'][field_idx]['text'] = content
-                                    print(f"{Fore.CYAN}Updated text for {role}: {content}{Style.RESET_ALL}")
+                                    #print(f"{Fore.CYAN}Updated text for {role}: {content}{Style.RESET_ALL}")
                                 
                                 # Handle multimodal data if present
                                 if mul_field is not None and ex_data is not None and mul_field in content_types:
@@ -147,7 +147,7 @@ class ChatTemplate:
                                     self.prompt[role_idx]['content'][field_idx][mul_field] = ex_data
                                     
                                 formatted_prompt = self.chainpipe.chat_template(self.prompt)
-                                print(f"{Fore.CYAN}Formatted prompt:{Style.RESET_ALL}\n{self.prompt}")
+                               #  print(f"{Fore.CYAN}Formatted prompt:{Style.RESET_ALL}\n{self.prompt}")
                                 formatted.append(formatted_prompt)
                             
                             except Exception as e:
@@ -167,7 +167,7 @@ class ChatTemplate:
                         formatted_prompt += conversation_text
                         formatted_prompt += "Assistant:"
                         formatted_prompt = self.chainpipe.chat_template(formatted_prompt)
-                        print(f"{Fore.CYAN}Formatted prompt:{Style.RESET_ALL}\n{formatted_prompt}")
+                        # print(f"{Fore.CYAN}Formatted prompt:{Style.RESET_ALL}\n{formatted_prompt}")
                         formatted.append(formatted_prompt)
                     
             str_formatted = "\n".join(str(msg) for msg in formatted)
