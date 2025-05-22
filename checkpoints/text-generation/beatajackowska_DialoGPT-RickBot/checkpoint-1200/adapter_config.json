@@ -6,7 +6,7 @@
   "corda_config": null,
   "eva_config": null,
   "exclude_modules": null,
-  "fan_in_fan_out": false,
+  "fan_in_fan_out": true,
   "inference_mode": true,
   "init_lora_weights": true,
   "layer_replication": null,
