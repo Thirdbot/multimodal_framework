@@ -59,7 +59,7 @@ class Main:
         
         self.model_data_params = {
             "model_name":["beatajackowska/DialoGPT-RickBot"],
-            "datasets_name":["theneuralmaze/rick-and-morty-transcripts-sharegpt"],
+            "datasets_name":["OpenAssistant/oasst2"],
             "model_amount":1,
             "datasets_amount":2,
             # "datasets_name":["OpenAssistant/oasst2"],
@@ -111,7 +111,7 @@ if __name__ == "__main__":
     main = Main()
 
     main.load_datas()
-    main.runtrain()
+    # main.runtrain()
     
     manager = ConversationManager(
         model_name="beatajackowska_DialoGPT-RickBot",
@@ -145,6 +145,10 @@ if __name__ == "__main__":
         print(f"{Fore.CYAN}Conversation history saved to {history_file}{Style.RESET_ALL}")
 
 # What To do
+#fix datamodel config for newly add datasets or model to not be sensity on different model
+#try cut conner of chat template
+#handle various of datasets downloadble files need each column
+
 
 #this just addon.
 # create api for model
