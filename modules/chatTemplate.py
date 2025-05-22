@@ -102,11 +102,11 @@ class ChatTemplate:
                     if is_train:
                         for key, value in possible_keys:
                             try:
-                                valid_array = message.get(key,None)
-                                if "system" in valid_array:
-                                    #instruction dataset
-                                    pass
-                                else:
+                                # valid_array = message.get(key,None)
+                                # if "system" in valid_array:
+                                #     #instruction dataset
+                                #     pass
+                                
                                     #chat converation without system
                                     role = message[key]
                                     content = message[value]
@@ -134,18 +134,18 @@ class ChatTemplate:
                                         self.prompt[role_idx]['content'][field_idx]['text'] = content
                                         #print(f"{Fore.CYAN}Updated text for {role}: {content}{Style.RESET_ALL}")
                                 
-                                # Handle multimodal data if present
-                                if mul_field is not None and ex_data is not None and mul_field in content_types:
-                                    field_idx = content_types.index(mul_field)
-                                    self.prompt[role_idx]['content'][field_idx][mul_field] = ex_data
+                                    # Handle multimodal data if present
+                                    if mul_field is not None and ex_data is not None and mul_field in content_types:
+                                        field_idx = content_types.index(mul_field)
+                                        self.prompt[role_idx]['content'][field_idx][mul_field] = ex_data
+                                        
+                                    formatted_prompt = self.chainpipe.chat_template(self.prompt)
                                     
-                                formatted_prompt = self.chainpipe.chat_template(self.prompt)
-                                
-                                for msg in formatted_prompt:
-                                    prompt_text += f"Role: {msg.__class__.__name__},Content: {msg.content}\n"
-                               #  print(f"{Fore.CYAN}Formatted prompt:{Style.RESET_ALL}\n{self.prompt}")
-                                print(f"{Fore.CYAN}Formatted prompt:{Style.RESET_ALL}\n{prompt_text}")
-                                
+                                    for msg in formatted_prompt:
+                                        prompt_text += f"Role: {msg.__class__.__name__},Content: {msg.content}\n"
+                                #  print(f"{Fore.CYAN}Formatted prompt:{Style.RESET_ALL}\n{self.prompt}")
+                                    print(f"{Fore.CYAN}Formatted prompt:{Style.RESET_ALL}\n{prompt_text}")
+                                    
                                 
                             
                             except Exception as e:
