@@ -59,7 +59,7 @@ class FinetuneModel:
         self.per_device_eval_batch_size = 64
         self.gradient_accumulation_steps = 2    
         self.learning_rate = 2e-4
-        self.num_train_epochs =  100      
+        self.num_train_epochs =  2      
         self.save_strategy = "best"
         
         # Define paths
@@ -499,6 +499,9 @@ class FinetuneModel:
         # Ensure checkpoint directory exists
         output_dir.mkdir(parents=True, exist_ok=True)
         
+        # Check if CUDA is available
+        cuda_available = torch.cuda.is_available()
+        
         return TrainingArguments(
             output_dir=str(output_dir),  # Convert Path to string
             learning_rate=self.learning_rate,
@@ -527,7 +530,7 @@ class FinetuneModel:
             gradient_checkpointing_kwargs={"use_reentrant": False},
             ddp_find_unused_parameters=False,
             ddp_bucket_cap_mb=200,
-            dataloader_pin_memory=True,
+            dataloader_pin_memory=cuda_available,  # Only enable pin_memory when CUDA is available
             dataloader_num_workers=2,
             max_grad_norm=1.0,
             group_by_length=True,
@@ -540,6 +543,8 @@ class FinetuneModel:
             save_safetensors=True,  # Save in safetensors format
             save_only_model=True,  # Only save the model, not the optimizer state
             overwrite_output_dir=True,  # Overwrite the output directory
+            torch_compile=False,  # Disable torch.compile
+            use_mps_device=False  # Disable MPS device
         )
     def compute_metrics(self,eval_pred):
         logits, labels = eval_pred
