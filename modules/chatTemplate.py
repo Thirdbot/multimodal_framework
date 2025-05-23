@@ -166,8 +166,10 @@ class ChatTemplate:
                         formatted_prompt += conversation_text
                         formatted_prompt += "Assistant:"
                         formatted_prompt = self.chainpipe.chat_template(formatted_prompt)
-                        # print(f"{Fore.CYAN}Formatted prompt:{Style.RESET_ALL}\n{formatted_prompt}")
-                        
+                        for msg in formatted_prompt:
+                            prompt_text += f"Role: {msg.__class__.__name__},Content: {msg.content}\n"
+                        print(f"{Fore.CYAN}Formatted prompt:{Style.RESET_ALL}\n{prompt_text}")
+            
             
             return prompt_text
             
