@@ -127,12 +127,12 @@ class ChatTemplate:
                                                 if field in content_types:
                                                     field_idx = content_types.index(field)
                                                     self.prompt[role_idx]['content'][field_idx][field] = value
-                                                    #print(f"{Fore.CYAN}Updated {field} for {role}: {value}{Style.RESET_ALL}")
+                                                    print(f"{Fore.CYAN}Updated {field} for {role}: {value}{Style.RESET_ALL}")
                                     else:
                                         # Handle single content value
                                         field_idx = content_types.index('text')
                                         self.prompt[role_idx]['content'][field_idx]['text'] = content
-                                        #print(f"{Fore.CYAN}Updated text for {role}: {content}{Style.RESET_ALL}")
+                                        print(f"{Fore.CYAN}Updated text for {role}: {content}{Style.RESET_ALL}")
                                 
                                     # Handle multimodal data if present
                                     if mul_field is not None and ex_data is not None and mul_field in content_types:
@@ -149,6 +149,7 @@ class ChatTemplate:
                                 
                             
                             except Exception as e:
+                                print(f"{Fore.RED}Error formatting conversation: {str(e)}{Style.RESET_ALL}")
                                 continue
                     
                     if not is_train:
