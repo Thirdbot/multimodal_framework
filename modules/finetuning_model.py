@@ -59,7 +59,7 @@ class FinetuneModel:
         self.per_device_eval_batch_size = 64
         self.gradient_accumulation_steps = 2    
         self.learning_rate = 2e-4
-        self.num_train_epochs =  2      
+        self.num_train_epochs =  100      
         self.save_strategy = "best"
         
         # Define paths
@@ -488,8 +488,15 @@ class FinetuneModel:
         )
     def compute_metrics(self,eval_pred):
         logits, labels = eval_pred
-        predictions = np.argmax(logits, axis=-1)
-        return self.metric.compute(predictions=predictions, references=labels)
+        # Get predictions for the last non-padded token in each sequence
+        predictions = np.argmax(logits[:, -1, :], axis=-1)  # Take last token prediction
+        # Get the last non-padded label for each sequence
+        valid_labels = labels[:, -1]  # Take last token label
+        # Filter out padding tokens (-100)
+        mask = valid_labels != -100
+        filtered_predictions = predictions[mask]
+        filtered_labels = valid_labels[mask]
+        return self.metric.compute(predictions=filtered_predictions, references=filtered_labels)
     
     def Trainer(self, model, dataset, tokenizer,modelname):
         # Create data collator for language modeling
