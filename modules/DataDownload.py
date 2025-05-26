@@ -30,7 +30,9 @@ class FlexibleDatasetLoader:
         # Set up local repository paths
         self.WORKSPACE_DIR = Path(__file__).parent.parent.absolute()
         self.REPO_DIR = self.WORKSPACE_DIR / "repositories"
-        self.DATASETS_DIR = self.REPO_DIR / "datasets" 
+        self.DATASETS_DIR = self.REPO_DIR / "datasets"
+        self.DATAMODEL_DIR = self.WORKSPACE_DIR / "DataModel_config"
+        self.SAVED_CONFIG_FILE = self.DATAMODEL_DIR / "saved_config.json"
         
     def load(self, name, config):
         if config is not None:
@@ -83,10 +85,19 @@ class FlexibleDatasetLoader:
         else:
             configs = get_dataset_config_names(name, trust_remote_code=self.trust_remote_code)
             if isinstance(configs, list):
+                user_input = None
                 print(f"{Fore.CYAN}Available configs for {name}: {configs}{Style.RESET_ALL}")
-                user_input = input(f"{Fore.YELLOW}Enter the config you want to use: {Style.RESET_ALL}")
-                self.config = user_input
-                self.saved_config[name] = user_input
+                if self.SAVED_CONFIG_FILE.exists():
+                    with open(self.SAVED_CONFIG_FILE, 'r') as f:
+                        saved_config = json.load(f)
+                        if name in saved_config:
+                            user_input = saved_config[name]
+                else:
+                    user_input = input(f"{Fore.YELLOW}Enter the config you want to use: {Style.RESET_ALL}")
+                    self.config = user_input
+                    self.saved_config[name] = user_input
+                    with open(self.SAVED_CONFIG_FILE, 'w') as f:
+                        json.dump(self.saved_config, f, indent=4)
                 return self.load(name, user_input)
 
     def get(self):
