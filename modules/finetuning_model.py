@@ -478,7 +478,7 @@ class FinetuneModel:
             report_to="none",
             resume_from_checkpoint=self.last_checkpoint if self.resume_from_checkpoint else None,
             load_best_model_at_end=True,  # Load the best model at the end of training
-            metric_for_best_model="eval_train_loss",  # Use evaluation loss to determine best model
+            metric_for_best_model="eval_accuracy",  # Use evaluation loss to determine best model
             greater_is_better=False,  # Lower loss is better
             save_safetensors=True,  # Save in safetensors format
             save_only_model=True,  # Only save the model, not the optimizer state
