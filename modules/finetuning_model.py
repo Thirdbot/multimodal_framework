@@ -451,12 +451,12 @@ class FinetuneModel:
             weight_decay=0.01,
             save_strategy="steps",  # Save every N steps
             eval_strategy="steps",  # Evaluate every N steps
-            eval_steps=100,  # Evaluate every 100 steps
-            save_steps=100,  # Save every 100 steps
+            eval_steps=20,  # Evaluate every 100 steps
+            save_steps=20,  # Save every 100 steps
             save_total_limit=3,  # Keep last 3 checkpoints
             logging_dir=str(self.CHECKPOINT_DIR),  # Convert Path to string
             logging_strategy="steps",
-            logging_steps=100,
+            logging_steps=20,
             logging_first_step=True,
             gradient_accumulation_steps=self.gradient_accumulation_steps,
             fp16=False,
@@ -478,13 +478,14 @@ class FinetuneModel:
             report_to="none",
             resume_from_checkpoint=self.last_checkpoint if self.resume_from_checkpoint else None,
             load_best_model_at_end=True,  # Load the best model at the end of training
-            metric_for_best_model="eval_accuracy",  # Use evaluation loss to determine best model
+            metric_for_best_model="eval_loss",  # Use evaluation loss to determine best model
             greater_is_better=False,  # Lower loss is better
             save_safetensors=True,  # Save in safetensors format
             save_only_model=True,  # Only save the model, not the optimizer state
             overwrite_output_dir=True,  # Overwrite the output directory
             torch_compile=False,  # Disable torch.compile
-            use_mps_device=False  # Disable MPS device
+            use_mps_device=False,  # Disable MPS device
+            # include_for_metrics=True  # Include inputs when computing metrics
         )
     def compute_metrics(self,eval_pred):
         logits, labels = eval_pred
@@ -496,7 +497,20 @@ class FinetuneModel:
         mask = valid_labels != -100
         filtered_predictions = predictions[mask]
         filtered_labels = valid_labels[mask]
-        return self.metric.compute(predictions=filtered_predictions, references=filtered_labels)
+        
+        # Safety check - if no valid predictions, return 0 accuracy
+        if len(filtered_predictions) == 0 or len(filtered_labels) == 0:
+            return {"accuracy": 0.0}
+            
+        try:
+            metrics = self.metric.compute(predictions=filtered_predictions, references=filtered_labels)
+            # Ensure metrics are not None or NaN
+            if metrics is None or np.isnan(metrics.get("accuracy", 0.0)):
+                return {"accuracy": 0.0}
+            return metrics
+        except Exception as e:
+            print(f"{Fore.YELLOW}Warning: Error computing metrics: {str(e)}{Style.RESET_ALL}")
+            return {"accuracy": 0.0}
     
     def Trainer(self, model, dataset, tokenizer,modelname):
         # Create data collator for language modeling
