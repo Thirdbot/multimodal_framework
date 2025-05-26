@@ -334,7 +334,7 @@ class FinetuneModel:
             print(f"{Fore.RED}Error loading model {model_id}: {str(e)}{Style.RESET_ALL}")
             return None, None
 
-    def load_dataset(self,dataset_name,config):
+    def load_dataset(self,dataset_name,config,split=None):
         print(f"{Fore.CYAN}retrieve dataset {dataset_name}{Style.RESET_ALL}")
         
         try:
@@ -342,7 +342,7 @@ class FinetuneModel:
             self.dataset_name = dataset_name
             if config is not None:
                     try:
-                        dataset = load_dataset(dataset_name,config,trust_remote_code=True)
+                        dataset = load_dataset(dataset_name,config,trust_remote_code=True,split=split)
                     except Exception as e:
                         print(f"{Fore.RED}Error loading dataset {dataset_name}: {str(e)}{Style.RESET_ALL}")
                         return None
@@ -373,193 +373,18 @@ class FinetuneModel:
 
     def map_tokenizer(self, tokenizer, dataset, max_length=384):
         try:
-            # Get the first example to check available fields
-            first_example = dataset["train"][0] if "train" in dataset else dataset[0]
-            available_fields = list(first_example.keys())
-            
-            # Check if this is a chat/conversation dataset
-            is_chat_dataset = "conversations" in available_fields or "messages" in available_fields or "propmt" in available_fields
-            is_text_dataset = "text" in available_fields
-            is_not_formatted_dataset = not is_chat_dataset or not is_text_dataset
-            
-            if is_chat_dataset:
-                print(f"{Fore.CYAN}Detected chat/conversation dataset{Style.RESET_ALL}")
-                
-                # Use ChatTemplate to prepare the dataset
-                try:
-                    tokenized_dataset = self.chat_template.prepare_dataset(
-                        self.dataset_name,
-                        dataset,
-                        max_length=max_length
-                    )
-                    print(f"{Fore.GREEN}Successfully prepared chat dataset{Style.RESET_ALL}")
-                    return tokenized_dataset
-                except Exception as e:
-                    print(f"{Fore.YELLOW}Warning: Error preparing chat dataset: {str(e)}{Style.RESET_ALL}")
-                    print(f"{Fore.YELLOW}Falling back to regular text processing{Style.RESET_ALL}")
-                    is_chat_dataset = False  # Fall back to regular processing
-            
-            if is_text_dataset:
-                #change it to conversation dataset instead no matter it type
-                # Handle regular text datasets
-                print(f"{Fore.CYAN}Detected regular text dataset{Style.RESET_ALL}")
-                
-                
-                # Common text field names in datasets
-                possible_text_fields = ["text", "content", "sentence", "input", "prompt"]
-                possible_text_extends_columns = ['role']
-                # Find the first matching text field
-                # print(available_fields)
-                text_field = next((field for field in possible_text_fields if field in available_fields), available_fields[0])
-                
-
-                if text_field is None:
-                    print(f"{Fore.YELLOW}Available fields in dataset: {available_fields}{Style.RESET_ALL}")
-                    raise ValueError("No suitable text field found in dataset. Please check dataset structure.")
-                
-                print(f"{Fore.CYAN}Using field '{text_field}' for tokenization{Style.RESET_ALL}")
-                
-                
-                
-            
-                # tokenized_dataset = self.chat_template.prepare_dataset(
-                #         self.dataset_name,
-                #         dataset,
-                #         max_length=max_length
-                # )
-                print(f"{Fore.GREEN}Successfully prepared chat dataset{Style.RESET_ALL}")
-                return tokenized_dataset
-            
-            if is_not_formatted_dataset:
-                #formatted chat
-                return tokenized_dataset
-            
+            tokenized_dataset = self.chat_template.prepare_dataset(
+                self.dataset_name,
+                dataset,
+                max_length=max_length
+            )
+            print(f"{Fore.GREEN}Successfully prepared chat dataset{Style.RESET_ALL}")
+            return tokenized_dataset
         except Exception as e:
             print(f"{Fore.RED}Error tokenizing dataset: {str(e)}{Style.RESET_ALL}")
             return None
         
-    def seperated_data(self,dataset,keys):
-        common_instructor_role = ['system']
-        get_keys = None
-        print("Processed a conversation")
-        
-        #chat data
-        set_data = dataset['train'].features.get(f'{keys}')
-        if isinstance(set_data, list):
-            get_keys =tuple( set_data[0].keys())
-            print(get_keys)
-        for list_data in dataset['train'][f'{keys}']:
-            role_list = []
-            for data in list_data:
-                role = data[get_keys[0]]
-                content = data[get_keys[1]]
-                
-                role_list.append(role)
-            
-            for role in role_list:
-                if role in common_instructor_role:
-                    print(f"Found common instructor role: {role}")
-                    #instruct
-                    break
-                else:
-                    #chat data
-                    print("regular chat data")
-                    print(f"Role: {role},Content: {content}")
-                    break
-            break
-        
-    #i wrote this function to recursively check the dataset and seperated the dataset
-    def process_dataset(self,dataset, is_conversation=False, is_check=False, is_regular=True):
-        dataset_keys = dataset['train'].features.keys()
-        
-        # First level check - initial dataset inspection
-        if not is_check and not is_conversation:
-            if 'conversations' in dataset_keys:
-                print(f"Conversation Dataset found: {dataset['train']['conversations'][0]} example")
-                is_conversation = True
-            is_check = True
-            return self.process_dataset(dataset=dataset, is_conversation=is_conversation, is_check=is_check)
-        
-        # Second level check - conversation confirmation
-        elif is_check and is_conversation:
-            self.seperated_data(dataset=dataset,keys='conversations')
-            return True
-        
-        # Third level check - regular dataset processing
-        elif is_check and not is_conversation:
-            if is_regular:
-                print("Processing regular dataset")
-                mis_columns_name = ['messages', 'text']
-                for mis_name in mis_columns_name:
-                    if mis_name in dataset_keys:
-                        data_info = dataset['train'].features.get(mis_name)
-                        if isinstance(data_info, list):
-                            print(f"Found {mis_name} column with list type")
-                            print(data_info[0])
-                            
-                            #seperated data
-                            self.seperated_data(dataset=dataset,keys=mis_name)
-                            
-                            return True
-                        else:
-                            print(f"Found {mis_name} column with non-list type")
-                            print("Trying to format irregular dataset")
-                            return self.process_dataset(dataset=dataset, is_conversation=is_conversation, is_check=is_check, is_regular=False)
-                return self.process_dataset(dataset=dataset, is_conversation=is_conversation, is_check=is_check, is_regular=False)
-            
-            # Fourth level check - irregular dataset processing is seperated instruction column
-            if not is_regular:
-                print("Processing irregular dataset")
-                potential_columns_name = [(['question','instruction','user','input','Questions'], 
-                                           ['answer','response','assistant','output','Answers'],
-                                           ['definition','instruction'],
-                                           ['chosen'],
-                                           ['rejected'],
-                                           ['role'],
-                                           ['text'])]
-                
-                for potential_columns in potential_columns_name:
-                    # Find matching columns for each group
-                    matching_cols_0 = [col for col in potential_columns[0] if col in dataset_keys]
-                    matching_cols_1 = [col for col in potential_columns[1] if col in dataset_keys]
-                    matching_cols_2 = [col for col in potential_columns[2] if col in dataset_keys]
-                    matching_cols_3 = [col for col in potential_columns[3] if col in dataset_keys]
-                    matching_cols_4 = [col for col in potential_columns[4] if col in dataset_keys]
-                    matching_cols_5 = [col for col in potential_columns[5] if col in dataset_keys]
-                    matching_cols_6 = [col for col in potential_columns[6] if col in dataset_keys]
-                    
-
-                    if matching_cols_0 and matching_cols_1 and matching_cols_2:
-                        #instruction data auto assign role
-                        print("found instruction data")
-                        print(f"Found {matching_cols_0} and {matching_cols_1} and {matching_cols_2} columns")
-                        return True, (matching_cols_0, matching_cols_1, matching_cols_2)
-                    
-                    elif matching_cols_0 and matching_cols_1:
-                        #chat data auto assign role
-                        print("found chat data")
-                        print(f"Found {matching_cols_0} and {matching_cols_1} columns")
-                        return True, (matching_cols_0, matching_cols_1)
-                    
-                    elif matching_cols_3 and matching_cols_4:
-                        #chosen reject instruction
-                        print("found chosen reject instruction")
-                        print(f"Found {matching_cols_3} and {matching_cols_4} columns")
-                        return True, (matching_cols_3, matching_cols_4)
-                    
-                    elif matching_cols_5 and matching_cols_6:
-                        #role text instruction
-                        print("found role text column chat")
-                        print(f"Found {matching_cols_5} and {matching_cols_6} columns")
-                        return True, (matching_cols_5, matching_cols_6)
-                    else:
-                        print(f"Not found any matching columns in {potential_columns}")
-                        return False, None
-                print("This dataset cannot be processed")
-            
-                return False
-        
-        return False
+   
     def runtuning(self,model,tokenizer,dataset,modelname):
         try:
             # model, tokenizer = self.load_model(self.model_id,self.resume_from_checkpoint)
@@ -725,7 +550,7 @@ class Manager:
                     
                     for dataset_name in datasets:
                         print(f"{Fore.CYAN}Loading dataset'config: {dataset_name} {config[dataset_name]}{Style.RESET_ALL}")
-                        dataset = self.finetune_model.load_dataset(dataset_name,config[dataset_name])
+                        dataset = self.finetune_model.load_dataset(dataset_name,config[dataset_name],split='train')
                        
                         # Process and tokenize the dataset
                         processed_dataset = self.finetune_model.map_tokenizer(tokenizer, dataset)

@@ -10,6 +10,7 @@ from colorama import Fore, Style, init
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 os.environ['OMP_NUM_THREADS'] = '0'
 os.environ['TOKENIZERS_PARALLELISM'] = 'false'
+import re
 
 # Initialize colorama
 init(autoreset=True)
@@ -20,43 +21,6 @@ class ChatTemplate:
     def __init__(self, chainpipe, tokenizer=None, model_name=None, template=None):
         self.chainpipe = chainpipe
         self.tokenizer = tokenizer
-        self.prompt = [
-            dict({  
-                "role": "user",
-                "content": [
-                    {"text": ""},
-                    {"image": ""}
-                ]
-            }),
-            dict({
-                "role": "human",
-                "content": [
-                    {"text": ""},
-                    {"image": ""}
-                ]
-            }),
-            dict({
-                "role": "assistant",
-                "content": [{"text": ""}]
-            }),
-            dict({
-                "role": "system",
-                "content": [{"text": ""}]
-            })
-        ]
-        
-        self.prompt_map = [key.get('role') for key in self.prompt]
-        
-        # Create a mapping of role to content types
-        self.prompt_map_content = {}
-        for prompt in self.prompt:
-            role = prompt['role']
-            content_types = []
-            for content in prompt['content']:
-                content_types.append(list(content.keys())[0]) 
-            self.prompt_map_content[role] = content_types
-            
-        print(f"Prompt map content: {self.prompt_map_content}")
     
     def format_conversation(self, dataset_name=None, conversation=None, mul_field=None, ex_data=None, is_train=True):
         """Format a single conversation into a string"""
@@ -102,10 +66,7 @@ class ChatTemplate:
                     if is_train:
                         for key, value in possible_keys:
                             try:
-                                # valid_array = message.get(key,None)
-                                # if "system" in valid_array:
-                                #     #instruction dataset
-                                #     pass
+                             
                                 
                                     #chat converation without system
                                     role = message[key]
@@ -174,34 +135,160 @@ class ChatTemplate:
             print(f"{Fore.YELLOW}Warning: Error formatting conversation: {str(e)}{Style.RESET_ALL}")
             return str(conversation)
     
-    def prepare_dataset(self, dataset_name, dataset, max_length=384):
-        """
-        Prepare a dataset for training by formatting conversations and tokenizing
-        Args:
-            dataset: HuggingFace dataset
-            max_length: Maximum sequence length
-        Returns:
-            Tokenized dataset ready for training
-        """
-        try:
-            # Check if this is a chat/conversation dataset
-            first_example = dataset["train"][0] if "train" in dataset else dataset[0]
-            available_fields = list(first_example.keys())
-            
+    
+    def seperated_data(self,dataset,keys,mul_field=None):
+        dataset_formated = {"text":[]}
+        get_keys = None
+        print(f"Processing dataset with key: {keys}")
         
-            for field in ["conversations", "messages", "chat","prompt"]:
-                if field in available_fields:
-                    conv_field = field
-                    break
+        #chat data
+        set_data = dataset.get(f'{keys}')
+        if isinstance(set_data, list):
+            # print(f"Found {len(set_data)} conversations to process")
+            for list_data in dataset[f'{keys}']:
+                get_keys = tuple(list_data[0].keys())
+                message_list = []
+                
+                # Process each message in the conversation
+                for data in list_data:
+                    role = data[get_keys[0]]
+                    content = data[get_keys[1]]
+                    format_dict = {"role":role,"content":content}
+                    message_list.append(format_dict)
+                
+                # Add the complete conversation to the dataset
+                dataset_formated['text'].append(message_list)
+                
+                # Check for multimodal content if needed
+                if mul_field is not None:
+                    for msg in message_list:
+                        pattern = r"<{mul_field}>(.*?)"
+                        match = re.findall(pattern,msg['content'])
+                        if match:
+                            print(f"Found {mul_field} in content: {match}")
+                            # concatenate real data over tags
+                            pass
+                            break
+        
+        return dataset_formated
+        
+    #i wrote this function to recursively check the dataset and seperated the dataset
+    def process_dataset(self,dataset,mul_field=None, is_conversation=False, is_check=False, is_regular=True):
+        # Get dataset keys directly since we're already working with the train split
+        dataset_keys = dataset.keys()
+        
+        # First level check - initial dataset inspection
+        if not is_check and not is_conversation:
+            if 'conversations' in dataset_keys:
+                # print(f"Conversation Dataset found: {dataset['conversations'][0]} example")
+                is_conversation = True
+            is_check = True
+            return self.process_dataset(dataset=dataset, is_conversation=is_conversation, is_check=is_check)
+        
+        # Second level check - conversation confirmation
+        elif is_check and is_conversation:
+            return  self.seperated_data(dataset=dataset,keys='conversations',mul_field=mul_field)
+        
+        # Third level check - regular dataset processing
+        elif is_check and not is_conversation:
+            if is_regular:
+                print("Processing regular dataset")
+                mis_columns_name = ['messages', 'text']
+                for mis_name in mis_columns_name:
+                    if mis_name in dataset_keys:
+                        data_info = dataset[mis_name]
+                        if isinstance(data_info, list):
+                            print(f"Found {mis_name} column with list type")
+                            print(data_info[0])
+                            
+                            return self.seperated_data(dataset=dataset,keys=mis_name,mul_field=mul_field)
+                        else:
+                            print(f"Found {mis_name} column with non-list type")
+                            print("Trying to format irregular dataset")
+                            return self.process_dataset(dataset=dataset, is_conversation=is_conversation, is_check=is_check, is_regular=False)
+                return self.process_dataset(dataset=dataset, is_conversation=is_conversation, is_check=is_check, is_regular=False)
             
-            if conv_field is None:
-                print(f"{Fore.YELLOW}No conversation field found, using first available field{Style.RESET_ALL}")
-                conv_field = available_fields[0]
+            # Fourth level check - irregular dataset processing is seperated instruction column
+            if not is_regular:
+                print("Processing irregular dataset")
+                potential_columns_name = [(['question','instruction','user','input','Questions'], 
+                                           ['answer','response','assistant','output','Answers'],
+                                           ['definition','instruction'],
+                                           ['chosen'],
+                                           ['rejected'],
+                                           ['role'],
+                                           ['text'])]
+                
+                for potential_columns in potential_columns_name:
+                    # Find matching columns for each group
+                    matching_cols_0 = [col for col in potential_columns[0] if col in dataset_keys]
+                    matching_cols_1 = [col for col in potential_columns[1] if col in dataset_keys]
+                    matching_cols_2 = [col for col in potential_columns[2] if col in dataset_keys]
+                    matching_cols_3 = [col for col in potential_columns[3] if col in dataset_keys]
+                    matching_cols_4 = [col for col in potential_columns[4] if col in dataset_keys]
+                    matching_cols_5 = [col for col in potential_columns[5] if col in dataset_keys]
+                    matching_cols_6 = [col for col in potential_columns[6] if col in dataset_keys]
+                    
+
+                    if matching_cols_0 and matching_cols_1 and matching_cols_2:
+                        #instruction data auto assign role
+                        print("found instruction data")
+                        print(f"Found {matching_cols_0} and {matching_cols_1} and {matching_cols_2} columns")
+                        return True, (matching_cols_0, matching_cols_1, matching_cols_2)
+                    
+                    elif matching_cols_0 and matching_cols_1:
+                        #chat data auto assign role
+                        print("found chat data")
+                        print(f"Found {matching_cols_0} and {matching_cols_1} columns")
+                        return True, (matching_cols_0, matching_cols_1)
+                    
+                    elif matching_cols_3 and matching_cols_4:
+                        #chosen reject instruction
+                        print("found chosen reject instruction")
+                        print(f"Found {matching_cols_3} and {matching_cols_4} columns")
+                        return True, (matching_cols_3, matching_cols_4)
+                    
+                    elif matching_cols_5 and matching_cols_6:
+                        #role text instruction
+                        print("found role text column chat")
+                        print(f"Found {matching_cols_5} and {matching_cols_6} columns")
+                        return True, (matching_cols_5, matching_cols_6)
+                    else:
+                        print(f"Not found any matching columns in {potential_columns}")
+                        return False, None
+                print("This dataset cannot be processed")
+            
+                return False
+        
+        return False
+    
+    def format_message(self, message):
+        # Format each message with clear role and content separation
+        formatted_parts = []
+        for msg in message:
+            role = msg['role']
+            content = msg['content']
+            # Add special tokens or markers to clearly separate roles
+            if role == 'system':
+                formatted_parts.append(f"<|system|>\n{content}")
+            elif role == 'human' or role == 'user':
+                formatted_parts.append(f"<|user|>\n{content}")
+            elif role == 'gpt' or role == 'assistant':
+                formatted_parts.append(f"<|assistant|>\n{content}")
+            else:
+                formatted_parts.append(f"<|{role}|>\n{content}")
+        
+        # Join all parts with double newlines for clear separation
+        return "\n\n".join(formatted_parts)
+    
+    def prepare_dataset(self, dataset_name, dataset, max_length=384):
+        try:
+            first_example = dataset
+            available_fields = list(first_example.features.keys())
             
             def process_examples(examples, batch_size=32):  # Increased batch size for CPU processing
                 #since it outer column
                 multimodal_fields = ['image','audio','video']
-                preference_field = ['chosen','rejected']
         
                 mul_field = None
                 for field in multimodal_fields:
@@ -209,48 +296,38 @@ class ChatTemplate:
                         mul_field = field
                         break
                     
-                # Format conversations in batches
-                formatted_texts = []
                 if mul_field is not None:
-                    # Process multimodal data in batches
-                    for i in range(0, len(examples[conv_field]), batch_size):
-                        batch_convs = examples[conv_field][i:i + batch_size]
-                        batch_data = examples[mul_field][i:i + batch_size]
-                        
-                        batch_formatted = []
-                        for conv, ex_data in zip(batch_convs, batch_data):
-                            formatted = self.format_conversation(dataset_name, conv, mul_field, ex_data)
-                            batch_formatted.append(formatted)
-                        formatted_texts.extend(batch_formatted)
+                    formatted = self.process_dataset(dataset=examples,is_conversation=False,is_check=False,mul_field=mul_field)
                 else:
-                    # Process regular conversations in batches
-                    for i in range(0, len(examples[conv_field]), batch_size):
-                        batch_convs = examples[conv_field][i:i + batch_size]
-                        
-                        batch_formatted = []
-                        for conv in batch_convs:
-                            formatted = self.format_conversation(dataset_name, conv)
-                            batch_formatted.append(formatted)
-                        formatted_texts.extend(batch_formatted)
+                    formatted = self.process_dataset(dataset=examples,is_conversation=False,is_check=False)
                 
-                # Tokenize on CPU with larger batch size
+                # Format all messages in the batch
+                formatted_texts = []
+                for conversation in formatted['text']:
+                    formatted_text = self.format_message(conversation)
+                    formatted_texts.append(formatted_text)
+                
+                # Tokenize the entire batch at once
                 tokenized = self.tokenizer(
                     formatted_texts,
-                    padding="max_length",
+                    padding=True,
                     truncation=True,
                     max_length=max_length,
                     return_tensors="pt"
                 )
                 
-                return tokenized
+                # Convert to lists for dataset compatibility
+                return {
+                    "input_ids": tokenized["input_ids"].tolist(),
+                    "attention_mask": tokenized["attention_mask"].tolist()
+                }
             
-            # Process the dataset with CPU-based batched processing
+            # Process the dataset with batched processing
             tokenized_dataset = dataset.map(
                 process_examples,
                 batched=True,
-                batch_size=32,  # Larger batch size for CPU processing
-                remove_columns=dataset["train"].column_names if "train" in dataset else dataset.column_names,
-                num_proc=4  # Increased number of processes for CPU
+                batch_size=32,
+                remove_columns=dataset.column_names  # Remove original columns
             )
             
             print(f"{Fore.GREEN}Successfully prepared dataset with {len(tokenized_dataset)} examples{Style.RESET_ALL}")
@@ -286,39 +363,3 @@ class ChatTemplate:
     def decode_tokens(self, tokens):
         """Decode tokenized input back to text"""
         return self.tokenizer.decode(tokens, skip_special_tokens=True)
-
-def main():
-    # Example usage
-    try:
-        # Initialize with model name
-        chat_template = ChatTemplate(
-            model_name="gpt2",
-            template="""{% for message in messages %}
-                {% if message['role'] == 'user' %}
-                    User: {{ message['content'] }}
-                {% elif message['role'] == 'assistant' %}
-                    Assistant: {{ message['content'] }}
-                {% endif %}
-            {% endfor %}"""
-        )
-        
-        # Example conversation
-        conversation = [
-            {"role": "user", "content": "Hello!"},
-            {"role": "assistant", "content": "Hi there!"}
-        ]
-        
-        # Format and tokenize
-        formatted = chat_template.format_conversation(conversation,is_train=False)
-        tokenized = chat_template.tokenize_text(formatted)
-        
-        print("Formatted conversation:")
-        print(formatted)
-        print("\nTokenized output:")
-        print(tokenized)
-        
-    except Exception as e:
-        print(f"{Fore.RED}Error in main: {str(e)}{Style.RESET_ALL}")
-
-if __name__ == "__main__":
-    main()

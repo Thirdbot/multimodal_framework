@@ -20,3 +20,61 @@ Dataset: DatasetDict({
         num_rows: 1507
     })
 })
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Dataset: Dataset({
+    features: ['conversations', 'input_ids', 'attention_mask'],
+    num_rows: 1507
+})
+Model: beatajackowska/DialoGPT-RickBot
+Dataset: Dataset({
+    features: ['conversations', 'input_ids', 'attention_mask'],
+    num_rows: 1507
+})
+Model: beatajackowska/DialoGPT-RickBot
+Dataset: Dataset({
+    features: ['input_ids', 'attention_mask'],
+    num_rows: 1507
+})
