@@ -48,12 +48,13 @@ class ChatTemplate:
                 # Check for multimodal content if needed
                 if mul_field is not None:
                     for msg in message_list:
-                        pattern = r"<{mul_field}>(.*?)"
-                        match = re.findall(pattern,msg['content'])
-                        if match:
+                        for mul in mul_field:
+                            pattern = r"<{mul}>(.*?)"
+                            match = re.findall(pattern,msg['content'])
+                            if match:
                             # print(f"Found {mul_field} in content: {match}")
                             # concatenate real data over tags
-                            pass
+                                pass
                             break
         
         return dataset_formated
@@ -188,7 +189,7 @@ class ChatTemplate:
         # Join all parts with double newlines for clear separation
         return "\n\n".join(formatted_parts)
     
-    def prepare_dataset(self, dataset_name, dataset, max_length=384):
+    def prepare_dataset(self, dataset_name, dataset, max_length=1000):
         try:
             first_example = dataset
             available_fields = list(first_example.features.keys())
@@ -197,11 +198,10 @@ class ChatTemplate:
                 #since it outer column
                 multimodal_fields = ['image','audio','video']
         
-                mul_field = None
+                mul_field = []
                 for field in multimodal_fields:
                     if field in available_fields:
-                        mul_field = field
-                        break
+                        mul_field.append(field)
                     
                 if mul_field is not None:
                     formatted = self.process_dataset(dataset=examples,is_conversation=False,is_check=False,mul_field=mul_field)
@@ -224,10 +224,7 @@ class ChatTemplate:
                 )
                 
                 # Convert to lists for dataset compatibility
-                return {
-                    "input_ids": tokenized["input_ids"].tolist(),
-                    "attention_mask": tokenized["attention_mask"].tolist()
-                }
+                return tokenized
             
             # Process the dataset with batched processing
             tokenized_dataset = dataset.map(
