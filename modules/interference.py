@@ -12,6 +12,10 @@ from peft import AutoPeftModelForCausalLM
 from modules.chatTemplate import ChatTemplate
 from modules.chainpipe import Chainpipe
 from typing import List, Dict, Optional, Union
+
+# from langchain.llms import HuggingFacePipeline
+# from transformers import pipeline, AutoModelForCausalLM, AutoTokenizer
+
 init(autoreset=True)
 
 class ConversationManager:
@@ -119,29 +123,38 @@ class ConversationManager:
             print(f"{Fore.RED}Error loading model: {str(e)}{Style.RESET_ALL}")
             raise
     
-    def format_messages(self) -> str:
+    def format_messages(self,history=None) -> str:
         """Format messages into a prompt string using our custom template"""
-        # Build conversation string
-        conversation = []
+        if history:
+            prompt = ""
+            for turn in history:
+                if turn["user"]:
+                    prompt += f"Human: {turn['user']}\n"
+                elif turn["assistant"]:
+                    prompt += f"Assistant: {turn['assistant']}\n"
+            prompt += "Assistant:"  # Tell model it's the assistant's turn
+            return prompt 
+        
+        # Build conversation string for current messages
+        prompt = ""
         
         # Add system message
         if self.messages["system"]["content"][0]["text"]:
-            conversation.append(self.messages["system"]["content"][0]["text"])
+            prompt += f"system: {self.messages['system']['content'][0]['text']}\n"
         
         # Add user message if not empty
         if self.messages["user"]["content"][0]["text"]:
-            conversation.append(f"Human: {self.messages['user']['content'][0]['text']}")
+            prompt += f"Human: {self.messages['user']['content'][0]['text']}\n"
         
         # Add assistant message if not empty
         if self.messages["assistant"]["content"][0]["text"]:
-            conversation.append(f"Assistant: {self.messages['assistant']['content'][0]['text']}")
+            prompt += f"Assistant: {self.messages['assistant']['content'][0]['text']}\n"
+            
+        # Add final prompt if there's any content
+        if prompt:
+            prompt += "Assistant:"
         
-        # Join with newlines and add final prompt
-        formatted = "\n\n".join(conversation)
-        if formatted:
-            formatted += "\n\nAssistant:"
-        
-        return formatted
+        return prompt
     
     def generate_response(self, prompt: str) -> str:
         """Generate a response using the model"""
@@ -208,6 +221,8 @@ class ConversationManager:
             
             # Generate response
             response = self.generate_response(formatted_prompt)
+           
+             
             
             if response:
                 # Check for repetition
@@ -227,6 +242,8 @@ class ConversationManager:
                 if len(self.memory) > self.max_memory_length:
                     self.memory = self.memory[-self.max_memory_length:]
                 
+                formatted_history = self.format_messages(self.memory)
+                response = self.generate_response(formatted_history)
                 return response
             
             return None
@@ -257,38 +274,3 @@ class ConversationManager:
                 "content": [{"text": ""}]
             }
         }
-
-def main():
-    # Example usage
-    try:
-        # Initialize conversation manager (will use latest finetuned model)
-        manager = ConversationManager(
-            max_length=100,
-            temperature=0.7,
-            top_p=0.9
-        )
-        
-        print(f"{Fore.CYAN}Starting conversation. Type 'quit' to exit.{Style.RESET_ALL}")
-        
-        while True:
-            # Get user input
-            user_input = input(f"{Fore.YELLOW}You: {Style.RESET_ALL}")
-            if user_input.lower() == 'quit':
-                break
-            
-            # Generate response
-            response = manager.chat(user_input)
-            if response:
-                print(f"{Fore.GREEN}Assistant: {response}{Style.RESET_ALL}")
-        
-        # Print conversation memory
-        print(f"\n{Fore.CYAN}Conversation Memory:{Style.RESET_ALL}")
-        for exchange in manager.get_memory():
-            print(f"User: {exchange['user']}")
-            print(f"Assistant: {exchange['assistant']}\n")
-            
-    except Exception as e:
-        print(f"{Fore.RED}Error in main: {str(e)}{Style.RESET_ALL}")
-
-if __name__ == "__main__":
-    main()

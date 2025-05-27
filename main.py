@@ -110,8 +110,8 @@ class Main:
 if __name__ == "__main__":
     main = Main()
 
-    main.load_datas()
-    main.runtrain()
+    # main.load_datas()
+    # main.runtrain()
     
     manager = ConversationManager(
         model_name="beatajackowska_DialoGPT-RickBot",
