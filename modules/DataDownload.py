@@ -85,19 +85,23 @@ class FlexibleDatasetLoader:
         else:
             configs = get_dataset_config_names(name, trust_remote_code=self.trust_remote_code)
             if isinstance(configs, list):
+                saved_config = {}
                 user_input = None
                 print(f"{Fore.CYAN}Available configs for {name}: {configs}{Style.RESET_ALL}")
-                if self.SAVED_CONFIG_FILE.exists():
+                try:
                     with open(self.SAVED_CONFIG_FILE, 'r') as f:
                         saved_config = json.load(f)
-                        if name in saved_config:
-                            user_input = saved_config[name]
+                except:
+                    self.SAVED_CONFIG_FILE.touch(exist_ok=True)
+                if name in saved_config:
+                    user_input = saved_config[name]
                 else:
                     user_input = input(f"{Fore.YELLOW}Enter the config you want to use: {Style.RESET_ALL}")
                     self.config = user_input
                     self.saved_config[name] = user_input
+                    saved_config.update(self.saved_config)
                     with open(self.SAVED_CONFIG_FILE, 'w') as f:
-                        json.dump(self.saved_config, f, indent=4)
+                        json.dump(saved_config, f, indent=4)
                 return self.load(name, user_input)
 
     def get(self):
