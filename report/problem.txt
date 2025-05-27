@@ -103,3 +103,23 @@ Dataset: Dataset({
     features: ['input_ids', 'attention_mask'],
     num_rows: 7144
 })
+Model: beatajackowska/DialoGPT-RickBot
+Dataset: Dataset({
+    features: ['id', 'input', 'output', 'output_tokens', 'definition', 'positive_input', 'positive_output', 'positive_explanation', 'negative_input', 'negative_output', 'negative_explanation', 'task', 'positive_one_shot_with_definition_prompt', 'positive_one_shot_with_definition_and_explanation_prompt', 'negative_one_shot_with_explanation_prompt', 'definition_prompt', 'mixed_two_shot_with_defintion_and_explanation_prompt', 'negative_one_shot_with_definition_and_explanation_prompt', 'basic_prompt', 'positive_one_shot_prompt', 'raw_embedding_8_dim', 'raw_embedding_16_dim', 'raw_embedding_32_dim', 'raw_embedding_64_dim', 'raw_embedding_full_dim'],
+    num_rows: 7144
+})
+Model: beatajackowska/DialoGPT-RickBot
+Dataset: Dataset({
+    features: ['id', 'input', 'output', 'output_tokens', 'definition', 'positive_input', 'positive_output', 'positive_explanation', 'negative_input', 'negative_output', 'negative_explanation', 'task', 'positive_one_shot_with_definition_prompt', 'positive_one_shot_with_definition_and_explanation_prompt', 'negative_one_shot_with_explanation_prompt', 'definition_prompt', 'mixed_two_shot_with_defintion_and_explanation_prompt', 'negative_one_shot_with_definition_and_explanation_prompt', 'basic_prompt', 'positive_one_shot_prompt', 'raw_embedding_8_dim', 'raw_embedding_16_dim', 'raw_embedding_32_dim', 'raw_embedding_64_dim', 'raw_embedding_full_dim'],
+    num_rows: 7144
+})
+Model: beatajackowska/DialoGPT-RickBot
+Dataset: Dataset({
+    features: ['input_ids', 'attention_mask'],
+    num_rows: 7144
+})
+Model: beatajackowska/DialoGPT-RickBot
+Dataset: Dataset({
+    features: ['input_ids', 'attention_mask'],
+    num_rows: 7144
+})

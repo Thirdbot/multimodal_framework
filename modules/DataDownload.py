@@ -69,7 +69,6 @@ class FlexibleDatasetLoader:
                             filename=file_info.rfilename,
                             repo_type="dataset",
                             local_dir=str(dataset_dir),
-                            local_dir_use_symlinks=False
                         )
                         self.file_paths[file_info.rfilename] = file_path
                         print(f"{Fore.GREEN}Downloaded {file_info.rfilename} to: {file_path}{Style.RESET_ALL}")
