@@ -25,7 +25,7 @@ class ChatTemplate:
     def seperated_data(self,dataset,keys,mul_field=None):
         dataset_formated = {"text":[]}
         get_keys = None
-        print(f"Processing dataset with key: {keys}")
+        # print(f"Processing dataset with key: {keys}")
         
         #chat data
         set_data = dataset.get(f'{keys}')
@@ -51,7 +51,7 @@ class ChatTemplate:
                         pattern = r"<{mul_field}>(.*?)"
                         match = re.findall(pattern,msg['content'])
                         if match:
-                            print(f"Found {mul_field} in content: {match}")
+                            # print(f"Found {mul_field} in content: {match}")
                             # concatenate real data over tags
                             pass
                             break
@@ -78,14 +78,12 @@ class ChatTemplate:
         # Third level check - regular dataset processing
         elif is_check and not is_conversation:
             if is_regular:
-                print("Processing regular dataset")
+                # print("Processing regular dataset")
                 mis_columns_name = ['messages', 'text']
                 for mis_name in mis_columns_name:
                     if mis_name in dataset_keys:
                         data_info = dataset[mis_name]
                         if isinstance(data_info, list):
-                            print(f"Found {mis_name} column with list type")
-                            print(data_info[0])
                             
                             return self.seperated_data(dataset=dataset,keys=mis_name,mul_field=mul_field)
                         else:
@@ -96,7 +94,7 @@ class ChatTemplate:
             
             # Fourth level check - irregular dataset processing is seperated instruction column
             if not is_regular:
-                print("Processing irregular dataset")
+                # print("Processing irregular dataset")
                 potential_columns_name = [(['question','instruction','user','input','Questions'], 
                                            ['answer','response','assistant','output','Answers'],
                                            ['definition','instruction'],
@@ -117,36 +115,57 @@ class ChatTemplate:
                     
 
                     if matching_cols_0 and matching_cols_1 and matching_cols_2:
+                        dict_list = {"text":[]}
                         #instruction data auto assign role
-                        print("found instruction data")
-                        print(f"Found {matching_cols_0} and {matching_cols_1} and {matching_cols_2} columns")
-                        for user_q,asist_a,instruction in zip(dataset[matching_cols_0],dataset[matching_cols_1],dataset[matching_cols_2]):
-                            text_formatted = f'instruction: {instruction}\n\nuser: {user_q}\n\nassistant: {asist_a}'
-                        return text_formatted
+                        
+                        # print(f"Found {matching_cols_0} and {matching_cols_1} and {matching_cols_2} columns")
+                        for user_q, asist_a, instruction in zip(dataset[matching_cols_0[0]], dataset[matching_cols_1[0]], dataset[matching_cols_2[0]]):
+                            message_list = [
+                                {"role": "system", "content": instruction},
+                                {"role": "user", "content": user_q},
+                                {"role": "assistant", "content": asist_a}
+                            ]
+                            dict_list["text"].append(message_list)
+                        return dict_list
                     
                     elif matching_cols_0 and matching_cols_1:
                         #chat data auto assign role
-                        print("found chat data")
-                        print(f"Found {matching_cols_0} and {matching_cols_1} columns")
-                        return True, (matching_cols_0, matching_cols_1)
+                       
+                        dict_list = {"text": []}
+                        for user_q, asist_a in zip(dataset[matching_cols_0[0]], dataset[matching_cols_1[0]]):
+                            message_list = [
+                                {"role": "user", "content": user_q},
+                                {"role": "assistant", "content": asist_a}
+                            ]
+                            dict_list["text"].append(message_list)
+                        return dict_list
                     
                     elif matching_cols_3 and matching_cols_4:
                         #chosen reject instruction
-                        print("found chosen reject instruction")
-                        print(f"Found {matching_cols_3} and {matching_cols_4} columns")
-                        return True, (matching_cols_3, matching_cols_4)
+                        
+                        dict_list = {"text": []}
+                        for chosen, rejected in zip(dataset[matching_cols_3[0]], dataset[matching_cols_4[0]]):
+                            message_list = [
+                                {"role": "user", "content": chosen},
+                                {"role": "assistant", "content": rejected}
+                            ]
+                            dict_list["text"].append(message_list)
+                        return dict_list
                     
                     elif matching_cols_5 and matching_cols_6:
                         #role text instruction
-                        print("found role text column chat")
-                        print(f"Found {matching_cols_5} and {matching_cols_6} columns")
-                        return True, (matching_cols_5, matching_cols_6)
+                        
+                        dict_list = {"text": []}
+                        for role, text in zip(dataset[matching_cols_5[0]], dataset[matching_cols_6[0]]):
+                            message_list = [{"role": role, "content": text}]
+                            dict_list["text"].append(message_list)
+                        return dict_list
                     else:
                         print(f"Not found any matching columns in {potential_columns}")
-                        return False, None
+                        return {"text": []}
                 print("This dataset cannot be processed")
             
-                return False
+                return {"text": []}
         
         return False
     
@@ -157,7 +176,7 @@ class ChatTemplate:
             role = msg['role']
             content = msg['content']
             # Add special tokens or markers to clearly separate roles
-            if role == 'system':
+            if role == 'system' or role == "instruction":
                 formatted_parts.append(f"<|system|>\n{content}")
             elif role == 'human' or role == 'user':
                 formatted_parts.append(f"<|user|>\n{content}")
