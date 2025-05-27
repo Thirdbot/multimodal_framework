@@ -59,7 +59,7 @@ class Main:
         
         self.model_data_params = {
             "model_name":["beatajackowska/DialoGPT-RickBot"],
-            "datasets_name":["theneuralmaze/rick-and-morty-transcripts-sharegpt"],
+            "datasets_name":["theneuralmaze/rick-and-morty-transcripts-sharegpt","alexgshaw/natural-instructions-prompt-rewards"],
             "model_amount":1,
             "datasets_amount":2,
             # "datasets_name":["OpenAssistant/oasst2"],
@@ -145,6 +145,9 @@ if __name__ == "__main__":
         print(f"{Fore.CYAN}Conversation history saved to {history_file}{Style.RESET_ALL}")
 
 # What To do
+#make model seperate tokenizer and model
+#create suitable model and dataset loader from outside huggingface but loadable and have history from path
+#renew interference utilize langchain model
 # #try cut conner of chat template
 #handle various of datasets downloadble files need each column
 #create template dataset
