@@ -12,6 +12,7 @@ from peft import AutoPeftModelForCausalLM
 from modules.chatTemplate import ChatTemplate
 from modules.chainpipe import Chainpipe
 from typing import List, Dict, Optional, Union
+import re
 
 # from langchain.llms import HuggingFacePipeline
 # from transformers import pipeline, AutoModelForCausalLM, AutoTokenizer
@@ -45,7 +46,7 @@ class ConversationManager:
         self.messages = {
             "system": {
                 "role": "system",
-                "content": [{"text": "You are Rick from Rick and Morty. Respond in character."}]
+                "content": [{"text": "You are a helpful AI assistant."}]
             },
             "user": {
                 "role": "user",
@@ -79,11 +80,15 @@ class ConversationManager:
                     raise ValueError("No finetuned models found in the models directory")
                 model_path = max(model_dirs, key=lambda x: x.stat().st_mtime)
                 print(f"{Fore.CYAN}Using latest model from: {model_path}{Style.RESET_ALL}")
-            else:
+                
+            elif (self.MODEL_DIR / model_name).exists():
+                print(f"{Fore.CYAN}Using model from: {self.MODEL_DIR / model_name}{Style.RESET_ALL}")
                 model_path = self.MODEL_DIR / model_name
-            
+            else:
+                print(f"{Fore.CYAN}Using model from: {model_name}{Style.RESET_ALL}")
+                model_path = model_name
             # Load model
-            self.model = AutoPeftModelForCausalLM.from_pretrained(
+            self.model = AutoModelForCausalLM.from_pretrained(
                 str(model_path),
                 device_map=self.device_map,
                 torch_dtype=torch.float16,
@@ -123,33 +128,39 @@ class ConversationManager:
             print(f"{Fore.RED}Error loading model: {str(e)}{Style.RESET_ALL}")
             raise
     
-    def format_messages(self,history=None) -> str:
+    def format_messages(self, history=None) -> str:
         """Format messages into a prompt string using our custom template"""
-        if history:
-            prompt = ""
-            for turn in history:
-                if turn["user"]:
-                    prompt += f"Human: {turn['user']}\n"
-                elif turn["assistant"]:
-                    prompt += f"Assistant: {turn['assistant']}\n"
-            prompt += "Assistant:"  # Tell model it's the assistant's turn
-            return prompt 
-        
-        # Build conversation string for current messages
         prompt = ""
         
-        # Add system message
+        # Add system message if present
         if self.messages["system"]["content"][0]["text"]:
             prompt += f"system: {self.messages['system']['content'][0]['text']}\n"
         
-        # Add user message if not empty
+        # Format history if provided
+        if history:
+            for turn in history:
+                if isinstance(turn, dict):
+                    # Handle different message formats
+                    if "user" in turn and turn["user"]:
+                        prompt += f"Human: {turn['user']}\n"
+                    elif "assistant" in turn and turn["assistant"]:
+                        prompt += f"Assistant: {turn['assistant']}\n"
+                    elif "role" in turn and "content" in turn:
+                        if turn["role"] == "system":
+                            prompt += f"system: {turn['content']}\n"
+                        elif turn["role"] == "user":
+                            prompt += f"Human: {turn['content']}\n"
+                        elif turn["role"] == "assistant":
+                            prompt += f"Assistant: {turn['content']}\n"
+        
+        # Add current user message if not empty
         if self.messages["user"]["content"][0]["text"]:
             prompt += f"Human: {self.messages['user']['content'][0]['text']}\n"
         
-        # Add assistant message if not empty
+        # Add current assistant message if not empty
         if self.messages["assistant"]["content"][0]["text"]:
             prompt += f"Assistant: {self.messages['assistant']['content'][0]['text']}\n"
-            
+        
         # Add final prompt if there's any content
         if prompt:
             prompt += "Assistant:"
@@ -169,17 +180,9 @@ class ConversationManager:
                 "pad_token_id": self.tokenizer.pad_token_id,
                 "repetition_penalty": 1.2,
                 "no_repeat_ngram_size": 3,
-                "num_beams": 1,  # Disable beam search
-                "early_stopping": False  # Disable early stopping since we're not using beam search
+                "num_beams": 1,
+                "early_stopping": False
             }
-            
-            # Tokenize with truncation
-            inputs = self.tokenizer(
-                prompt,
-                return_tensors="pt",
-                truncation=True,
-                max_length=self.max_length - self.max_new_tokens
-            ).to(self.device_map)
             
             # Generate response
             output = self.generator(
@@ -191,18 +194,8 @@ class ConversationManager:
             # Remove the input prompt from the response
             response = response[len(prompt):].strip()
             
-            # Clean up response
-            if response.startswith("Assistant:"):
-                response = response[len("Assistant:"):].strip()
-            
-            # Remove any repeated phrases
-            words = response.split()
-            cleaned_words = []
-            for i, word in enumerate(words):
-                if i > 0 and word == words[i-1]:
-                    continue
-                cleaned_words.append(word)
-            response = " ".join(cleaned_words)
+            # Get the first complete response (up to the first role marker or newline)
+            response = response.split('\n')[0].split('system:')[0].split('Human:')[0].split('Assistant:')[0].strip()
             
             return response
             
@@ -216,19 +209,13 @@ class ConversationManager:
             # Update user message
             self.messages["user"]["content"][0]["text"] = user_input
             
-            # Format the conversation
-            formatted_prompt = self.format_messages()
+            # Format the conversation with memory
+            formatted_prompt = self.format_messages(self.memory)
             
             # Generate response
             response = self.generate_response(formatted_prompt)
-           
-             
             
             if response:
-                # Check for repetition
-                if len(response.split()) < 3:  # If response is too short
-                    response = self.generate_response(formatted_prompt)  # Try again
-                
                 # Update assistant message
                 self.messages["assistant"]["content"][0]["text"] = response
                 
@@ -242,8 +229,6 @@ class ConversationManager:
                 if len(self.memory) > self.max_memory_length:
                     self.memory = self.memory[-self.max_memory_length:]
                 
-                formatted_history = self.format_messages(self.memory)
-                response = self.generate_response(formatted_history)
                 return response
             
             return None
@@ -263,7 +248,7 @@ class ConversationManager:
         self.messages = {
             "system": {
                 "role": "system",
-                "content": [{"text": "You are Rick from Rick and Morty. Respond in character."}]
+                "content": [{"text": "You are a helpful AI assistant."}]
             },
             "user": {
                 "role": "user",
