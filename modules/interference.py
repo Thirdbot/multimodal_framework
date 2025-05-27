@@ -80,13 +80,13 @@ class ConversationManager:
                     raise ValueError("No finetuned models found in the models directory")
                 model_path = max(model_dirs, key=lambda x: x.stat().st_mtime)
                 print(f"{Fore.CYAN}Using latest model from: {model_path}{Style.RESET_ALL}")
-                
             elif (self.MODEL_DIR / model_name).exists():
                 print(f"{Fore.CYAN}Using model from: {self.MODEL_DIR / model_name}{Style.RESET_ALL}")
                 model_path = self.MODEL_DIR / model_name
             else:
                 print(f"{Fore.CYAN}Using model from: {model_name}{Style.RESET_ALL}")
                 model_path = model_name
+
             # Load model
             self.model = AutoModelForCausalLM.from_pretrained(
                 str(model_path),
@@ -119,7 +119,7 @@ class ConversationManager:
             self.generator = pipeline(
                 "text-generation",
                 model=self.model,
-                tokenizer=self.tokenizer,
+                tokenizer=self.tokenizer
             )
             
             print(f"{Fore.GREEN}Successfully loaded model and tokenizer from {model_path}{Style.RESET_ALL}")
@@ -135,24 +135,22 @@ class ConversationManager:
         # Add system message if present
         if self.messages["system"]["content"][0]["text"]:
             prompt += f"system: {self.messages['system']['content'][0]['text']}\n"
-        
-        # Format history if provided
-        if history:
-            for turn in history:
-                if isinstance(turn, dict):
-                    # Handle different message formats
-                    if "user" in turn and turn["user"]:
-                        prompt += f"Human: {turn['user']}\n"
-                    elif "assistant" in turn and turn["assistant"]:
-                        prompt += f"Assistant: {turn['assistant']}\n"
-                    elif "role" in turn and "content" in turn:
-                        if turn["role"] == "system":
-                            prompt += f"system: {turn['content']}\n"
-                        elif turn["role"] == "user":
-                            prompt += f"Human: {turn['content']}\n"
-                        elif turn["role"] == "assistant":
-                            prompt += f"Assistant: {turn['content']}\n"
-        
+    
+        for turn in history:
+            if isinstance(turn, dict):
+                # Handle different message formats
+                if "user" in turn and turn["user"]:
+                    prompt += f"Human: {turn['user']}\n"
+                elif "assistant" in turn and turn["assistant"]:
+                    prompt += f"Assistant: {turn['assistant']}\n"
+                elif "role" in turn and "content" in turn:
+                    if turn["role"] == "system":
+                        prompt += f"system: {turn['content']}\n"
+                    elif turn["role"] == "user":
+                        prompt += f"Human: {turn['content']}\n"
+                    elif turn["role"] == "assistant":
+                        prompt += f"Assistant: {turn['content']}\n"
+    
         # Add current user message if not empty
         if self.messages["user"]["content"][0]["text"]:
             prompt += f"Human: {self.messages['user']['content'][0]['text']}\n"
@@ -208,7 +206,7 @@ class ConversationManager:
         try:
             # Update user message
             self.messages["user"]["content"][0]["text"] = user_input
-            
+            self.memory.append(self.messages)
             # Format the conversation with memory
             formatted_prompt = self.format_messages(self.memory)
             
