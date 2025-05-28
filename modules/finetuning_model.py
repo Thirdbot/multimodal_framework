@@ -588,8 +588,11 @@ class Manager:
                             
                             count += 1
                             
-                            print(first_dataset[:10])
-                            print(secound_dataset[:10])
+                            for em in first_dataset[0]['conversations']:
+                                print(em['from'])
+                            print(f"length of first dataset: {len(first_dataset)}")
+                            
+                            
                             
                             
                             
@@ -600,7 +603,7 @@ class Manager:
                             ###concatenate and merge modality
                             saved_dataset = None
                             
-                            dataset =self.finetune_model.map_tokenizer(dataset_name,tokenizer, merged_dataset,return_embedded_dataset=False)
+                            # dataset =self.finetune_model.map_tokenizer(dataset_name,tokenizer, merged_dataset,return_embedded_dataset=False)
                         
                         
                         
