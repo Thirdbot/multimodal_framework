@@ -371,12 +371,13 @@ class FinetuneModel:
             print(f"{Fore.RED}Error loading tokenizer: {str(e)}{Style.RESET_ALL}")
             return None
 
-    def map_tokenizer(self, tokenizer, dataset, max_length=384):
+    def map_tokenizer(self, dataset_name, tokenizer, dataset, max_length=384,return_embedded_dataset=False):
         try:
             tokenized_dataset = self.chat_template.prepare_dataset(
-                self.dataset_name,
+                dataset_name,
                 dataset,
-                max_length=max_length
+                max_length=max_length,
+                return_embedded_dataset=return_embedded_dataset
             )
             print(f"{Fore.GREEN}Successfully prepared chat dataset{Style.RESET_ALL}")
             return tokenized_dataset
@@ -569,27 +570,59 @@ class Manager:
                 if "datasets" in el:
                     datasets = el["datasets"]
                     
-                    for dataset_name in datasets:
+                    saved_dataset = None
+                    first_dataset = None
+                    secound_dataset = None
+                    for count,dataset_name in enumerate(datasets):
+                        
                         print(f"{Fore.CYAN}Loading dataset'config: {dataset_name} {config[dataset_name]}{Style.RESET_ALL}")
                         dataset = self.finetune_model.load_dataset(dataset_name,config[dataset_name],split='train')
                        
-                        # Process and tokenize the dataset
-                        processed_dataset = self.finetune_model.map_tokenizer(tokenizer, dataset)
+                        # Process and tokenize the dataset that combined and gonna return a embedding of 2 datasets if condition met
                         
-                        # Combine datasets
-                        if combined_dataset is None:
-                            combined_dataset = processed_dataset
-                            print(combined_dataset)
-                        else:
-                            # Handle both train and validation splits
-                            for split in ['train', 'validation']:
-                                if split in combined_dataset and split in processed_dataset:
-                                    combined_dataset[split] = concatenate_datasets([
-                                        combined_dataset[split], 
-                                        processed_dataset[split]
-                                    ])
-                                elif split in processed_dataset:
-                                    combined_dataset[split] = processed_dataset[split]
+                        if (count+1) % 3 != 0:
+                            if first_dataset is None:
+                                first_dataset = self.finetune_model.map_tokenizer(dataset_name,tokenizer, dataset,return_embedded_dataset=True)
+                            elif secound_dataset is None:
+                                secound_dataset = self.finetune_model.map_tokenizer(dataset_name,tokenizer, dataset,return_embedded_dataset=True)
+                            
+                            count += 1
+                            
+                            print(first_dataset[:10])
+                            print(secound_dataset[:10])
+                            
+                            
+                            
+                            
+                        
+                            
+                        elif(count != 0 and count % 3 == 0):
+                            ###concatenate and merge modality
+                            saved_dataset = None
+                            
+                            dataset =self.finetune_model.map_tokenizer(dataset_name,tokenizer, merged_dataset,return_embedded_dataset=False)
+                        
+                        
+                        
+                        # # Combine datasets
+                        # if combined_dataset is None:
+                        #     combined_dataset = processed_dataset
+                        #     print(combined_dataset)
+                        # else:
+                        #     # Handle both train and validation splits
+                        #     for split in ['train', 'validation']:
+                        #         if split in combined_dataset and split in processed_dataset:
+                        #             combined_dataset[split] = concatenate_datasets([
+                        #                 combined_dataset[split], 
+                        #                 processed_dataset[split]
+                        #             ])
+                        #         elif split in processed_dataset:
+                        #             combined_dataset[split] = processed_dataset[split]
+                        
+                        # view_dataset = processed_dataset.to_pandas()
+                        # print(view_dataset['input_ids'][0])
+                        # print(view_dataset['input_ids'][1])
+                        # break
                     
                     # Set the final combined dataset
                     dataset = combined_dataset
