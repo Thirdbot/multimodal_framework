@@ -93,10 +93,80 @@ class ChatTemplate:
             return dataset_formated
         
         elif return_embedded_dataset:
-            # print("Processing embedded dataset")
-            if mul_field is not None:
+            print(f"Processing embedded dataset")
+            total_items = len(dataset[f'{keys}'])
+            if mul_field is None:
+                print(f"Processing non multimodal conversation")
+                # Create new lists to store embedded data
+                embedded_messages = []
+                embedded_images = []
+                
+                progress_bar = tqdm(
+                        enumerate(dataset[f'{keys}']),
+                        total=total_items,
+                        desc=f"Embedding non multimodal conversation",
+                        unit="item",
+                        ncols=100,
+                        bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]'
+                    )
+                # Iterate through the dataset with indices
+                for index, list_data in progress_bar:
+                        try:
+                            get_keys = tuple(list_data[0].keys())
+                            progress_bar.set_postfix({
+                                'status': 'processing',
+                                'keys': get_keys
+                            })
+                            
+                            if get_keys[0] in ('role','from'):
+                                role = get_keys[0]
+                                content = get_keys[1]
+                            elif get_keys[1] in ('content','value'):
+                                role = get_keys[1]
+                                content = get_keys[0]
+                            elif get_keys[0] in ('content','value'):
+                                role = get_keys[1]
+                                content = get_keys[0]
+                            elif get_keys[1] in ('role','from'):
+                                role = get_keys[1]
+                                content = get_keys[0]
+                            else:
+                                raise ValueError(f"Invalid keys: {get_keys}")
+                            
+                            try:
+                                processed_content = self.get_text_content(role,content,list_data)
+                                if processed_content is not None:
+                                    embedded_messages.append(processed_content)
+                                    progress_bar.set_postfix({
+                                        'status': 'success',
+                                        'messages': len(embedded_messages)
+                                    })
+                                else:
+                                    progress_bar.set_postfix({
+                                        'status': 'warning',
+                                        'error': 'None returned'
+                                    })
+                            except Exception as e:
+                                progress_bar.set_postfix({
+                                    'status': 'error',
+                                    'error': str(e)[:30]
+                                })
+                                continue
+                            
+                        except Exception as e:
+                            progress_bar.set_postfix({
+                                'status': 'error',
+                                'error': str(e)[:30]
+                            })
+                            continue
+                
+                # Create a new dataset with the embedded data
+                print(f"\nCompleted processing {len(embedded_messages)} items")
+                new_dataset = Dataset.from_dict({f'{keys}': embedded_messages})
+                return new_dataset
+            
+            elif mul_field is not None:
                 for mul in mul_field:
-                    # print(f"Processing multimodal field: {mul}")
                     # Create new lists to store embedded data
                     embedded_messages = []
                     embedded_images = []
@@ -119,7 +189,6 @@ class ChatTemplate:
                     for index, (list_data, mul_content) in progress_bar:
                         try:
                             get_keys = tuple(list_data[0].keys())
-                            # print(f"Processing item {index} with keys: {get_keys}")
                             progress_bar.set_postfix({
                                 'status': 'processing',
                                 'keys': get_keys
@@ -149,32 +218,18 @@ class ChatTemplate:
                                     pattern = r"<" + strip_mul + ">(.*?)"
                                     match = re.search(pattern, msg_get_content)
                                     
-                                
-                                # print(f"Processing message content: {msg_get_content[:100]}...")
-                                
                                 if match:
-                                    last_index_match = match.end()
+                                    # last_index_match = match.end()
                                     
                                     user_cut_content = msg_get_content
                                     assistant_cut_content = msg_get_content
-                                    
-                                    if msg[role] == "user":
-                                        user_cut_content = msg_get_content[last_index_match:]
-                                    else:
-                                        assistant_cut_content = msg_get_content[:last_index_match]
-                                    
+                                
                                     if mul == "images":
-                                        # print(f"Found image tag in content at index {index}")
                                         try:
                                             processed_content, processed_mul_content = self.get_mul_content(
-                                                dataset_name, mul_content, user_cut_content, assistant_cut_content, list_data
+                                                dataset_name, mul_content, user_cut_content, assistant_cut_content, list_data, role, content
                                             )
                                             if processed_content is not None and processed_mul_content is not None:
-                                                # print(f"Successfully processed content at index {index}")
-                                                # # dataset[keys][index] = processed_content
-                                                # # dataset[mul][index] = processed_mul_content
-                                                # print(f"Processed content: {processed_content}")
-                                                # print(f"Processed mul content: {processed_mul_content}")
                                                 embedded_messages.append(processed_content)
                                                 embedded_images.append(processed_mul_content)
                                                 progress_bar.set_postfix({
@@ -189,10 +244,6 @@ class ChatTemplate:
                                                     'error': 'None returned'
                                                 })
                                         except Exception as e:
-                                            # print(f"Error processing content at index {index}: {str(e)}")
-                                            # print(f"Error type: {type(e)}")
-                                            # import traceback
-                                            # print(f"Traceback: {traceback.format_exc()}")
                                             progress_bar.set_postfix({
                                                 'status': 'error',
                                                 'error': str(e)[:30]
@@ -203,25 +254,30 @@ class ChatTemplate:
                                     elif mul == "video":
                                         pass
                         except Exception as e:
-                            # print(f"Error processing item {index}: {str(e)}")
-                            # print(f"Error type: {type(e)}")
-                            # import traceback
-                            # print(f"Traceback: {traceback.format_exc()}")
                             progress_bar.set_postfix({
                                 'status': 'error',
                                 'error': str(e)[:30]
                             })
                             continue
                     
-                    # Update the dataset with embedded data
-                    dataset[f'{keys}'] = embedded_messages
-                    dataset[f'{mul}'] = embedded_images
+                    # Create a new dataset with the embedded data
                     print(f"\nCompleted processing {len(embedded_messages)} items")
-                
-                return dataset
+                    new_dataset = Dataset.from_dict({
+                        f'{keys}': embedded_messages,
+                        f'{mul}': embedded_images
+                    })
+                    return new_dataset
     
+    def get_text_content(self,role,content,full_data):
+        # Process all messages in the conversation
+        for index,msg in enumerate(full_data):
+            # Replace content with its embedding
+            full_data[index][content] = self.text_embedding(msg[content])
+            # full_data[index][content] = msg[content]
+            
+        return full_data
     #make a dataset of mul content
-    def get_mul_content(self,dataset_name,mul_content,user_cut_content,assistant_cut_content,full_content):
+    def get_mul_content(self,dataset_name,mul_content,user_cut_content,assistant_cut_content,full_content,role,content):
         #change particular text content inside full content to embedding and every multimodal data to embedding
         if isinstance(mul_content,list):
             if len(mul_content) == 1:
@@ -235,17 +291,7 @@ class ChatTemplate:
                 
                 # Process all messages in the conversation
                 processed_messages = []
-                for msg in full_content:
-                    if msg['role'] == "user":
-                        # Embed the user's text content
-                        text_embedded = self.text_embedding(user_cut_content)
-                        msg['content'] = text_embedded
-                        processed_messages.append(msg)
-                    elif msg['role'] == "assistant":
-                        # Embed the assistant's text content
-                        text_embedded = self.text_embedding(assistant_cut_content)
-                        msg['content'] = text_embedded
-                        processed_messages.append(msg)
+                processed_messages.append(self.get_text_content(role,content,full_content))
                 
                 return processed_messages, mul_content_list
                 
@@ -259,17 +305,7 @@ class ChatTemplate:
                 
                 # Process all messages in the conversation
                 processed_messages = []
-                for msg in full_content:
-                    if msg['role'] == "user":
-                        # Embed the user's text content
-                        text_embedded = self.text_embedding(user_cut_content)
-                        msg['content'] = text_embedded
-                        processed_messages.append(msg)
-                    elif msg['role'] == "assistant":
-                        # Embed the assistant's text content
-                        text_embedded = self.text_embedding(assistant_cut_content)
-                        msg['content'] = text_embedded
-                        processed_messages.append(msg)
+                processed_messages.append(self.get_text_content(role,content,full_content))
                 
                 return processed_messages, mul_content_list
         elif isinstance(mul_content,str):
@@ -278,21 +314,11 @@ class ChatTemplate:
             if mul_embedded is not None:
                 # Process all messages in the conversation
                 processed_messages = []
-                for msg in full_content:
-                    if msg['role'] == "user":
-                        # Embed the user's text content
-                        text_embedded = self.text_embedding(user_cut_content)
-                        msg['content'] = text_embedded
-                        processed_messages.append(msg)
-                    elif msg['role'] == "assistant":
-                        # Embed the assistant's text content
-                        text_embedded = self.text_embedding(assistant_cut_content)
-                        msg['content'] = text_embedded
-                        processed_messages.append(msg)
+                processed_messages.append(self.get_text_content(role,content,full_content))
                 
                 return processed_messages, [mul_embedded]
         else:
-            return None, None
+            return Exception("Invalid mul_content type")
     
     #get file from local repository
     def get_mul_file(self,data_name,dataset_name):
@@ -416,39 +442,41 @@ class ChatTemplate:
         if not return_embedded_dataset:
             # Get dataset keys directly since we're already working with the train split
             dataset_keys = dataset.keys()
+            print(f"DEBUG: Dataset keys: {dataset_keys}")
             
             # First level check - initial dataset inspection
             if not is_check and not is_conversation:
                 if 'conversations' in dataset_keys:
-                    # print(f"Conversation Dataset found: {dataset['conversations'][0]} example")
+                    print(f"DEBUG: Found conversations dataset")
                     is_conversation = True
                 is_check = True
                 return self.process_dataset(dataset_name=dataset_name,dataset=dataset, is_conversation=is_conversation, is_check=is_check)
             
             # Second level check - conversation confirmation
             elif is_check and is_conversation:
-                return  self.seperated_data(dataset_name=dataset_name,dataset=dataset,keys='conversations',mul_field=mul_field)
+                print(f"DEBUG: Processing conversations dataset")
+                return self.seperated_data(dataset_name=dataset_name,dataset=dataset,keys='conversations',mul_field=mul_field)
             
             # Third level check - regular dataset processing
             elif is_check and not is_conversation:
                 if is_regular:
-                    # print("Processing regular dataset")
+                    print(f"DEBUG: Processing regular dataset")
                     mis_columns_name = ['messages', 'text']
                     for mis_name in mis_columns_name:
                         if mis_name in dataset_keys:
                             data_info = dataset[mis_name]
                             if isinstance(data_info, list):
-                                
+                                print(f"DEBUG: Found {mis_name} column with list type")
                                 return self.seperated_data(dataset_name=dataset_name,dataset=dataset,keys=mis_name,mul_field=mul_field)
                             else:
-                                print(f"Found {mis_name} column with non-list type")
+                                print(f"DEBUG: Found {mis_name} column with non-list type")
                                 print("Trying to format irregular dataset")
                                 return self.process_dataset(dataset_name=dataset_name,dataset=dataset, is_conversation=is_conversation, is_check=is_check, is_regular=False)
                     return self.process_dataset(dataset_name=dataset_name,dataset=dataset, is_conversation=is_conversation, is_check=is_check, is_regular=False)
                 
                 # Fourth level check - irregular dataset processing is seperated instruction column
                 if not is_regular:
-                    # print("Processing irregular dataset")
+                    print(f"DEBUG: Processing irregular dataset")
                     potential_columns_name = [(['question','instruction','user','input','Questions'], 
                                             ['answer','response','assistant','output','Answers'],
                                             ['definition','instruction'],
@@ -467,13 +495,14 @@ class ChatTemplate:
                         matching_cols_5 = [col for col in potential_columns[5] if col in dataset_keys]
                         matching_cols_6 = [col for col in potential_columns[6] if col in dataset_keys]
                         
-                        
+                        print(f"DEBUG: Checking potential columns: {potential_columns}")
+                        print(f"DEBUG: Found matching columns: {matching_cols_0}, {matching_cols_1}, {matching_cols_2}")
 
                         if matching_cols_0 and matching_cols_1 and matching_cols_2:
                             dict_list = {"text":[]}
                             #instruction data auto assign role
                             
-                            # print(f"Found {matching_cols_0} and {matching_cols_1} and {matching_cols_2} columns")
+                            print(f"DEBUG: Processing instruction data")
                             for user_q, asist_a, instruction in zip(dataset[matching_cols_0[0]], dataset[matching_cols_1[0]], dataset[matching_cols_2[0]]):
                                 message_list = [
                                     {"role": "system", "content": instruction},
@@ -654,10 +683,14 @@ class ChatTemplate:
     def prepare_dataset(self, dataset_name, dataset, max_length=1000,return_embedded_dataset=False):
         if not return_embedded_dataset:
             try:
+                print(f"DEBUG: Starting prepare_dataset with dataset_name: {dataset_name}")
+                print(f"DEBUG: Dataset type: {type(dataset)}")
                 first_example = dataset
                 available_fields = list(first_example.features.keys())
+                print(f"DEBUG: Available fields: {available_fields}")
                 
                 def process_examples(examples, batch_size=32):  # Increased batch size for CPU processing
+                    print(f"DEBUG: Processing examples batch")
                     #since it outer column
                     multimodal_fields = ['image','audio','video']
             
@@ -667,9 +700,10 @@ class ChatTemplate:
                             mul_field.append(field)
                         
                     if mul_field is not None:
-                        print(f"Found {mul_field} in content: {examples}")
+                        print(f"DEBUG: Found multimodal fields: {mul_field}")
                         formatted = self.process_dataset(dataset_name=dataset_name,dataset=examples,is_conversation=False,is_check=False,mul_field=mul_field)
                     else:
+                        print(f"DEBUG: No multimodal fields found")
                         formatted = self.process_dataset(dataset_name=dataset_name,dataset=examples,is_conversation=False,is_check=False)
                     
                     # Format all messages in the batch
@@ -691,6 +725,7 @@ class ChatTemplate:
                     return tokenized
                 
                 # Process the dataset with batched processing
+                print(f"DEBUG: Starting dataset mapping")
                 tokenized_dataset = dataset.map(
                     process_examples,
                     batched=True,
@@ -706,10 +741,12 @@ class ChatTemplate:
                 raise
         elif return_embedded_dataset:
             try:
+                print(f"DEBUG: Starting prepare_dataset with embedded dataset")
                 first_example = dataset
                 available_fields = list(first_example.features.keys())
+                print(f"DEBUG: Available fields for embedded dataset: {available_fields}")
                 
-                    #since it outer column
+                #since it outer column
                 multimodal_fields = ['images','audio','video']
         
                 mul_field = []
@@ -717,12 +754,12 @@ class ChatTemplate:
                     if field in available_fields:
                         mul_field.append(field)
                     
-                if mul_field is not None:
-                    
+                if mul_field is not None and len(mul_field) > 0:
+                    print(f"DEBUG: Found multimodal fields for embedded dataset: {mul_field}")
                     formatted = self.process_dataset(dataset_name=dataset_name,dataset=first_example,is_conversation=False,is_check=False,mul_field=mul_field,return_embedded_dataset=True)
                 else:
+                    print(f"DEBUG: No multimodal fields found for embedded dataset")
                     formatted = self.process_dataset(dataset_name=dataset_name,dataset=first_example,is_conversation=False,is_check=False,return_embedded_dataset=True)
-                
                 
                 return formatted
                 
