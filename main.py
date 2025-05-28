@@ -59,7 +59,7 @@ class Main:
         
         self.model_data_params = {
             "model_name":["beatajackowska/DialoGPT-RickBot"],
-            "datasets_name":["theneuralmaze/rick-and-morty-transcripts-sharegpt","alexgshaw/natural-instructions-prompt-rewards"],
+            "datasets_name":["theneuralmaze/rick-and-morty-transcripts-sharegpt","AdaptLLM/food-visual-instructions"],
             "model_amount":1,
             "datasets_amount":2,
             # "datasets_name":["OpenAssistant/oasst2"],
@@ -114,7 +114,7 @@ if __name__ == "__main__":
     main.runtrain()
     
     manager = ConversationManager(
-        model_name="Orenguteng/Llama-3-8B-Lexi-Uncensored",
+        model_name="kyutai_helium-1-2b",
         max_length=100,
         temperature=0.7,
         top_p=0.9
@@ -160,6 +160,9 @@ if __name__ == "__main__":
     
 
 # What To do
+
+
+
 #make model seperate tokenizer and model
 #create suitable model and dataset loader from outside huggingface but loadable and have history from path
 #renew interference utilize langchain model

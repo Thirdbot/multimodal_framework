@@ -24,7 +24,7 @@ class ConversationManager:
         self.max_length = max_length
         self.temperature = temperature
         self.top_p = top_p
-        self.max_new_tokens = 50  # Maximum number of new tokens to generate
+        self.max_new_tokens = 100000  # Maximum number of new tokens to generate
         
         # Set up paths
         self.WORKSPACE_DIR = Path(__file__).parent.parent.absolute()
@@ -40,7 +40,7 @@ class ConversationManager:
         
         # Initialize conversation state
         self.memory = []
-        self.max_memory_length = 10
+        self.max_memory_length = 10000
         
         # Initialize message structure
         self.messages = {

@@ -38,7 +38,8 @@ class FlexibleDatasetLoader:
         if config is not None:
             try:
                 # Create dataset directory with name and config
-                dataset_dir = self.DATASETS_DIR / f"{name.replace('/', '_')}_{config}"
+                short_name = name.split('/')[-1]  # Get just the last part of the name
+                dataset_dir = self.DATASETS_DIR / f"{short_name}"
                 dataset_dir.mkdir(parents=True, exist_ok=True)
                 
                 # Get the dataset info to find the actual files
@@ -51,7 +52,7 @@ class FlexibleDatasetLoader:
                     trust_remote_code=self.trust_remote_code,
                     # cache_dir=dataset_dir
                 )
-                print(f"{Fore.GREEN}Successfully loaded dataset {name} with config {config}{Style.RESET_ALL}")
+                print(f"{Fore.GREEN}Successfully loaded dataset {name}{Style.RESET_ALL}")
                 self.config = config
                 self.saved_config[name] = config
                
@@ -63,15 +64,26 @@ class FlexibleDatasetLoader:
                         target_dir = dataset_dir / os.path.dirname(file_info.rfilename)
                         target_dir.mkdir(parents=True, exist_ok=True)
                         
+                        # # Use a shorter cache path
+                        # cache_dir = self.REPO_DIR / "cache" / short_name
+                        # cache_dir.mkdir(parents=True, exist_ok=True)
+                        
                         # Download directly to dataset directory
                         file_path = hf_hub_download(
                             repo_id=name,
                             filename=file_info.rfilename,
                             repo_type="dataset",
-                            local_dir=str(dataset_dir),
+                            local_dir=str(target_dir),
+                            # cache_dir=str(cache_dir),
+                            # force_download=True
                         )
-                        self.file_paths[file_info.rfilename] = file_path
-                        print(f"{Fore.GREEN}Downloaded {file_info.rfilename} to: {file_path}{Style.RESET_ALL}")
+                        # Copy the file to the target directory if it's not already there
+                        target_path = target_dir / os.path.basename(file_info.rfilename)
+                        if not target_path.exists():
+                            import shutil
+                            shutil.copy2(file_path, target_path)
+                        self.file_paths[file_info.rfilename] = str(target_path)
+                        print(f"{Fore.GREEN}Downloaded {file_info.rfilename} to: {target_path}{Style.RESET_ALL}")
                     except Exception as e:
                         print(f"{Fore.YELLOW}Warning: Could not download {file_info.rfilename}: {str(e)}{Style.RESET_ALL}")
                         continue
@@ -133,7 +145,8 @@ class ModelLoader:
                     file_path = hf_hub_download(
                         repo_id=name,
                         filename=file_info.rfilename,
-                        repo_type="model"
+                        repo_type="model",
+                        cache_dir=self.REPO_DIR
                     )
                     self.file_paths[file_info.rfilename] = file_path
                     print(f"{Fore.GREEN}Downloaded {file_info.rfilename} to: {file_path}{Style.RESET_ALL}")
