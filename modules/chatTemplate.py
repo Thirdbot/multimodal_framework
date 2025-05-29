@@ -29,6 +29,97 @@ from matplotlib.image import imread
 # from pydub import AudioSegment
 
 import torch.nn.functional as F
+import numpy as np
+
+# def process_batch(batch_data, dataset_name, keys, mul_field=None):
+#     """Helper function for multiprocessing"""
+#     if mul_field is None:
+#         # Process non-multimodal data
+#         batch_data = []
+#         for list_data in batch_data:
+#             get_keys = tuple(list_data[0].keys())
+#             if get_keys[0] in ('role','from'):
+#                 role = get_keys[0]
+#                 content = get_keys[1]
+#             elif get_keys[1] in ('content','value'):
+#                 role = get_keys[1]
+#                 content = get_keys[0]
+#             elif get_keys[0] in ('content','value'):
+#                 role = get_keys[1]
+#                 content = get_keys[0]
+#             elif get_keys[1] in ('role','from'):
+#                 role = get_keys[1]
+#                 content = get_keys[0]
+#             else:
+#                 raise ValueError(f"Invalid keys: {get_keys}")
+            
+#             processed_content = get_text_content(role, content, list_data)
+#             if processed_content is not None:
+#                 batch_data.append(processed_content)
+#         return batch_data
+#     else:
+#         # Process multimodal data
+#         embedded_messages = []
+#         embedded_images = []
+        
+#         # Process each multimodal field
+#         for mul in mul_field:
+#             try:
+#                 # Get the data for this field
+#                 mul_data = batch_data[mul]
+#                 text_data = batch_data[keys]
+                
+#                 # Process each item in the dataset
+#                 for text_item, mul_item in zip(text_data, mul_data):
+#                     try:
+#                         # Get the keys for text processing
+#                         if isinstance(text_item, dict):
+#                             get_keys = tuple(text_item.keys())
+#                         elif isinstance(text_item, list) and len(text_item) > 0:
+#                             get_keys = tuple(text_item[0].keys())
+#                         else:
+#                             print(f"Unexpected text item format: {text_item}")
+#                             continue
+                            
+#                         if get_keys[0] in ('role','from'):
+#                             role = get_keys[0]
+#                             content = get_keys[1]
+#                         elif get_keys[1] in ('content','value'):
+#                             role = get_keys[1]
+#                             content = get_keys[0]
+#                         elif get_keys[0] in ('content','value'):
+#                             role = get_keys[1]
+#                             content = get_keys[0]
+#                         elif get_keys[1] in ('role','from'):
+#                             role = get_keys[1]
+#                             content = get_keys[0]
+#                         else:
+#                             raise ValueError(f"Invalid keys: {get_keys}")
+                        
+#                         # Process the multimodal content
+#                         processed_messages, processed_images = get_mul_content(
+#                             dataset_name=dataset_name,
+#                             mul_content=mul_item,
+#                             full_content=text_item,
+#                             role=role,
+#                             content=content
+#                         )
+                        
+#                         if processed_messages:
+#                             embedded_messages.extend(processed_messages)
+#                         if processed_images:
+#                             embedded_images.extend(processed_images)
+                            
+#                     except Exception as e:
+#                         print(f"Error processing item: {str(e)}")
+#                         continue
+                        
+#             except Exception as e:
+#                 print(f"Error processing {mul} field: {str(e)}")
+#                 continue
+        
+#         return embedded_messages, embedded_images
+
 class ChatTemplate:
     """Class for handling chat templates and conversation formatting"""
     
@@ -38,13 +129,25 @@ class ChatTemplate:
        
         # Move model loading to device
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.img_processor = AutoImageProcessor.from_pretrained("google/vit-base-patch16-224")
-        self.img_model = AutoModel.from_pretrained("google/vit-base-patch16-224").to(self.device)
+        print(f"Using device: {self.device}")
+        
+        # Initialize image model with CLIP for better image embeddings
+        self.img_processor = AutoImageProcessor.from_pretrained("openai/clip-vit-base-patch32")
+        self.img_model = AutoModel.from_pretrained(
+            "openai/clip-vit-base-patch32",
+            output_hidden_states=True,
+            return_dict=True
+        ).to(self.device)
+        
+        # Ensure model is in eval mode
+        self.img_model.eval()
         
         self.sentence_tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/msmarco-distilbert-cos-v5")
         self.sentence_model = AutoModel.from_pretrained("sentence-transformers/msmarco-distilbert-cos-v5").to(self.device)
     
     def seperated_data(self,dataset_name,dataset,keys,mul_field=None,return_embedded_dataset=False):
+        #cut dataset to 1000 temporary
+        dataset = dataset[:1000]
         if not return_embedded_dataset:
             dataset_formated = {"text":[]}
             get_keys = None
@@ -98,7 +201,7 @@ class ChatTemplate:
         
         elif return_embedded_dataset:
             print(f"Processing embedded dataset")
-            total_items = len(dataset[f'{keys}'])
+            total_items = len(dataset[keys])
             
             # Reduce batch size for better parallelization
             batch_size = 100000  # Smaller batch size
@@ -107,8 +210,19 @@ class ChatTemplate:
             # Process in batches
             for index in range(0, total_items, batch_size):
                 end_idx = min(index + batch_size, total_items)
-                print(f"Processing batch: {end_idx}/{total_items}", flush=True, end="\r")
-                batch_list.append(dataset[index:end_idx])
+                print(f"Processing batch: {end_idx}/{total_items}", end="\r")
+                
+                # Create batch dictionary with all required fields
+                batch = {
+                    keys: dataset[keys][index:end_idx]
+                }
+                
+                # Add multimodal fields if present
+                if mul_field is not None:
+                    for mul in mul_field:
+                        batch[mul] = dataset[mul][index:end_idx]
+                
+                batch_list.append(batch)
                 
             print("\n")
             
@@ -116,10 +230,21 @@ class ChatTemplate:
                 # Process batches in parallel using all available CPU cores
                 n_jobs = min(mp.cpu_count(), 4)  # Limit to 4 processes to avoid memory issues
                 print(f"Using {n_jobs} CPU cores for parallel processing")
-                batch_output = Parallel(n_jobs=n_jobs, backend="multiprocessing", batch_size=1)(
-                    delayed(self.mul_process)(dataset_name, batch, keys, mul_field=None) 
-                    for batch in tqdm(batch_list, desc="Processing non-multimodal batches")
-                )
+                
+                # Debug multiprocessing
+                print(f"Number of batches to process: {len(batch_list)}")
+                print(f"First batch size: {len(batch_list[0][keys]) if batch_list else 0}")
+                
+                # Use multiprocessing with proper backend
+                with mp.Pool(processes=n_jobs) as pool:
+                    batch_output = list(tqdm(
+                        pool.starmap(
+                            self.mul_process,
+                            [(dataset_name, batch, keys, None) for batch in batch_list]
+                        ),
+                        total=len(batch_list),
+                        desc="Processing batches in parallel"
+                    ))
                 
                 # Flatten the results
                 embedded_messages = []
@@ -135,21 +260,45 @@ class ChatTemplate:
             
             elif mul_field is not None:
                 # Process batches in parallel using all available CPU cores
-                n_jobs = mp.cpu_count()
+                n_jobs = min(mp.cpu_count(), 4)  # Limit to 4 processes to avoid memory issues
                 print(f"Using {n_jobs} CPU cores for parallel processing")
-                batch_messages, batch_images = Parallel(n_jobs=n_jobs,backend="multiprocessing")(delayed(self.mul_process)(dataset_name,batch, keys,mul_field) for batch in batch_list)
                 
+                # Debug multiprocessing
+                print(f"Number of batches to process: {len(batch_list)}")
+                print(f"First batch size: {len(batch_list[0][keys]) if batch_list else 0}")
+                
+                # Use multiprocessing with proper backend
+                with mp.Pool(processes=n_jobs) as pool:
+                    results = list(tqdm(
+                        pool.starmap(
+                            self.mul_process,
+                            [(dataset_name, batch, keys, mul_field) for batch in batch_list]
+                        ),
+                        total=len(batch_list),
+                        desc="Processing multimodal batches in parallel"
+                    ))
+                
+                # Process results
                 embedded_messages = []
                 embedded_images = []
-                for batch_message, batch_image in zip(batch_messages, batch_images):
-                    embedded_messages.extend(batch_message)
-                    embedded_images.extend(batch_image)
+                for batch_messages, batch_images in results:
+                    if batch_messages:
+                        embedded_messages.extend(batch_messages)
+                    if batch_images:
+                        embedded_images.extend(batch_images)
                 
-                # Create a new dataset with the embedded data fix later
                 print(f"\nCompleted processing {len(embedded_messages)} items")
+                
+                # Create a list of dictionaries, each containing both text and image data
+                combined_data = []
+                for msg, img in zip(embedded_messages, embedded_images):
+                    combined_data.append({
+                        'text': msg,
+                        'image': img
+                    })
+                
                 new_dataset = Dataset.from_dict({
-                    f'{keys}': embedded_messages,
-                    f'{mul_field[0]}': embedded_images
+                    f'{keys}': combined_data
                 })
                 return new_dataset
                     
@@ -162,8 +311,27 @@ class ChatTemplate:
             print(f"Processing non multimodal conversation",end="\r")
             # Create new lists to store embedded data
             batch_data = []
-            for list_data in tqdm(dataset[keys],desc="Processing non-multimodal sub-batches"):
-                get_keys = tuple(list_data[0].keys())
+            
+            # Get the data for the specified key
+            data = dataset.get(keys, [])
+            if not data:
+                print(f"Warning: No data found for key {keys}")
+                return None
+                
+            for list_data in tqdm(data, desc="Processing non-multimodal sub-batches"):
+                if not isinstance(list_data, (dict, list)):
+                    print(f"Warning: Invalid list_data format: {type(list_data)}")
+                    continue
+                    
+                # Handle both dict and list formats
+                if isinstance(list_data, dict):
+                    get_keys = tuple(list_data.keys())
+                elif isinstance(list_data, list) and len(list_data) > 0:
+                    get_keys = tuple(list_data[0].keys())
+                else:
+                    print(f"Warning: Invalid list_data structure")
+                    continue
+                
                 if get_keys[0] in ('role','from'):
                     role = get_keys[0]
                     content = get_keys[1]
@@ -177,45 +345,47 @@ class ChatTemplate:
                     role = get_keys[1]
                     content = get_keys[0]
                 else:
-                    raise ValueError(f"Invalid keys: {get_keys}")
+                    print(f"Warning: Invalid keys: {get_keys}")
+                    continue
                 
                 processed_content = self.get_text_content(role, content, list_data)
                 if processed_content is not None:
                     batch_data.append(processed_content)
-            return batch_data
+            
+            return batch_data if batch_data else None
         
         elif mul_field is not None:
             # Create new lists to store embedded data
             embedded_messages = []
             embedded_images = []
             
+            # Get the data for the specified key
+            text_data = dataset.get(keys, [])
+            if not text_data:
+                print(f"Warning: No text data found for key {keys}")
+                return None, None
+            
             # Process each multimodal field
             for mul in mul_field:
                 try:
                     print(f"Processing field: {mul}")
-                    print(f"Dataset type: {type(dataset)}")
-                    # print(f"Dataset keys: {dataset[keys][0][0].keys() if hasattr(dataset, 'keys') else 'No keys'}")
                     
                     # Get the data for this field
-                    mul_data = dataset[mul]
-                    text_data = dataset[keys]
-                    
-                    # print(f"Mul data type: {type(mul_data)}")
-                    # print(f"Text data type: {type(text_data)}")
+                    mul_data = dataset.get(mul, [])
+                    if not mul_data:
+                        print(f"Warning: No data found for field {mul}")
+                        continue
                     
                     # Process each item in the dataset
                     for text_item, mul_item in tqdm(zip(text_data, mul_data), desc=f"Processing {mul} field"):
                         try:
-                            # print(f"Text item type: {type(text_item)}")
-                            # print(f"Mul item type: {type(mul_item)}")
-                            
-                            # # Get the keys for text processing
+                            # Get the keys for text processing
                             if isinstance(text_item, dict):
                                 get_keys = tuple(text_item.keys())
                             elif isinstance(text_item, list) and len(text_item) > 0:
                                 get_keys = tuple(text_item[0].keys())
                             else:
-                                print(f"Unexpected text item format: {text_item}")
+                                print(f"Warning: Unexpected text item format: {type(text_item)}")
                                 continue
                                 
                             if get_keys[0] in ('role','from'):
@@ -231,7 +401,8 @@ class ChatTemplate:
                                 role = get_keys[1]
                                 content = get_keys[0]
                             else:
-                                raise ValueError(f"Invalid keys: {get_keys}")
+                                print(f"Warning: Invalid keys: {get_keys}")
+                                continue
                             
                             # Process the multimodal content
                             processed_messages, processed_images = self.get_mul_content(
@@ -249,16 +420,13 @@ class ChatTemplate:
                                 
                         except Exception as e:
                             print(f"Error processing item: {str(e)}")
-                            # print(f"Text item: {text_item}")
-                            # print(f"Mul item: {mul_item}")
                             continue
                             
                 except Exception as e:
                     print(f"Error processing {mul} field: {str(e)}")
-                    # print(f"Dataset structure: {dataset}")
                     continue
             
-            return embedded_messages, embedded_images
+            return (embedded_messages, embedded_images) if embedded_messages or embedded_images else (None, None)
 
     def get_text_content(self, role, content, full_data):
         # Process all messages in the conversation
@@ -315,13 +483,8 @@ class ChatTemplate:
             name_image = mul_content
             mul_embedded = self.get_mul_file(name_image,dataset_name)
             if mul_embedded is not None:
-                # Process all messages in the conversation
-                processed_messages = []
-                processed_content = self.get_text_content(role, content, full_content)
-                if processed_content is not None:
-                    processed_messages.append(processed_content)
+                mul_content_list.append(mul_embedded)
                 
-                return processed_messages, [mul_embedded]
         else:
             print(f"Invalid mul_content type: {type(mul_content)}")
             return [], []
@@ -362,21 +525,24 @@ class ChatTemplate:
     def read_file(self,file_path,zip=None):
         file_ext = file_path.split('.')[-1].lower()
         if zip:
-            # print(f"Processing file: {file_path}")
             # image
             if file_ext in ['jpg', 'jpeg', 'png']:
-                # print(f"Found image: {file_path}")
                 try:
                     get_file_obj = zip.open(file_path)
                     # Convert to PIL Image for processing
                     image_obj = Image.open(get_file_obj).convert("RGB")
+                    # Resize image to expected size
+                    image_obj = image_obj.resize((224, 224), Image.Resampling.LANCZOS)
+                    print(f"Processing image from zip: {file_path}")
+                    print(f"Image size: {image_obj.size}, mode: {image_obj.mode}")
                     embedded_image = self.image_embedding(image_obj)
+                    if embedded_image is not None:
+                        print(f"Successfully embedded image from zip: {file_path}")
                     return embedded_image
                 except Exception as e:
                     print(f"Error processing image {file_path}: {str(e)}")
                     return None
             elif file_ext in ['mp3', 'wav']:
-                # print(f"Found audio")
                 try:
                     get_file_obj = zip.open(file_path)
                     # audio_obj = AudioSegment.from_file(get_file_obj)
@@ -389,16 +555,21 @@ class ChatTemplate:
             if file_ext in ['jpg', 'jpeg', 'png']:
                 try:
                     get_file_obj = open(file_path, 'rb')
+                    # Convert to PIL Image for processing
                     image_obj = Image.open(get_file_obj).convert("RGB")
+                    # Resize image to expected size
+                    image_obj = image_obj.resize((224, 224), Image.Resampling.LANCZOS)
+                    print(f"Processing image: {file_path}")
+                    print(f"Image size: {image_obj.size}, mode: {image_obj.mode}")
                     embedded_image = self.image_embedding(image_obj)
-                    # print(embedded_image.shape)
+                    if embedded_image is not None:
+                        print(f"Successfully embedded image: {file_path}")
                     return embedded_image
                 except Exception as e:
                     print(f"Error processing image {file_path}: {str(e)}")
                     return None
             elif file_ext in ['mp3', 'wav']:
                 try:
-                    # print(f"Found audio")
                     get_file_obj = open(file_path, 'rb')
                     # audio_obj = AudioSegment.from_file(get_file_obj)
                     # return self.audio_embedding(audio_obj)
@@ -437,11 +608,44 @@ class ChatTemplate:
                 inputs = self.img_processor(image_obj, return_tensors="pt")
                 # Move inputs to the same device as the model
                 inputs = {k: v.to(self.device) for k, v in inputs.items()}
-                outputs = self.img_model(**inputs)
-                # Return the pooled output as embedding
-                return outputs.pooler_output.detach().cpu().numpy()
+                
+                # Print input stats
+                print(f"Input pixel values stats - min: {inputs['pixel_values'].min().item()}, max: {inputs['pixel_values'].max().item()}, mean: {inputs['pixel_values'].mean().item()}")
+                
+                with torch.no_grad():
+                    # Get model outputs
+                    outputs = self.img_model(**inputs)
+                    
+                    # Print all available outputs
+                    print("Available outputs:", outputs.keys())
+                    
+                    # Get the image embeddings
+                    image_embeddings = outputs.image_embeds
+                    print(f"Image embeddings shape: {image_embeddings.shape}")
+                    
+                    # Print raw embeddings stats
+                    print(f"Raw embeddings stats - min: {image_embeddings.min().item()}, max: {image_embeddings.max().item()}, mean: {image_embeddings.mean().item()}")
+                    
+                    # Normalize the embeddings
+                    normalized_embeddings = F.normalize(image_embeddings, p=2, dim=1)
+                    
+                    # Print normalized embeddings stats
+                    print(f"Normalized embeddings stats - min: {normalized_embeddings.min().item()}, max: {normalized_embeddings.max().item()}, mean: {normalized_embeddings.mean().item()}")
+                    
+                    # Convert to numpy
+                    final_embeddings = normalized_embeddings.detach().cpu().numpy()
+                    
+                    # Print final embeddings stats
+                    print(f"Final embeddings stats - min: {final_embeddings.min()}, max: {final_embeddings.max()}, mean: {final_embeddings.mean()}")
+                    
+                    # Verify embeddings are not all zeros
+                    if np.all(np.abs(final_embeddings) < 1e-6):
+                        print("Warning: All zero embeddings detected")
+                        return None
+                        
+                    return final_embeddings
             else:
-                print("Invalid image object type")
+                print(f"Invalid image object type: {type(image_obj)}")
                 return None
         except Exception as e:
             print(f"Error creating image embedding: {str(e)}")
@@ -702,14 +906,15 @@ class ChatTemplate:
                 def process_examples(examples, batch_size=32):  # Increased batch size for CPU processing
                     print(f"DEBUG: Processing examples batch")
                     #since it outer column
-                    multimodal_fields = ['image','audio','video']
+                    multimodal_fields = ['image', 'images', 'audio', 'video']
             
                     mul_field = []
                     for field in multimodal_fields:
                         if field in available_fields:
                             mul_field.append(field)
+                            print(f"DEBUG: Found multimodal field: {field}")
                         
-                    if mul_field is not None:
+                    if mul_field and len(mul_field) > 0:
                         print(f"DEBUG: Found multimodal fields: {mul_field}")
                         formatted = self.process_dataset(dataset_name=dataset_name,dataset=examples,is_conversation=False,is_check=False,mul_field=mul_field)
                     else:
@@ -757,14 +962,15 @@ class ChatTemplate:
                 print(f"DEBUG: Available fields for embedded dataset: {available_fields}")
                 
                 #since it outer column
-                multimodal_fields = ['images','audio','video']
+                multimodal_fields = ['image', 'images', 'audio', 'video']
         
                 mul_field = []
                 for field in multimodal_fields:
                     if field in available_fields:
                         mul_field.append(field)
+                        print(f"DEBUG: Found multimodal field: {field}")
                     
-                if mul_field is not None and len(mul_field) > 0:
+                if mul_field and len(mul_field) > 0:
                     print(f"DEBUG: Found multimodal fields for embedded dataset: {mul_field}")
                     formatted = self.process_dataset(dataset_name=dataset_name,dataset=first_example,is_conversation=False,is_check=False,mul_field=mul_field,return_embedded_dataset=True)
                 else:
