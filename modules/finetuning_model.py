@@ -589,20 +589,25 @@ class Manager:
                             
                             
                             
-                            for em in first_dataset[0]['conversations']:
-                                print(em['from'])
-                            print(f"length of first dataset: {len(first_dataset)}")
+                            # for em in first_dataset[0]['conversations']:
+                            #     print(em['from'])
+                            # print(f"length of first dataset: {len(first_dataset)}")
                             
                             
                             
+                                
+                                
                             
                             
                             
                         
                             
-                        elif(count != 0 and count % 1 == 0):
+                        if (first_dataset is not None and secound_dataset is not None):
                             ###concatenate and merge modality
-                            saved_dataset = None
+                            
+                            concat_dataset = concatenate_datasets([first_dataset,secound_dataset])
+                            concat_dataset.to_csv('concat_dataset.csv')                            
+                            #merge dataset and return to the first 1 and it should be multimodal the return to map_token without return_embedded_dataset=True
                             
                             # dataset =self.finetune_model.map_tokenizer(dataset_name,tokenizer, merged_dataset,return_embedded_dataset=False)
                         
