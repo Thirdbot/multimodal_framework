@@ -1,0 +1,138 @@
+Model: beatajackowska/DialoGPT-RickBot
+Dataset: Dataset({
+    features: ['conversations'],
+    num_rows: 1507
+})
+Model: beatajackowska/DialoGPT-RickBot
+Dataset: Dataset({
+    features: ['conversations'],
+    num_rows: 1507
+})
+Model: beatajackowska/DialoGPT-RickBot
+Dataset: Dataset({
+    features: ['conversations'],
+    num_rows: 1507
+})
+Model: beatajackowska/DialoGPT-RickBot
+Dataset: Dataset({
+    features: ['conversations'],
+    num_rows: 1507
+})
+Model: beatajackowska/DialoGPT-RickBot
+Dataset: Dataset({
+    features: ['conversations'],
+    num_rows: 1507
+})
+Model: beatajackowska/DialoGPT-RickBot
+Dataset: Dataset({
+    features: ['conversations'],
+    num_rows: 1507
+})
+Model: beatajackowska/DialoGPT-RickBot
+Dataset: Dataset({
+    features: ['conversations'],
+    num_rows: 1507
+})
+Model: beatajackowska/DialoGPT-RickBot
+Dataset: Dataset({
+    features: ['conversations'],
+    num_rows: 1507
+})
+Model: beatajackowska/DialoGPT-RickBot
+Dataset: Dataset({
+    features: ['conversations'],
+    num_rows: 1507
+})
+Model: beatajackowska/DialoGPT-RickBot
+Dataset: Dataset({
+    features: ['conversations'],
+    num_rows: 1507
+})
+Model: beatajackowska/DialoGPT-RickBot
+Dataset: Dataset({
+    features: ['conversations'],
+    num_rows: 1507
+})
+Model: beatajackowska/DialoGPT-RickBot
+Dataset: Dataset({
+    features: ['conversations'],
+    num_rows: 1507
+})
+Model: beatajackowska/DialoGPT-RickBot
+Dataset: Dataset({
+    features: ['conversations'],
+    num_rows: 1507
+})
+Model: beatajackowska/DialoGPT-RickBot
+Dataset: Dataset({
+    features: ['conversations'],
+    num_rows: 1507
+})
+Model: beatajackowska/DialoGPT-RickBot
+Dataset: Dataset({
+    features: ['conversations'],
+    num_rows: 1507
+})
+Model: beatajackowska/DialoGPT-RickBot
+Dataset: Dataset({
+    features: ['conversations'],
+    num_rows: 1507
+})
+Model: beatajackowska/DialoGPT-RickBot
+Dataset: Dataset({
+    features: ['conversations'],
+    num_rows: 1507
+})
+Model: beatajackowska/DialoGPT-RickBot
+Dataset: Dataset({
+    features: ['conversations'],
+    num_rows: 1507
+})
+Model: beatajackowska/DialoGPT-RickBot
+Dataset: Dataset({
+    features: ['conversations'],
+    num_rows: 1507
+})
+Model: beatajackowska/DialoGPT-RickBot
+Dataset: Dataset({
+    features: ['conversations'],
+    num_rows: 1507
+})
+Model: beatajackowska/DialoGPT-RickBot
+Dataset: Dataset({
+    features: ['conversations'],
+    num_rows: 1507
+})
+Model: beatajackowska/DialoGPT-RickBot
+Dataset: Dataset({
+    features: ['conversations'],
+    num_rows: 1507
+})
+Model: beatajackowska/DialoGPT-RickBot
+Dataset: Dataset({
+    features: ['conversations'],
+    num_rows: 1507
+})
+Model: beatajackowska/DialoGPT-RickBot
+Dataset: Dataset({
+    features: ['conversations'],
+    num_rows: 1507
+})
+Model: beatajackowska/DialoGPT-RickBot
+Dataset: Dataset({
+    features: ['conversations'],
+    num_rows: 1507
+})
+Model: beatajackowska/DialoGPT-RickBot
+Dataset: Dataset({
+    features: ['conversations'],
+    num_rows: 1507
+})
+Model: beatajackowska/DialoGPT-RickBot
+Dataset: Dataset({
+    features: ['conversations'],
+    num_rows: 1507
+})
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
