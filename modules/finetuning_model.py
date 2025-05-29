@@ -580,13 +580,14 @@ class Manager:
                        
                         # Process and tokenize the dataset that combined and gonna return a embedding of 2 datasets if condition met
                         
-                        if (count+1) % 3 != 0:
+                        count += 1
+                        if (count) % 3 != 0:
                             if first_dataset is None:
                                 first_dataset = self.finetune_model.map_tokenizer(dataset_name,tokenizer, dataset,return_embedded_dataset=True)
                             elif secound_dataset is None:
                                 secound_dataset = self.finetune_model.map_tokenizer(dataset_name,tokenizer, dataset,return_embedded_dataset=True)
                             
-                            count += 1
+                            
                             
                             for em in first_dataset[0]['conversations']:
                                 print(em['from'])
@@ -599,7 +600,7 @@ class Manager:
                             
                         
                             
-                        elif(count != 0 and count % 3 == 0):
+                        elif(count != 0 and count % 1 == 0):
                             ###concatenate and merge modality
                             saved_dataset = None
                             

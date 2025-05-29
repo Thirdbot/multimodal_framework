@@ -7,9 +7,11 @@ from datasets import Dataset
 from colorama import Fore, Style, init
 import zipfile
 import torch
+import multiprocessing as mp
+from functools import partial
 # Set environment variables for better performance
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
-os.environ['OMP_NUM_THREADS'] = '0'
+os.environ['OMP_NUM_THREADS'] = str(mp.cpu_count())  # Use all available CPU cores
 os.environ['TOKENIZERS_PARALLELISM'] = 'false'
 import re
 from PIL import Image
@@ -19,12 +21,12 @@ init(autoreset=True)
 
 from tqdm import tqdm
 
+from joblib import Parallel, delayed
+
 
 from transformers import AutoImageProcessor, AutoModel
 from matplotlib.image import imread
 # from pydub import AudioSegment
-import numpy as np
-import pandas as pd
 
 import torch.nn.functional as F
 class ChatTemplate:
@@ -34,11 +36,13 @@ class ChatTemplate:
         self.chainpipe = chainpipe
         self.tokenizer = tokenizer
        
+        # Move model loading to device
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.img_processor = AutoImageProcessor.from_pretrained("google/vit-base-patch16-224")
-        self.img_model = AutoModel.from_pretrained("google/vit-base-patch16-224")
+        self.img_model = AutoModel.from_pretrained("google/vit-base-patch16-224").to(self.device)
         
         self.sentence_tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/msmarco-distilbert-cos-v5")
-        self.sentence_model = AutoModel.from_pretrained("sentence-transformers/msmarco-distilbert-cos-v5")
+        self.sentence_model = AutoModel.from_pretrained("sentence-transformers/msmarco-distilbert-cos-v5").to(self.device)
     
     def seperated_data(self,dataset_name,dataset,keys,mul_field=None,return_embedded_dataset=False):
         if not return_embedded_dataset:
@@ -95,105 +99,125 @@ class ChatTemplate:
         elif return_embedded_dataset:
             print(f"Processing embedded dataset")
             total_items = len(dataset[f'{keys}'])
+            
+            # Reduce batch size for better parallelization
+            batch_size = 100000  # Smaller batch size
+            batch_list = []
+            
+            # Process in batches
+            for index in range(0, total_items, batch_size):
+                end_idx = min(index + batch_size, total_items)
+                print(f"Processing batch: {end_idx}/{total_items}", flush=True, end="\r")
+                batch_list.append(dataset[index:end_idx])
+                
+            print("\n")
+            
             if mul_field is None:
-                print(f"Processing non multimodal conversation")
-                # Create new lists to store embedded data
+                # Process batches in parallel using all available CPU cores
+                n_jobs = min(mp.cpu_count(), 4)  # Limit to 4 processes to avoid memory issues
+                print(f"Using {n_jobs} CPU cores for parallel processing")
+                batch_output = Parallel(n_jobs=n_jobs, backend="multiprocessing", batch_size=1)(
+                    delayed(self.mul_process)(dataset_name, batch, keys, mul_field=None) 
+                    for batch in tqdm(batch_list, desc="Processing non-multimodal batches")
+                )
+                
+                # Flatten the results
                 embedded_messages = []
-                embedded_images = []
+                for batch_result in batch_output:
+                    if batch_result is not None:
+                        embedded_messages.extend(batch_result)
                 
-                progress_bar = tqdm(
-                        enumerate(dataset[f'{keys}']),
-                        total=total_items,
-                        desc=f"Embedding non multimodal conversation",
-                        unit="item",
-                        ncols=100,
-                        bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]'
-                    )
-                # Iterate through the dataset with indices
-                for index, list_data in progress_bar:
-                        try:
-                            get_keys = tuple(list_data[0].keys())
-                            progress_bar.set_postfix({
-                                'status': 'processing',
-                                'keys': get_keys
-                            })
-                            
-                            if get_keys[0] in ('role','from'):
-                                role = get_keys[0]
-                                content = get_keys[1]
-                            elif get_keys[1] in ('content','value'):
-                                role = get_keys[1]
-                                content = get_keys[0]
-                            elif get_keys[0] in ('content','value'):
-                                role = get_keys[1]
-                                content = get_keys[0]
-                            elif get_keys[1] in ('role','from'):
-                                role = get_keys[1]
-                                content = get_keys[0]
-                            else:
-                                raise ValueError(f"Invalid keys: {get_keys}")
-                            
-                            try:
-                                processed_content = self.get_text_content(role,content,list_data)
-                                if processed_content is not None:
-                                    embedded_messages.append(processed_content)
-                                    progress_bar.set_postfix({
-                                        'status': 'success',
-                                        'messages': len(embedded_messages)
-                                    })
-                                else:
-                                    progress_bar.set_postfix({
-                                        'status': 'warning',
-                                        'error': 'None returned'
-                                    })
-                            except Exception as e:
-                                progress_bar.set_postfix({
-                                    'status': 'error',
-                                    'error': str(e)[:30]
-                                })
-                                continue
-                            
-                        except Exception as e:
-                            progress_bar.set_postfix({
-                                'status': 'error',
-                                'error': str(e)[:30]
-                            })
-                            continue
-                
-                # Create a new dataset with the embedded data
                 print(f"\nCompleted processing {len(embedded_messages)} items")
-                new_dataset = Dataset.from_dict({f'{keys}': embedded_messages})
+                new_dataset = Dataset.from_dict({
+                    f'{keys}': embedded_messages,
+                })
                 return new_dataset
             
             elif mul_field is not None:
-                for mul in mul_field:
-                    # Create new lists to store embedded data
-                    embedded_messages = []
-                    embedded_images = []
+                # Process batches in parallel using all available CPU cores
+                n_jobs = mp.cpu_count()
+                print(f"Using {n_jobs} CPU cores for parallel processing")
+                batch_messages, batch_images = Parallel(n_jobs=n_jobs,backend="multiprocessing")(delayed(self.mul_process)(dataset_name,batch, keys,mul_field) for batch in batch_list)
+                
+                embedded_messages = []
+                embedded_images = []
+                for batch_message, batch_image in zip(batch_messages, batch_images):
+                    embedded_messages.extend(batch_message)
+                    embedded_images.extend(batch_image)
+                
+                # Create a new dataset with the embedded data fix later
+                print(f"\nCompleted processing {len(embedded_messages)} items")
+                new_dataset = Dataset.from_dict({
+                    f'{keys}': embedded_messages,
+                    f'{mul_field[0]}': embedded_images
+                })
+                return new_dataset
                     
-                    # Get total length for progress bar
-                    total_items = len(dataset[f'{keys}'])
-                    print(f"\nProcessing {total_items} items for {mul} field")
                     
-                    # Create progress bar with description
-                    progress_bar = tqdm(
-                        enumerate(zip(dataset[f'{keys}'], dataset[f'{mul}'])),
-                        total=total_items,
-                        desc=f"Embedding {mul}",
-                        unit="item",
-                        ncols=100,
-                        bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]'
-                    )
+    
+    
+    
+    def mul_process(self,dataset_name,dataset,keys,mul_field=None):
+        if mul_field is None:
+            print(f"Processing non multimodal conversation",end="\r")
+            # Create new lists to store embedded data
+            batch_data = []
+            for list_data in tqdm(dataset[keys],desc="Processing non-multimodal sub-batches"):
+                get_keys = tuple(list_data[0].keys())
+                if get_keys[0] in ('role','from'):
+                    role = get_keys[0]
+                    content = get_keys[1]
+                elif get_keys[1] in ('content','value'):
+                    role = get_keys[1]
+                    content = get_keys[0]
+                elif get_keys[0] in ('content','value'):
+                    role = get_keys[1]
+                    content = get_keys[0]
+                elif get_keys[1] in ('role','from'):
+                    role = get_keys[1]
+                    content = get_keys[0]
+                else:
+                    raise ValueError(f"Invalid keys: {get_keys}")
+                
+                processed_content = self.get_text_content(role, content, list_data)
+                if processed_content is not None:
+                    batch_data.append(processed_content)
+            return batch_data
+        
+        elif mul_field is not None:
+            # Create new lists to store embedded data
+            embedded_messages = []
+            embedded_images = []
+            
+            # Process each multimodal field
+            for mul in mul_field:
+                try:
+                    print(f"Processing field: {mul}")
+                    print(f"Dataset type: {type(dataset)}")
+                    # print(f"Dataset keys: {dataset[keys][0][0].keys() if hasattr(dataset, 'keys') else 'No keys'}")
                     
-                    # Iterate through the dataset with indices
-                    for index, (list_data, mul_content) in progress_bar:
+                    # Get the data for this field
+                    mul_data = dataset[mul]
+                    text_data = dataset[keys]
+                    
+                    # print(f"Mul data type: {type(mul_data)}")
+                    # print(f"Text data type: {type(text_data)}")
+                    
+                    # Process each item in the dataset
+                    for text_item, mul_item in tqdm(zip(text_data, mul_data), desc=f"Processing {mul} field"):
                         try:
-                            get_keys = tuple(list_data[0].keys())
-                            progress_bar.set_postfix({
-                                'status': 'processing',
-                                'keys': get_keys
-                            })
+                            # print(f"Text item type: {type(text_item)}")
+                            # print(f"Mul item type: {type(mul_item)}")
                             
+                            # # Get the keys for text processing
+                            if isinstance(text_item, dict):
+                                get_keys = tuple(text_item.keys())
+                            elif isinstance(text_item, list) and len(text_item) > 0:
+                                get_keys = tuple(text_item[0].keys())
+                            else:
+                                print(f"Unexpected text item format: {text_item}")
+                                continue
+                                
                             if get_keys[0] in ('role','from'):
                                 role = get_keys[0]
                                 content = get_keys[1]
@@ -209,75 +233,50 @@ class ChatTemplate:
                             else:
                                 raise ValueError(f"Invalid keys: {get_keys}")
                             
-                            for msg in list_data:
-                                msg_get_content = msg[content]
-                                if not isinstance(msg_get_content, str):
-                                    continue
-                                else:
-                                    strip_mul = mul.strip('s')
-                                    pattern = r"<" + strip_mul + ">(.*?)"
-                                    match = re.search(pattern, msg_get_content)
-                                    
-                                if match:
-                                    # last_index_match = match.end()
-                                    
-                                    user_cut_content = msg_get_content
-                                    assistant_cut_content = msg_get_content
+                            # Process the multimodal content
+                            processed_messages, processed_images = self.get_mul_content(
+                                dataset_name=dataset_name,
+                                mul_content=mul_item,
+                                full_content=text_item,
+                                role=role,
+                                content=content
+                            )
+                            
+                            if processed_messages:
+                                embedded_messages.extend(processed_messages)
+                            if processed_images:
+                                embedded_images.extend(processed_images)
                                 
-                                    if mul == "images":
-                                        try:
-                                            processed_content, processed_mul_content = self.get_mul_content(
-                                                dataset_name, mul_content, user_cut_content, assistant_cut_content, list_data, role, content
-                                            )
-                                            if processed_content is not None and processed_mul_content is not None:
-                                                embedded_messages.append(processed_content)
-                                                embedded_images.append(processed_mul_content)
-                                                progress_bar.set_postfix({
-                                                    'status': 'success',
-                                                    'messages': len(embedded_messages),
-                                                    'images': len(embedded_images)
-                                                })
-                                                continue
-                                            else:
-                                                progress_bar.set_postfix({
-                                                    'status': 'warning',
-                                                    'error': 'None returned'
-                                                })
-                                        except Exception as e:
-                                            progress_bar.set_postfix({
-                                                'status': 'error',
-                                                'error': str(e)[:30]
-                                            })
-                                            continue
-                                    elif mul == "audio":
-                                        pass
-                                    elif mul == "video":
-                                        pass
                         except Exception as e:
-                            progress_bar.set_postfix({
-                                'status': 'error',
-                                'error': str(e)[:30]
-                            })
+                            print(f"Error processing item: {str(e)}")
+                            # print(f"Text item: {text_item}")
+                            # print(f"Mul item: {mul_item}")
                             continue
-                    
-                    # Create a new dataset with the embedded data
-                    print(f"\nCompleted processing {len(embedded_messages)} items")
-                    new_dataset = Dataset.from_dict({
-                        f'{keys}': embedded_messages,
-                        f'{mul}': embedded_images
-                    })
-                    return new_dataset
-    
-    def get_text_content(self,role,content,full_data):
-        # Process all messages in the conversation
-        for index,msg in enumerate(full_data):
-            # Replace content with its embedding
-            full_data[index][content] = self.text_embedding(msg[content])
-            # full_data[index][content] = msg[content]
+                            
+                except Exception as e:
+                    print(f"Error processing {mul} field: {str(e)}")
+                    # print(f"Dataset structure: {dataset}")
+                    continue
             
-        return full_data
+            return embedded_messages, embedded_images
+
+    def get_text_content(self, role, content, full_data):
+        # Process all messages in the conversation
+        try:
+            for msg in full_data:
+                if isinstance(msg[content], str):
+                    embedded_content = self.text_embedding(msg[content])
+                    # print(f"msg: {msg[content]}")
+                    if embedded_content is not None:
+                        msg[content] = embedded_content
+                        # batch_data.append(msg)
+
+            return full_data
+        except Exception as e:
+            print(f"Error processing text content: {str(e)}")
+            return None
     #make a dataset of mul content
-    def get_mul_content(self,dataset_name,mul_content,user_cut_content,assistant_cut_content,full_content,role,content):
+    def get_mul_content(self,dataset_name,mul_content,full_content,role,content):
         #change particular text content inside full content to embedding and every multimodal data to embedding
         if isinstance(mul_content,list):
             if len(mul_content) == 1:
@@ -291,7 +290,9 @@ class ChatTemplate:
                 
                 # Process all messages in the conversation
                 processed_messages = []
-                processed_messages.append(self.get_text_content(role,content,full_content))
+                processed_content = self.get_text_content(role, content, full_content)
+                if processed_content is not None:
+                    processed_messages.append(processed_content)
                 
                 return processed_messages, mul_content_list
                 
@@ -305,7 +306,9 @@ class ChatTemplate:
                 
                 # Process all messages in the conversation
                 processed_messages = []
-                processed_messages.append(self.get_text_content(role,content,full_content))
+                processed_content = self.get_text_content(role, content, full_content)
+                if processed_content is not None:
+                    processed_messages.append(processed_content)
                 
                 return processed_messages, mul_content_list
         elif isinstance(mul_content,str):
@@ -314,11 +317,14 @@ class ChatTemplate:
             if mul_embedded is not None:
                 # Process all messages in the conversation
                 processed_messages = []
-                processed_messages.append(self.get_text_content(role,content,full_content))
+                processed_content = self.get_text_content(role, content, full_content)
+                if processed_content is not None:
+                    processed_messages.append(processed_content)
                 
                 return processed_messages, [mul_embedded]
         else:
-            return Exception("Invalid mul_content type")
+            print(f"Invalid mul_content type: {type(mul_content)}")
+            return [], []
     
     #get file from local repository
     def get_mul_file(self,data_name,dataset_name):
@@ -412,6 +418,8 @@ class ChatTemplate:
         if isinstance(text, (bytes, bytearray)):
             text = text.decode('utf-8')
         encoded_input = self.sentence_tokenizer(text, padding=True, truncation=True, return_tensors='pt')
+        # Move inputs to the same device as the model
+        encoded_input = {k: v.to(self.device) for k, v in encoded_input.items()}
         with torch.no_grad():
             outputs = self.sentence_model(**encoded_input)
             # Perform pooling
@@ -420,16 +428,18 @@ class ChatTemplate:
             # Normalize embeddings
             embeddings = F.normalize(embeddings, p=2, dim=1)
             
-            return embeddings
+            return embeddings.cpu().numpy()  # Move to CPU before returning
     
     def image_embedding(self,image_obj):
         try:
             if isinstance(image_obj, Image.Image):
                 # Process image with the model
                 inputs = self.img_processor(image_obj, return_tensors="pt")
+                # Move inputs to the same device as the model
+                inputs = {k: v.to(self.device) for k, v in inputs.items()}
                 outputs = self.img_model(**inputs)
                 # Return the pooled output as embedding
-                return outputs.pooler_output.detach().numpy()
+                return outputs.pooler_output.detach().cpu().numpy()
             else:
                 print("Invalid image object type")
                 return None
