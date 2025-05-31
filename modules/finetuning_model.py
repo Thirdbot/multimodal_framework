@@ -588,42 +588,27 @@ class Manager:
                                 secound_dataset = self.finetune_model.map_tokenizer(dataset_name,tokenizer, dataset,return_embedded_dataset=True)
                             
                         
-                            
+                        concat_dataset = first_dataset
                         if (first_dataset is not None and secound_dataset is not None):
-                            first_dataset = first_dataset.to_csv('first_dataset.csv')
-                            secound_dataset = secound_dataset.to_csv('secound_dataset.csv')
+                            # first_dataset = first_dataset.to_csv('first_dataset.csv')
+                            # secound_dataset = secound_dataset.to_csv('secound_dataset.csv')
                             ###concatenate and merge modality
                             
-                            # concat_dataset = concatenate_datasets([first_dataset,secound_dataset])
+                            concat_dataset = concatenate_datasets([first_dataset,secound_dataset])
                             # concat_dataset.to_csv('concat_dataset.csv')                            
                             #merge dataset and return to the first 1 and it should be multimodal the return to map_token without return_embedded_dataset=True
                             
                             # dataset =self.finetune_model.map_tokenizer(dataset_name,tokenizer, merged_dataset,return_embedded_dataset=False)
                         
-                        
-                        
-                        # # Combine datasets
-                        # if combined_dataset is None:
-                        #     combined_dataset = processed_dataset
-                        #     print(combined_dataset)
-                        # else:
-                        #     # Handle both train and validation splits
-                        #     for split in ['train', 'validation']:
-                        #         if split in combined_dataset and split in processed_dataset:
-                        #             combined_dataset[split] = concatenate_datasets([
-                        #                 combined_dataset[split], 
-                        #                 processed_dataset[split]
-                        #             ])
-                        #         elif split in processed_dataset:
-                        #             combined_dataset[split] = processed_dataset[split]
-                        
-                        # view_dataset = processed_dataset.to_pandas()
-                        # print(view_dataset['input_ids'][0])
-                        # print(view_dataset['input_ids'][1])
-                        # break
+                            #should merge first 
+                            
+                            
+                        #after merge
+                        saved_dataset = self.finetune_model.map_tokenizer(dataset_name,tokenizer, concat_dataset,return_embedded_dataset=False)
+                       
                     
                     # Set the final combined dataset
-                    dataset = combined_dataset
+                    dataset = saved_dataset
                     
                 self.finetune_model.runtuning(model,tokenizer,dataset,modelname)
                
