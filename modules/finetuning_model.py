@@ -587,20 +587,7 @@ class Manager:
                             elif secound_dataset is None:
                                 secound_dataset = self.finetune_model.map_tokenizer(dataset_name,tokenizer, dataset,return_embedded_dataset=True)
                             
-                            
-                            
-                            # for em in first_dataset[0]['conversations']:
-                            #     print(em['from'])
-                            # print(f"length of first dataset: {len(first_dataset)}")
-                            
-                            
-                            
-                                
-                                
-                            
-                            
-                            
-                        
+                        first_dataset = first_dataset.to_csv('first_dataset.csv')
                             
                         if (first_dataset is not None and secound_dataset is not None):
                             ###concatenate and merge modality
