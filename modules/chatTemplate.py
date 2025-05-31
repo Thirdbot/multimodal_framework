@@ -94,10 +94,10 @@ class ChatTemplate:
             print(f"Processing dataset with key: {keys}")
             
             #chat data
-            set_data = dataset.get(f'{keys}')
+            set_data = dataset[keys]
             if isinstance(set_data, list):
                 print(f"Found {len(set_data)} conversations to process")
-                for list_data in dataset[f'{keys}']:
+                for list_data in dataset[keys]:
                     get_keys = tuple(list_data[0].keys())
                     message_list = []
                     
@@ -251,7 +251,8 @@ class ChatTemplate:
             batch_data = []
             
             # Get the data for the specified key
-            data = dataset.get(keys, [])
+            data = dataset[keys]
+                
             if not data:
                 print(f"Warning: No data found for key {keys}")
                 return None
@@ -298,7 +299,8 @@ class ChatTemplate:
             embedded_images = []
             
             # Get the data for the specified key
-            text_data = dataset.get(keys, [])
+            text_data = dataset[keys]
+                
             if not text_data:
                 print(f"Warning: No text data found for key {keys}")
                 return None, None
@@ -309,7 +311,7 @@ class ChatTemplate:
                     print(f"Processing field: {mul}")
                     
                     # Get the data for this field
-                    mul_data = dataset.get(mul, [])
+                    mul_data = dataset[mul]
                     if not mul_data:
                         print(f"Warning: No data found for field {mul}")
                         continue
@@ -378,8 +380,8 @@ class ChatTemplate:
                             role_type = role_type
                             break
                     
-                    # embedded_content = self.text_embedding(msg[content])
-                    embedded_content = msg[content]
+                    embedded_content = self.text_embedding(msg[content])
+                    # embedded_content = msg[content]
                     if embedded_content is not None:
                         msg[content] = embedded_content
 
@@ -761,14 +763,18 @@ class ChatTemplate:
                         
                     if mul_field and len(mul_field) > 0:
                         print(f"DEBUG: Found multimodal fields: {mul_field}")
-                        formatted = self.process_dataset(dataset_name=dataset_name,dataset=examples,is_conversation=False,is_check=False,mul_field=mul_field)
+                        # Convert LazyBatch to Dataset before processing
+                        examples_dataset = Dataset.from_dict({k: examples[k] for k in examples.keys()})
+                        formatted = self.process_dataset(dataset_name=dataset_name,dataset=examples_dataset,is_conversation=False,is_check=False,mul_field=mul_field)
                     else:
                         print(f"DEBUG: No multimodal fields found")
-                        formatted = self.process_dataset(dataset_name=dataset_name,dataset=examples,is_conversation=False,is_check=False)
+                        # Convert LazyBatch to Dataset before processing
+                        examples_dataset = Dataset.from_dict({k: examples[k] for k in examples.keys()})
+                        formatted = self.process_dataset(dataset_name=dataset_name,dataset=examples_dataset,is_conversation=False,is_check=False)
                     
                     # Format all messages in the batch
                     formatted_texts = []
-                    for conversation in formatted.get('conversations', []):
+                    for conversation in formatted['conversations']:
                         formatted_text = self.format_message(conversation)
                         formatted_texts.append(formatted_text)
                     
