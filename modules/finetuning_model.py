@@ -587,13 +587,15 @@ class Manager:
                             elif secound_dataset is None:
                                 secound_dataset = self.finetune_model.map_tokenizer(dataset_name,tokenizer, dataset,return_embedded_dataset=True)
                             
-                        first_dataset = first_dataset.to_csv('first_dataset.csv')
+                        
                             
                         if (first_dataset is not None and secound_dataset is not None):
+                            first_dataset = first_dataset.to_csv('first_dataset.csv')
+                            secound_dataset = secound_dataset.to_csv('secound_dataset.csv')
                             ###concatenate and merge modality
                             
-                            concat_dataset = concatenate_datasets([first_dataset,secound_dataset])
-                            concat_dataset.to_csv('concat_dataset.csv')                            
+                            # concat_dataset = concatenate_datasets([first_dataset,secound_dataset])
+                            # concat_dataset.to_csv('concat_dataset.csv')                            
                             #merge dataset and return to the first 1 and it should be multimodal the return to map_token without return_embedded_dataset=True
                             
                             # dataset =self.finetune_model.map_tokenizer(dataset_name,tokenizer, merged_dataset,return_embedded_dataset=False)

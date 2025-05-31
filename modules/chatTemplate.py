@@ -37,17 +37,17 @@ class ChatTemplate:
     """Class for handling chat templates and conversation formatting"""
     
     # Regex patterns for column matching
-    CONVERSATION_PATTERN = r'conversations?'
-    MESSAGE_PATTERNS = [r'messages?', r'texts?', r'content']
-    MULTIMODAL_PATTERNS = [r'image(?:s)?', r'audio(?:s)?', r'video(?:s)?']
+    CONVERSATION_PATTERN = r'^conversations?$'
+    MESSAGE_PATTERNS = [r'^messages?$', r'^texts?$', r'^content$']
+    MULTIMODAL_PATTERNS = [r'^image(?:s)?$', r'^audio(?:s)?$', r'^video(?:s)?$']
     POTENTIAL_COLUMNS_PATTERNS = [
-        (r'(?:question|instruction|user|input|Questions?)', 
-         r'(?:answer|response|assistant|output|Answers?)',
-         r'(?:definition|instruction)',
-         r'(?:chosen)',
-         r'(?:rejected)',
-         r'(?:role)',
-         r'(?:text)')
+        (r'^(?:question|instruction|user|input|Questions?)$', 
+         r'^(?:answer|response|assistant|output|Answers?)$',
+         r'^(?:definition|instruction)$',
+         r'^(?:chosen)$',
+         r'^(?:rejected)$',
+         r'^(?:role)$',
+         r'^(?:text)$')
     ]
     
     # Role patterns and mappings
@@ -89,7 +89,7 @@ class ChatTemplate:
         dataset = dataset[:1000]
         if not return_embedded_dataset:
             #format thinfg back to its original format except for multimodal
-            dataset_formated = {"text":[]}
+            dataset_formated = {"conversations":[]}
             get_keys = None
             print(f"Processing dataset with key: {keys}")
             
@@ -125,7 +125,7 @@ class ChatTemplate:
                         message_list.append(format_dict)
                     
                     # Add the complete conversation to the dataset
-                    dataset_formated['text'].append(message_list)
+                    dataset_formated['conversations'].append(message_list)
                     
                     # Check for multimodal content if needed
                     if mul_field is not None:
@@ -137,12 +137,11 @@ class ChatTemplate:
                                     print(f"Found {mul_field} in content: {match}")
                                     pass
             
-            return dataset_formated
+            return Dataset.from_dict(dataset_formated)
         
         elif return_embedded_dataset:
             print(f"Processing embedded dataset")
             total_items = len(dataset[keys])
-            
             
             # Reduce batch size for better parallelization
             batch_size = 1000  # Smaller batch size
@@ -194,10 +193,9 @@ class ChatTemplate:
                         embedded_messages.extend(batch_result)
                 
                 print(f"\nCompleted processing {len(embedded_messages)} items")
-                new_dataset = Dataset.from_dict({
-                    f'{keys}': embedded_messages,
+                return Dataset.from_dict({
+                    'conversations': embedded_messages
                 })
-                return new_dataset
             
             elif mul_field is not None:
                 # Process batches in parallel using all available CPU cores
@@ -234,14 +232,13 @@ class ChatTemplate:
                 combined_data = []
                 for msg, img in zip(embedded_messages, embedded_images):
                     combined_data.append({
-                        'text': msg,
+                        'conversations': msg,
                         'image': img
                     })
                 
-                new_dataset = Dataset.from_dict({
-                    f'{keys}': combined_data
+                return Dataset.from_dict({
+                    'conversations': combined_data
                 })
-                return new_dataset
                     
                     
     
@@ -704,12 +701,13 @@ class ChatTemplate:
                             message_list = [{"role": role, "content": text}]
                             dict_list["conversations"].append(message_list)
                     else:
-                        dict_list['conversations'] = []
+                        print(f"No matching columns found for irregular dataset")
+                        return
 
                 # Create dataset with both conversations and multimodal data
                 print(f"Creating dataset with fields: {list(dict_list.keys())}")
                 dataset_maker = Dataset.from_dict(dict_list)
-                return self.process_dataset(dataset_name=dataset_name,dataset=dataset_maker, is_conversation=False, is_check=False, is_regular=True,return_embedded_dataset=return_embedded_dataset)
+                return self.process_dataset(dataset_name=dataset_name,dataset=dataset_maker,is_conversation=False,is_check=False,mul_field=mul_field,return_embedded_dataset=return_embedded_dataset)
         
         # If we reach here, return None to indicate no valid processing path was found
         print("Warning: No valid processing path found for the dataset")
@@ -770,7 +768,7 @@ class ChatTemplate:
                     
                     # Format all messages in the batch
                     formatted_texts = []
-                    for conversation in formatted['text']:
+                    for conversation in formatted.get('conversations', []):
                         formatted_text = self.format_message(conversation)
                         formatted_texts.append(formatted_text)
                     
