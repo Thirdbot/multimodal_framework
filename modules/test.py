@@ -12,7 +12,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 def test_text_embeddings():
     # Initialize the template
-    template = ChatTemplate(chainpipe=None)
+    template = ChatTemplate()
     
     # Test texts
     texts = [
@@ -51,7 +51,7 @@ def test_text_embeddings():
 
 def test_image_embeddings():
     # Initialize the template
-    template = ChatTemplate(chainpipe=None)
+    template = ChatTemplate()
     
     # Get test images
     HomePath = Path(__file__).parent.parent.absolute()
@@ -96,7 +96,7 @@ def test_image_embeddings():
 
 def test_cross_modal_similarity():
     # Initialize the template
-    template = ChatTemplate(chainpipe=None)
+    template = ChatTemplate()
     
     # Test text
     text = "A cat sitting on a windowsill"

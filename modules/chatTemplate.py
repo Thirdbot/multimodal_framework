@@ -57,8 +57,7 @@ class ChatTemplate:
         'assistant': [r'assistant', r'gpt', r'output', r'response']
     }
     
-    def __init__(self, chainpipe, tokenizer=None, model_name=None, template=None):
-        self.chainpipe = chainpipe
+    def __init__(self, tokenizer=None, model_name=None, template=None):
         self.tokenizer = tokenizer
        
         # Move model loading to device
@@ -83,10 +82,12 @@ class ChatTemplate:
         
         self.sentence_tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/msmarco-distilbert-cos-v5")
         self.sentence_model = AutoModel.from_pretrained("sentence-transformers/msmarco-distilbert-cos-v5").to(self.device)
+        self.sentence_model.eval()  # Ensure model is in eval mode from the start
     
     def seperated_data(self,dataset_name,dataset,keys,mul_field=None,return_embedded_dataset=False):
         #cut dataset to 1000 temporary
         dataset = dataset[:1000]
+
         if not return_embedded_dataset:
             #format thinfg back to its original format except for multimodal
             dataset_formated = {"conversations":[]}
@@ -121,7 +122,9 @@ class ChatTemplate:
                         
                         role = data[role]
                         content = data[content]
+                        # content = self.emb_to_text(content)
                         format_dict = {"role":role,"content":content}
+                        # print(f"Format dict: {format_dict}")
                         message_list.append(format_dict)
                     
                     # Add the complete conversation to the dataset
@@ -137,7 +140,8 @@ class ChatTemplate:
                                     print(f"Found {mul_field} in content: {match}")
                                     pass
             
-            return Dataset.from_dict(dataset_formated)
+            # Convert to Dataset object
+            return Dataset.from_dict({"conversations": dataset_formated['conversations']})
         
         elif return_embedded_dataset:
             print(f"Processing embedded dataset")
@@ -536,6 +540,9 @@ class ChatTemplate:
             if isinstance(text, (bytes, bytearray)):
                 text = text.decode('utf-8')
             
+            # Ensure model is in eval mode
+            self.sentence_model.eval()
+            
             # Tokenize the text
             encoded_input = self.sentence_tokenizer(
                 text, 
@@ -547,9 +554,6 @@ class ChatTemplate:
             
             # Move inputs to the same device as the model
             encoded_input = {k: v.to(self.device) for k, v in encoded_input.items()}
-            
-            # Ensure model is in eval mode
-            self.sentence_model.eval()
             
             with torch.no_grad():
                 # Get model outputs
@@ -714,6 +718,41 @@ class ChatTemplate:
         # If we reach here, return None to indicate no valid processing path was found
         print("Warning: No valid processing path found for the dataset")
         return None
+    
+    
+    def emb_to_text(self,emb):
+        try:
+            # Check if embedding is valid
+            if emb is None or not isinstance(emb, np.ndarray):
+                return ""
+            
+            # If embedding is all zeros, return empty string
+            if np.all(emb == 0):
+                return ""
+            
+            # Convert embedding to tokens using the tokenizer
+            # First, convert numpy array to tensor
+            emb_tensor = torch.from_numpy(emb).to(self.device)
+            
+            # Get the closest token IDs to the embedding
+            with torch.no_grad():
+                # Get the vocabulary size
+                vocab_size = self.sentence_tokenizer.vocab_size
+                
+                # Project embedding to vocabulary space
+                logits = torch.matmul(emb_tensor, self.sentence_model.embeddings.word_embeddings.weight.T)
+                
+                # Get the most likely token IDs
+                token_ids = torch.argmax(logits, dim=-1)
+                
+                # Decode the token IDs to text
+                text = self.sentence_tokenizer.decode(token_ids)
+                
+                return text
+                
+        except Exception as e:
+            print(f"Error converting embedding to text: {str(e)}")
+            return None
     
     def format_message(self, message):
         # Format each message with clear role and content separation

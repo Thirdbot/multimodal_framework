@@ -235,7 +235,7 @@ class FinetuneModel:
                     # Initialize ChatTemplate with the tokenizer and chainpipe
                     self.chat_template = ChatTemplate(
                         tokenizer=tokenizer,
-                        chainpipe=self.chainpipe
+                        
                     )
                     
                     return model, tokenizer
@@ -254,7 +254,7 @@ class FinetuneModel:
             # Initialize ChatTemplate with the tokenizer and chainpipe
             self.chat_template = ChatTemplate(
                 tokenizer=tokenizer,
-                chainpipe=self.chainpipe
+                
             )
             
             # Configure quantization
@@ -601,6 +601,9 @@ class Manager:
                             # dataset =self.finetune_model.map_tokenizer(dataset_name,tokenizer, merged_dataset,return_embedded_dataset=False)
                         
                             #should merge first 
+                            
+                            #and format to normal text and it modal array
+                            
                             
                             
                         #after merge
