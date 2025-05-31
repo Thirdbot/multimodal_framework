@@ -36,6 +36,27 @@ from datasets import Dataset
 class ChatTemplate:
     """Class for handling chat templates and conversation formatting"""
     
+    # Regex patterns for column matching
+    CONVERSATION_PATTERN = r'conversations?'
+    MESSAGE_PATTERNS = [r'messages?', r'texts?', r'content']
+    MULTIMODAL_PATTERNS = [r'image(?:s)?', r'audio(?:s)?', r'video(?:s)?']
+    POTENTIAL_COLUMNS_PATTERNS = [
+        (r'(?:question|instruction|user|input|Questions?)', 
+         r'(?:answer|response|assistant|output|Answers?)',
+         r'(?:definition|instruction)',
+         r'(?:chosen)',
+         r'(?:rejected)',
+         r'(?:role)',
+         r'(?:text)')
+    ]
+    
+    # Role patterns and mappings
+    ROLE_PATTERNS = {
+        'system': [r'system', r'instruction'],
+        'user': [r'user', r'human', r'input'],
+        'assistant': [r'assistant', r'gpt', r'output', r'response']
+    }
+    
     def __init__(self, chainpipe, tokenizer=None, model_name=None, template=None):
         self.chainpipe = chainpipe
         self.tokenizer = tokenizer
@@ -353,6 +374,13 @@ class ChatTemplate:
         try:
             for msg in full_data:
                 if isinstance(msg[content], str):
+                    # Determine role type using regex patterns
+                    role_type = None
+                    for role_type, patterns in self.ROLE_PATTERNS.items():
+                        if any(re.search(pattern, msg[role], re.IGNORECASE) for pattern in patterns):
+                            role_type = role_type
+                            break
+                    
                     # embedded_content = self.text_embedding(msg[content])
                     embedded_content = msg[content]
                     if embedded_content is not None:
@@ -585,8 +613,8 @@ class ChatTemplate:
         
         # First level check - initial dataset inspection
         if not is_check and not is_conversation:
-            if 'conversations' in dataset_keys:
-
+            # Use regex to check for conversations column
+            if any(re.search(self.CONVERSATION_PATTERN, key, re.IGNORECASE) for key in dataset_keys):
                 is_conversation = True
             is_check = True
             return self.process_dataset(dataset_name=dataset_name,dataset=dataset, is_conversation=is_conversation, is_check=is_check,return_embedded_dataset=return_embedded_dataset)
@@ -600,43 +628,47 @@ class ChatTemplate:
         # Third level check - regular dataset processing
         elif is_check and not is_conversation:
             if is_regular:
-                mis_columns_name = ['messages', 'text']
-                for mis_name in mis_columns_name:
-                    if mis_name in dataset_keys:
-                        data_info = dataset[mis_name]
-                        print("Found conversation type dataset with 'messages' or 'text' column")
+                # Use regex patterns for message and text columns
+                for pattern in self.MESSAGE_PATTERNS:
+                    matching_keys = [key for key in dataset_keys if re.search(pattern, key, re.IGNORECASE)]
+                    if matching_keys:
+                        data_info = dataset[matching_keys[0]]
+                        print(f"Found conversation type dataset with '{matching_keys[0]}' column")
                         if isinstance(data_info, list):
-                            return self.seperated_data(dataset_name=dataset_name,dataset=dataset,keys=mis_name,mul_field=mul_field,return_embedded_dataset=return_embedded_dataset)
+                            return self.seperated_data(dataset_name=dataset_name,dataset=dataset,keys=matching_keys[0],mul_field=mul_field,return_embedded_dataset=return_embedded_dataset)
                         else:
                             print("Trying to format irregular dataset because of no list type")
                             return self.process_dataset(dataset_name=dataset_name,dataset=dataset, is_conversation=is_conversation, is_check=is_check, is_regular=False,return_embedded_dataset=return_embedded_dataset)
                 return self.process_dataset(dataset_name=dataset_name,dataset=dataset, is_conversation=is_conversation, is_check=is_check, is_regular=False,return_embedded_dataset=return_embedded_dataset)
             
-            # Fourth level check - irregular dataset processing is seperated instruction column then we reconstruct in acceptable format and process it again
+            # Fourth level check - irregular dataset processing
             if not is_regular:
                 print(f"DEBUG: Processing irregular dataset")
                 
                 dict_list = {"conversations":[]}
-                potential_columns_name = [(['question','instruction','user','input','Questions'], 
-                                        ['answer','response','assistant','output','Answers'],
-                                        ['definition','instruction'],
-                                        ['chosen'],
-                                        ['rejected'],
-                                        ['role'],
-                                        ['text'])]
                 
-                for potential_columns in potential_columns_name:
-                    # Find matching columns for each group
-                    matching_cols_0 = [col for col in potential_columns[0] if col in dataset_keys]
-                    matching_cols_1 = [col for col in potential_columns[1] if col in dataset_keys]
-                    matching_cols_2 = [col for col in potential_columns[2] if col in dataset_keys]
-                    matching_cols_3 = [col for col in potential_columns[3] if col in dataset_keys]
-                    matching_cols_4 = [col for col in potential_columns[4] if col in dataset_keys]
-                    matching_cols_5 = [col for col in potential_columns[5] if col in dataset_keys]
-                    matching_cols_6 = [col for col in potential_columns[6] if col in dataset_keys]
+                # Handle multimodal columns with regex
+                if mul_field and len(mul_field) > 0:
+                    print(f"Irregular dataset found multimodal column: {mul_field}")
+                    for mul in mul_field:
+                        dict_list[mul] = []
+                        data_list = []
+                        for data in dataset[mul]:
+                            if data is not None:
+                                data_list.append(data)
+                        dict_list[mul] = data_list
+                
+                for patterns in self.POTENTIAL_COLUMNS_PATTERNS:
+                    # Find matching columns using regex
+                    matching_cols_0 = [key for key in dataset_keys if re.search(patterns[0], key, re.IGNORECASE)]
+                    matching_cols_1 = [key for key in dataset_keys if re.search(patterns[1], key, re.IGNORECASE)]
+                    matching_cols_2 = [key for key in dataset_keys if re.search(patterns[2], key, re.IGNORECASE)]
+                    matching_cols_3 = [key for key in dataset_keys if re.search(patterns[3], key, re.IGNORECASE)]
+                    matching_cols_4 = [key for key in dataset_keys if re.search(patterns[4], key, re.IGNORECASE)]
+                    matching_cols_5 = [key for key in dataset_keys if re.search(patterns[5], key, re.IGNORECASE)]
+                    matching_cols_6 = [key for key in dataset_keys if re.search(patterns[6], key, re.IGNORECASE)]
 
                     if matching_cols_0 and matching_cols_1 and matching_cols_2:
-                        
                         #instruction data auto assign role
                         print(f"found {matching_cols_0[0]} and {matching_cols_1[0]} and {matching_cols_2[0]}")
                         for user_q, asist_a, instruction in zip(dataset[matching_cols_0[0]], dataset[matching_cols_1[0]], dataset[matching_cols_2[0]]):
@@ -659,8 +691,6 @@ class ChatTemplate:
                     
                     elif matching_cols_3 and matching_cols_4:
                         #chosen reject instruction
-                        
-                        dict_list = {"conversations": []}
                         for chosen, rejected in zip(dataset[matching_cols_3[0]], dataset[matching_cols_4[0]]):
                             message_list = [
                                 {"role": "user", "content": chosen},
@@ -670,13 +700,14 @@ class ChatTemplate:
                     
                     elif matching_cols_5 and matching_cols_6:
                         #role text instruction
-                        dict_list = {"conversations": []}
                         for role, text in zip(dataset[matching_cols_5[0]], dataset[matching_cols_6[0]]):
                             message_list = [{"role": role, "content": text}]
                             dict_list["conversations"].append(message_list)
                     else:
                         dict_list['conversations'] = []
 
+                # Create dataset with both conversations and multimodal data
+                print(f"Creating dataset with fields: {list(dict_list.keys())}")
                 dataset_maker = Dataset.from_dict(dict_list)
                 return self.process_dataset(dataset_name=dataset_name,dataset=dataset_maker, is_conversation=False, is_check=False, is_regular=True,return_embedded_dataset=return_embedded_dataset)
         
@@ -690,12 +721,20 @@ class ChatTemplate:
         for msg in message:
             role = msg['role']
             content = msg['content']
+            
+            # Determine role type using regex patterns
+            role_type = None
+            for role_type, patterns in self.ROLE_PATTERNS.items():
+                if any(re.search(pattern, role, re.IGNORECASE) for pattern in patterns):
+                    role_type = role_type
+                    break
+            
             # Add special tokens or markers to clearly separate roles
-            if role == 'system' or role == "instruction":
+            if role_type == 'system':
                 formatted_parts.append(f"<|system|>\n{content}")
-            elif role == 'human' or role == 'user':
+            elif role_type == 'user':
                 formatted_parts.append(f"<|user|>\n{content}")
-            elif role == 'gpt' or role == 'assistant':
+            elif role_type == 'assistant':
                 formatted_parts.append(f"<|assistant|>\n{content}")
             else:
                 formatted_parts.append(f"<|{role}|>\n{content}")
@@ -715,13 +754,12 @@ class ChatTemplate:
                 def process_examples(examples, batch_size=32):  # Increased batch size for CPU processing
                     print(f"DEBUG: Processing examples batch")
                     #since it outer column
-                    multimodal_fields = ['image', 'images', 'audio', 'video']
-            
                     mul_field = []
-                    for field in multimodal_fields:
-                        if field in available_fields:
-                            mul_field.append(field)
-                            print(f"DEBUG: Found multimodal field: {field}")
+                    for pattern in self.MULTIMODAL_PATTERNS:
+                        matching_keys = [key for key in available_fields if re.search(pattern, key, re.IGNORECASE)]
+                        if matching_keys:
+                            mul_field.extend(matching_keys)
+                            print(f"DEBUG: Found multimodal field: {matching_keys[0]}")
                         
                     if mul_field and len(mul_field) > 0:
                         print(f"DEBUG: Found multimodal fields: {mul_field}")
@@ -771,13 +809,12 @@ class ChatTemplate:
                 print(f"DEBUG: Available fields for embedded dataset: {available_fields}")
                 
                 #since it outer column
-                multimodal_fields = ['image', 'images', 'audio', 'video']
-        
                 mul_field = []
-                for field in multimodal_fields:
-                    if field in available_fields:
-                        mul_field.append(field)
-                        print(f"DEBUG: Found multimodal field: {field}")
+                for pattern in self.MULTIMODAL_PATTERNS:
+                    matching_keys = [key for key in available_fields if re.search(pattern, key, re.IGNORECASE)]
+                    if matching_keys:
+                        mul_field.extend(matching_keys)
+                        print(f"DEBUG: Found multimodal field: {matching_keys[0]}")
                     
                 if mul_field and len(mul_field) > 0:
                     print(f"DEBUG: Found multimodal fields for embedded dataset: {mul_field}")
