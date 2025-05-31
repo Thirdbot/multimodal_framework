@@ -59,7 +59,7 @@ class Main:
         
         self.model_data_params = {
             "model_name":["beatajackowska/DialoGPT-RickBot"],
-            "datasets_name":["MBZUAI/ARB"],
+            "datasets_name":["AnonymousSub/MedQuAD_47441_Context_Question_Answer_Triples","Menlo/high-quality-text-only-instruction"],
             "model_amount":1,
             "datasets_amount":2,
             # "datasets_name":["OpenAssistant/oasst2"],
