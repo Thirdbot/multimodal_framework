@@ -31,94 +31,7 @@ from matplotlib.image import imread
 import torch.nn.functional as F
 import numpy as np
 
-# def process_batch(batch_data, dataset_name, keys, mul_field=None):
-#     """Helper function for multiprocessing"""
-#     if mul_field is None:
-#         # Process non-multimodal data
-#         batch_data = []
-#         for list_data in batch_data:
-#             get_keys = tuple(list_data[0].keys())
-#             if get_keys[0] in ('role','from'):
-#                 role = get_keys[0]
-#                 content = get_keys[1]
-#             elif get_keys[1] in ('content','value'):
-#                 role = get_keys[1]
-#                 content = get_keys[0]
-#             elif get_keys[0] in ('content','value'):
-#                 role = get_keys[1]
-#                 content = get_keys[0]
-#             elif get_keys[1] in ('role','from'):
-#                 role = get_keys[1]
-#                 content = get_keys[0]
-#             else:
-#                 raise ValueError(f"Invalid keys: {get_keys}")
-            
-#             processed_content = get_text_content(role, content, list_data)
-#             if processed_content is not None:
-#                 batch_data.append(processed_content)
-#         return batch_data
-#     else:
-#         # Process multimodal data
-#         embedded_messages = []
-#         embedded_images = []
-        
-#         # Process each multimodal field
-#         for mul in mul_field:
-#             try:
-#                 # Get the data for this field
-#                 mul_data = batch_data[mul]
-#                 text_data = batch_data[keys]
-                
-#                 # Process each item in the dataset
-#                 for text_item, mul_item in zip(text_data, mul_data):
-#                     try:
-#                         # Get the keys for text processing
-#                         if isinstance(text_item, dict):
-#                             get_keys = tuple(text_item.keys())
-#                         elif isinstance(text_item, list) and len(text_item) > 0:
-#                             get_keys = tuple(text_item[0].keys())
-#                         else:
-#                             print(f"Unexpected text item format: {text_item}")
-#                             continue
-                            
-#                         if get_keys[0] in ('role','from'):
-#                             role = get_keys[0]
-#                             content = get_keys[1]
-#                         elif get_keys[1] in ('content','value'):
-#                             role = get_keys[1]
-#                             content = get_keys[0]
-#                         elif get_keys[0] in ('content','value'):
-#                             role = get_keys[1]
-#                             content = get_keys[0]
-#                         elif get_keys[1] in ('role','from'):
-#                             role = get_keys[1]
-#                             content = get_keys[0]
-#                         else:
-#                             raise ValueError(f"Invalid keys: {get_keys}")
-                        
-#                         # Process the multimodal content
-#                         processed_messages, processed_images = get_mul_content(
-#                             dataset_name=dataset_name,
-#                             mul_content=mul_item,
-#                             full_content=text_item,
-#                             role=role,
-#                             content=content
-#                         )
-                        
-#                         if processed_messages:
-#                             embedded_messages.extend(processed_messages)
-#                         if processed_images:
-#                             embedded_images.extend(processed_images)
-                            
-#                     except Exception as e:
-#                         print(f"Error processing item: {str(e)}")
-#                         continue
-                        
-#             except Exception as e:
-#                 print(f"Error processing {mul} field: {str(e)}")
-#                 continue
-        
-#         return embedded_messages, embedded_images
+from datasets import Dataset
 
 class ChatTemplate:
     """Class for handling chat templates and conversation formatting"""
@@ -131,16 +44,21 @@ class ChatTemplate:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print(f"Using device: {self.device}")
         
-        # Initialize image model with CLIP for better image embeddings
-        self.img_processor = AutoImageProcessor.from_pretrained("openai/clip-vit-base-patch32")
-        self.img_model = AutoModel.from_pretrained(
-            "openai/clip-vit-base-patch32",
-            output_hidden_states=True,
-            return_dict=True
-        ).to(self.device)
-        
-        # Ensure model is in eval mode
+        # Initialize image model with ResNet for reliable embeddings
+        from torchvision.models import resnet50, ResNet50_Weights
+        self.img_model = resnet50(weights=ResNet50_Weights.IMAGENET1K_V2).to(self.device)
+        # Remove the final classification layer
+        self.img_model = torch.nn.Sequential(*(list(self.img_model.children())[:-1]))
         self.img_model.eval()
+        
+        # Initialize image preprocessing
+        from torchvision import transforms
+        self.img_transform = transforms.Compose([
+            transforms.Resize(256),
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        ])
         
         self.sentence_tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/msmarco-distilbert-cos-v5")
         self.sentence_model = AutoModel.from_pretrained("sentence-transformers/msmarco-distilbert-cos-v5").to(self.device)
@@ -149,6 +67,7 @@ class ChatTemplate:
         #cut dataset to 1000 temporary
         dataset = dataset[:1000]
         if not return_embedded_dataset:
+            #format thinfg back to its original format except for multimodal
             dataset_formated = {"text":[]}
             get_keys = None
             print(f"Processing dataset with key: {keys}")
@@ -203,8 +122,9 @@ class ChatTemplate:
             print(f"Processing embedded dataset")
             total_items = len(dataset[keys])
             
+            
             # Reduce batch size for better parallelization
-            batch_size = 100000  # Smaller batch size
+            batch_size = 1000  # Smaller batch size
             batch_list = []
             
             # Process in batches
@@ -433,11 +353,10 @@ class ChatTemplate:
         try:
             for msg in full_data:
                 if isinstance(msg[content], str):
-                    embedded_content = self.text_embedding(msg[content])
-                    # print(f"msg: {msg[content]}")
+                    # embedded_content = self.text_embedding(msg[content])
+                    embedded_content = msg[content]
                     if embedded_content is not None:
                         msg[content] = embedded_content
-                        # batch_data.append(msg)
 
             return full_data
         except Exception as e:
@@ -586,62 +505,71 @@ class ChatTemplate:
         return torch.sum(token_embeddings * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1), min=1e-9)
 
     def text_embedding(self,text):
-        if isinstance(text, (bytes, bytearray)):
-            text = text.decode('utf-8')
-        encoded_input = self.sentence_tokenizer(text, padding=True, truncation=True, return_tensors='pt')
-        # Move inputs to the same device as the model
-        encoded_input = {k: v.to(self.device) for k, v in encoded_input.items()}
-        with torch.no_grad():
-            outputs = self.sentence_model(**encoded_input)
-            # Perform pooling
-            embeddings = self.mean_pooling(outputs, encoded_input['attention_mask'])
-
-            # Normalize embeddings
-            embeddings = F.normalize(embeddings, p=2, dim=1)
+        try:
+            if isinstance(text, (bytes, bytearray)):
+                text = text.decode('utf-8')
             
-            return embeddings.cpu().numpy()  # Move to CPU before returning
+            # Tokenize the text
+            encoded_input = self.sentence_tokenizer(
+                text, 
+                padding=True, 
+                truncation=True, 
+                max_length=512,
+                return_tensors='pt'
+            )
+            
+            # Move inputs to the same device as the model
+            encoded_input = {k: v.to(self.device) for k, v in encoded_input.items()}
+            
+            # Ensure model is in eval mode
+            self.sentence_model.eval()
+            
+            with torch.no_grad():
+                # Get model outputs
+                outputs = self.sentence_model(**encoded_input)
+                
+                # Get the last hidden state
+                last_hidden_state = outputs.last_hidden_state
+                
+                # Get attention mask
+                attention_mask = encoded_input['attention_mask']
+                
+                # Mean pooling
+                token_embeddings = last_hidden_state
+                input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
+                embeddings = torch.sum(token_embeddings * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1), min=1e-9)
+                
+                # Normalize embeddings
+                normalized_embeddings = F.normalize(embeddings, p=2, dim=1)
+                
+                # Convert to numpy
+                final_embeddings = normalized_embeddings.detach().cpu().numpy()
+                
+                
+                return final_embeddings
+            
+        except Exception as e:
+            print(f"Error creating text embedding: {str(e)}")
+            return None
     
     def image_embedding(self,image_obj):
         try:
             if isinstance(image_obj, Image.Image):
-                # Process image with the model
-                inputs = self.img_processor(image_obj, return_tensors="pt")
-                # Move inputs to the same device as the model
-                inputs = {k: v.to(self.device) for k, v in inputs.items()}
-                
-                # Print input stats
-                print(f"Input pixel values stats - min: {inputs['pixel_values'].min().item()}, max: {inputs['pixel_values'].max().item()}, mean: {inputs['pixel_values'].mean().item()}")
-                
+             
+                img_tensor = self.img_transform(image_obj).unsqueeze(0).to(self.device)
+              
                 with torch.no_grad():
                     # Get model outputs
-                    outputs = self.img_model(**inputs)
+                    outputs = self.img_model(img_tensor)
+                    # Remove the batch dimension
+                    outputs = outputs.squeeze()
                     
-                    # Print all available outputs
-                    print("Available outputs:", outputs.keys())
+
+                    normalized_embeddings = F.normalize(outputs.unsqueeze(0), p=2, dim=1)
                     
-                    # Get the image embeddings
-                    image_embeddings = outputs.image_embeds
-                    print(f"Image embeddings shape: {image_embeddings.shape}")
-                    
-                    # Print raw embeddings stats
-                    print(f"Raw embeddings stats - min: {image_embeddings.min().item()}, max: {image_embeddings.max().item()}, mean: {image_embeddings.mean().item()}")
-                    
-                    # Normalize the embeddings
-                    normalized_embeddings = F.normalize(image_embeddings, p=2, dim=1)
-                    
-                    # Print normalized embeddings stats
-                    print(f"Normalized embeddings stats - min: {normalized_embeddings.min().item()}, max: {normalized_embeddings.max().item()}, mean: {normalized_embeddings.mean().item()}")
-                    
-                    # Convert to numpy
+              
                     final_embeddings = normalized_embeddings.detach().cpu().numpy()
                     
-                    # Print final embeddings stats
-                    print(f"Final embeddings stats - min: {final_embeddings.min()}, max: {final_embeddings.max()}, mean: {final_embeddings.mean()}")
-                    
-                    # Verify embeddings are not all zeros
-                    if np.all(np.abs(final_embeddings) < 1e-6):
-                        print("Warning: All zero embeddings detected")
-                        return None
                         
                     return final_embeddings
             else:
@@ -653,227 +581,108 @@ class ChatTemplate:
 
     #i wrote this function to recursively check the dataset and seperated the dataset
     def process_dataset(self,dataset_name,dataset,mul_field=None, is_conversation=False, is_check=False, is_regular=True,return_embedded_dataset=False):
-        if not return_embedded_dataset:
-            # Get dataset keys directly since we're already working with the train split
-            dataset_keys = dataset.keys()
-            print(f"DEBUG: Dataset keys: {dataset_keys}")
-            
-            # First level check - initial dataset inspection
-            if not is_check and not is_conversation:
-                if 'conversations' in dataset_keys:
-                    print(f"DEBUG: Found conversations dataset")
-                    is_conversation = True
-                is_check = True
-                return self.process_dataset(dataset_name=dataset_name,dataset=dataset, is_conversation=is_conversation, is_check=is_check)
-            
-            # Second level check - conversation confirmation
-            elif is_check and is_conversation:
-                print(f"DEBUG: Processing conversations dataset")
-                return self.seperated_data(dataset_name=dataset_name,dataset=dataset,keys='conversations',mul_field=mul_field)
-            
-            # Third level check - regular dataset processing
-            elif is_check and not is_conversation:
-                if is_regular:
-                    print(f"DEBUG: Processing regular dataset")
-                    mis_columns_name = ['messages', 'text']
-                    for mis_name in mis_columns_name:
-                        if mis_name in dataset_keys:
-                            data_info = dataset[mis_name]
-                            if isinstance(data_info, list):
-                                print(f"DEBUG: Found {mis_name} column with list type")
-                                return self.seperated_data(dataset_name=dataset_name,dataset=dataset,keys=mis_name,mul_field=mul_field)
-                            else:
-                                print(f"DEBUG: Found {mis_name} column with non-list type")
-                                print("Trying to format irregular dataset")
-                                return self.process_dataset(dataset_name=dataset_name,dataset=dataset, is_conversation=is_conversation, is_check=is_check, is_regular=False)
-                    return self.process_dataset(dataset_name=dataset_name,dataset=dataset, is_conversation=is_conversation, is_check=is_check, is_regular=False)
-                
-                # Fourth level check - irregular dataset processing is seperated instruction column
-                if not is_regular:
-                    print(f"DEBUG: Processing irregular dataset")
-                    potential_columns_name = [(['question','instruction','user','input','Questions'], 
-                                            ['answer','response','assistant','output','Answers'],
-                                            ['definition','instruction'],
-                                            ['chosen'],
-                                            ['rejected'],
-                                            ['role'],
-                                            ['text'])]
-                    
-                    for potential_columns in potential_columns_name:
-                        # Find matching columns for each group
-                        matching_cols_0 = [col for col in potential_columns[0] if col in dataset_keys]
-                        matching_cols_1 = [col for col in potential_columns[1] if col in dataset_keys]
-                        matching_cols_2 = [col for col in potential_columns[2] if col in dataset_keys]
-                        matching_cols_3 = [col for col in potential_columns[3] if col in dataset_keys]
-                        matching_cols_4 = [col for col in potential_columns[4] if col in dataset_keys]
-                        matching_cols_5 = [col for col in potential_columns[5] if col in dataset_keys]
-                        matching_cols_6 = [col for col in potential_columns[6] if col in dataset_keys]
-                        
-                        print(f"DEBUG: Checking potential columns: {potential_columns}")
-                        print(f"DEBUG: Found matching columns: {matching_cols_0}, {matching_cols_1}, {matching_cols_2}")
-
-                        if matching_cols_0 and matching_cols_1 and matching_cols_2:
-                            dict_list = {"text":[]}
-                            #instruction data auto assign role
-                            
-                            print(f"DEBUG: Processing instruction data")
-                            for user_q, asist_a, instruction in zip(dataset[matching_cols_0[0]], dataset[matching_cols_1[0]], dataset[matching_cols_2[0]]):
-                                message_list = [
-                                    {"role": "system", "content": instruction},
-                                    {"role": "user", "content": user_q},
-                                    {"role": "assistant", "content": asist_a}
-                                ]
-                                dict_list["text"].append(message_list)
-                            return dict_list
-                        
-                        elif matching_cols_0 and matching_cols_1:
-                            #chat data auto assign role
-                        
-                            dict_list = {"text": []}
-                            for user_q, asist_a in zip(dataset[matching_cols_0[0]], dataset[matching_cols_1[0]]):
-                                message_list = [
-                                    {"role": "user", "content": user_q},
-                                    {"role": "assistant", "content": asist_a}
-                                ]
-                                dict_list["text"].append(message_list)
-                            return dict_list
-                        
-                        elif matching_cols_3 and matching_cols_4:
-                            #chosen reject instruction
-                            
-                            dict_list = {"text": []}
-                            for chosen, rejected in zip(dataset[matching_cols_3[0]], dataset[matching_cols_4[0]]):
-                                message_list = [
-                                    {"role": "user", "content": chosen},
-                                    {"role": "assistant", "content": rejected}
-                                ]
-                                dict_list["text"].append(message_list)
-                            return dict_list
-                        
-                        elif matching_cols_5 and matching_cols_6:
-                            #role text instruction
-                            
-                            dict_list = {"text": []}
-                            for role, text in zip(dataset[matching_cols_5[0]], dataset[matching_cols_6[0]]):
-                                message_list = [{"role": role, "content": text}]
-                                dict_list["text"].append(message_list)
-                            return dict_list
-                        else:
-                            print(f"Not found any matching columns in {potential_columns}")
-                            return {"text": []}
-                    print("This dataset cannot be processed")
-                
-                    return {"text": []}
-        elif return_embedded_dataset:
-            #change dataset to embedded dataset 3 case like above but return whole embedded dataset structure
-            # Get dataset keys directly since we're already working with the train split
-            dataset_keys = dataset.features.keys()
-            
-            # First level check - initial dataset inspection
-            if not is_check and not is_conversation:
-                if 'conversations' in dataset_keys:
-                    # print(f"Conversation Dataset found: {dataset['conversations'][0]} example")
-                    is_conversation = True
-                is_check = True
-                return self.process_dataset(dataset_name=dataset_name,dataset=dataset,mul_field=mul_field, is_conversation=is_conversation, is_check=is_check,return_embedded_dataset=True)
-            
-            # Second level check - conversation confirmation
-            elif is_check and is_conversation:
-                return  self.seperated_data(dataset_name=dataset_name,dataset=dataset,keys='conversations',mul_field=mul_field,return_embedded_dataset=True)
-            
-            # Third level check - regular dataset processing
-            elif is_check and not is_conversation:
-                if is_regular:
-                    # print("Processing regular dataset")
-                    mis_columns_name = ['messages', 'text']
-                    for mis_name in mis_columns_name:
-                        if mis_name in dataset_keys:
-                            data_info = dataset[mis_name]
-                            if isinstance(data_info, list):
-                                return self.seperated_data(dataset_name=dataset_name,dataset=dataset,keys=mis_name,mul_field=mul_field,return_embedded_dataset=True)
-                            else:
-                                print(f"Found {mis_name} column with non-list type")
-                                print("Trying to format irregular dataset")
-                                return self.process_dataset(dataset_name=dataset_name,dataset=dataset, is_conversation=is_conversation, is_check=is_check, is_regular=False,return_embedded_dataset=True)
-                    return self.process_dataset(dataset_name=dataset_name,dataset=dataset, is_conversation=is_conversation, is_check=is_check, is_regular=False,return_embedded_dataset=True)
-                
-                # Fourth level check - irregular dataset processing is seperated instruction column
-                if not is_regular:
-                    # print("Processing irregular dataset")
-                    potential_columns_name = [(['question','instruction','user','input','Questions'], 
-                                            ['answer','response','assistant','output','Answers'],
-                                            ['definition','instruction'],
-                                            ['chosen'],
-                                            ['rejected'],
-                                            ['role'],
-                                            ['text'])]
-                    
-                    for potential_columns in potential_columns_name:
-                        # Find matching columns for each group
-                        matching_cols_0 = [col for col in potential_columns[0] if col in dataset_keys]
-                        matching_cols_1 = [col for col in potential_columns[1] if col in dataset_keys]
-                        matching_cols_2 = [col for col in potential_columns[2] if col in dataset_keys]
-                        matching_cols_3 = [col for col in potential_columns[3] if col in dataset_keys]
-                        matching_cols_4 = [col for col in potential_columns[4] if col in dataset_keys]
-                        matching_cols_5 = [col for col in potential_columns[5] if col in dataset_keys]
-                        matching_cols_6 = [col for col in potential_columns[6] if col in dataset_keys]
-                        
-                        
-
-                        if matching_cols_0 and matching_cols_1 and matching_cols_2:
-                            dict_list = {"text":[]}
-                            #instruction data auto assign role
-                            
-                            # print(f"Found {matching_cols_0} and {matching_cols_1} and {matching_cols_2} columns")
-                            for user_q, asist_a, instruction in zip(dataset[matching_cols_0[0]], dataset[matching_cols_1[0]], dataset[matching_cols_2[0]]):
-                                message_list = [
-                                    {"role": "system", "content": instruction},
-                                    {"role": "user", "content": user_q},
-                                    {"role": "assistant", "content": asist_a}
-                                ]
-                                dict_list["text"].append(message_list)
-                            return dict_list
-                        
-                        elif matching_cols_0 and matching_cols_1:
-                            #chat data auto assign role
-                        
-                            dict_list = {"text": []}
-                            for user_q, asist_a in zip(dataset[matching_cols_0[0]], dataset[matching_cols_1[0]]):
-                                message_list = [
-                                    {"role": "user", "content": user_q},
-                                    {"role": "assistant", "content": asist_a}
-                                ]
-                                dict_list["text"].append(message_list)
-                            return dict_list
-                        
-                        elif matching_cols_3 and matching_cols_4:
-                            #chosen reject instruction
-                            
-                            dict_list = {"text": []}
-                            for chosen, rejected in zip(dataset[matching_cols_3[0]], dataset[matching_cols_4[0]]):
-                                message_list = [
-                                    {"role": "user", "content": chosen},
-                                    {"role": "assistant", "content": rejected}
-                                ]
-                                dict_list["text"].append(message_list)
-                            return dict_list
-                        
-                        elif matching_cols_5 and matching_cols_6:
-                            #role text instruction
-                            
-                            dict_list = {"text": []}
-                            for role, text in zip(dataset[matching_cols_5[0]], dataset[matching_cols_6[0]]):
-                                message_list = [{"role": role, "content": text}]
-                                dict_list["text"].append(message_list)
-                            return dict_list
-                        else:
-                            print(f"Not found any matching columns in {potential_columns}")
-                            return {"text": []}
-                    print("This dataset cannot be processed")
-                
-                    return {"text": []}
+        dataset_keys = dataset.features.keys()
         
-        return False
+        # First level check - initial dataset inspection
+        if not is_check and not is_conversation:
+            if 'conversations' in dataset_keys:
+
+                is_conversation = True
+            is_check = True
+            return self.process_dataset(dataset_name=dataset_name,dataset=dataset, is_conversation=is_conversation, is_check=is_check,return_embedded_dataset=return_embedded_dataset)
+        
+        # Second level check - conversation confirm
+        elif is_check and is_conversation:
+            print("Found conversations type dataset with 'conversations' column")
+            #control what being returned as embed or not
+            return self.seperated_data(dataset_name=dataset_name,dataset=dataset,keys='conversations',mul_field=mul_field,return_embedded_dataset=return_embedded_dataset)
+        
+        # Third level check - regular dataset processing
+        elif is_check and not is_conversation:
+            if is_regular:
+                mis_columns_name = ['messages', 'text']
+                for mis_name in mis_columns_name:
+                    if mis_name in dataset_keys:
+                        data_info = dataset[mis_name]
+                        print("Found conversation type dataset with 'messages' or 'text' column")
+                        if isinstance(data_info, list):
+                            return self.seperated_data(dataset_name=dataset_name,dataset=dataset,keys=mis_name,mul_field=mul_field,return_embedded_dataset=return_embedded_dataset)
+                        else:
+                            print("Trying to format irregular dataset because of no list type")
+                            return self.process_dataset(dataset_name=dataset_name,dataset=dataset, is_conversation=is_conversation, is_check=is_check, is_regular=False,return_embedded_dataset=return_embedded_dataset)
+                return self.process_dataset(dataset_name=dataset_name,dataset=dataset, is_conversation=is_conversation, is_check=is_check, is_regular=False,return_embedded_dataset=return_embedded_dataset)
+            
+            # Fourth level check - irregular dataset processing is seperated instruction column then we reconstruct in acceptable format and process it again
+            if not is_regular:
+                print(f"DEBUG: Processing irregular dataset")
+                
+                dict_list = {"conversations":[]}
+                potential_columns_name = [(['question','instruction','user','input','Questions'], 
+                                        ['answer','response','assistant','output','Answers'],
+                                        ['definition','instruction'],
+                                        ['chosen'],
+                                        ['rejected'],
+                                        ['role'],
+                                        ['text'])]
+                
+                for potential_columns in potential_columns_name:
+                    # Find matching columns for each group
+                    matching_cols_0 = [col for col in potential_columns[0] if col in dataset_keys]
+                    matching_cols_1 = [col for col in potential_columns[1] if col in dataset_keys]
+                    matching_cols_2 = [col for col in potential_columns[2] if col in dataset_keys]
+                    matching_cols_3 = [col for col in potential_columns[3] if col in dataset_keys]
+                    matching_cols_4 = [col for col in potential_columns[4] if col in dataset_keys]
+                    matching_cols_5 = [col for col in potential_columns[5] if col in dataset_keys]
+                    matching_cols_6 = [col for col in potential_columns[6] if col in dataset_keys]
+
+                    if matching_cols_0 and matching_cols_1 and matching_cols_2:
+                        
+                        #instruction data auto assign role
+                        print(f"found {matching_cols_0[0]} and {matching_cols_1[0]} and {matching_cols_2[0]}")
+                        for user_q, asist_a, instruction in zip(dataset[matching_cols_0[0]], dataset[matching_cols_1[0]], dataset[matching_cols_2[0]]):
+                            message_list = [
+                                {"role": "system", "content": instruction},
+                                {"role": "user", "content": user_q},
+                                {"role": "assistant", "content": asist_a}
+                            ]
+                            dict_list["conversations"].append(message_list)
+                    
+                    elif matching_cols_0 and matching_cols_1:
+                        #chat data auto assign role
+                        print(f"found {matching_cols_0[0]} and {matching_cols_1[0]}")
+                        for user_q, asist_a in zip(dataset[matching_cols_0[0]], dataset[matching_cols_1[0]]):
+                            message_list = [
+                                {"role": "user", "content": user_q},
+                                {"role": "assistant", "content": asist_a}
+                            ]
+                            dict_list["conversations"].append(message_list)
+                    
+                    elif matching_cols_3 and matching_cols_4:
+                        #chosen reject instruction
+                        
+                        dict_list = {"conversations": []}
+                        for chosen, rejected in zip(dataset[matching_cols_3[0]], dataset[matching_cols_4[0]]):
+                            message_list = [
+                                {"role": "user", "content": chosen},
+                                {"role": "assistant", "content": rejected}
+                            ]
+                            dict_list["conversations"].append(message_list)
+                    
+                    elif matching_cols_5 and matching_cols_6:
+                        #role text instruction
+                        dict_list = {"conversations": []}
+                        for role, text in zip(dataset[matching_cols_5[0]], dataset[matching_cols_6[0]]):
+                            message_list = [{"role": role, "content": text}]
+                            dict_list["conversations"].append(message_list)
+                    else:
+                        dict_list['conversations'] = []
+
+                dataset_maker = Dataset.from_dict(dict_list)
+                return self.process_dataset(dataset_name=dataset_name,dataset=dataset_maker, is_conversation=False, is_check=False, is_regular=True,return_embedded_dataset=return_embedded_dataset)
+        
+        # If we reach here, return None to indicate no valid processing path was found
+        print("Warning: No valid processing path found for the dataset")
+        return None
     
     def format_message(self, message):
         # Format each message with clear role and content separation
