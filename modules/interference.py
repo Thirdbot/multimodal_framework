@@ -111,7 +111,7 @@ class ConversationManager:
             
             # Initialize chat template
             self.chat_template = ChatTemplate(
-                chainpipe=self.model,
+            
                 tokenizer=self.tokenizer
             )
             

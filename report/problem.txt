@@ -171,3 +171,15 @@ Dataset: Dataset({
     features: ['input_ids', 'attention_mask'],
     num_rows: 2000
 })
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Model: beatajackowska/DialoGPT-RickBot
+Dataset: Dataset({
+    features: ['input_ids', 'attention_mask'],
+    num_rows: 2000
+})
