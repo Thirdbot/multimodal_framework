@@ -9,6 +9,9 @@ from datasets import load_dataset, get_dataset_config_names
 from colorama import Fore, Style, init
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+import time
+from huggingface_hub import HfApi, HfFolder
+from huggingface_hub.utils import HfHubHTTPError
 
 # Initialize colorama
 init(autoreset=True)
@@ -18,9 +21,10 @@ os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 def create_session():
     session = requests.Session()
     retry_strategy = Retry(
-        total=3,  # number of retries
-        backoff_factor=1,  # wait 1, 2, 4 seconds between retries
-        status_forcelist=[429, 500, 502, 503, 504]  # HTTP status codes to retry on
+        total=5,  # increased number of retries
+        backoff_factor=2,  # increased backoff time
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=["GET", "POST"]
     )
     adapter = HTTPAdapter(max_retries=retry_strategy)
     session.mount("https://", adapter)
@@ -251,71 +255,67 @@ class Convert(BaseModel):
         i=0
         
         for key in self.list_key:
-            
             for value in getattr(self, key):
-                    if key == 'data_model':
-                        
-                        # print(value['model'][i])
-                        # print(value['datasets'][0])
-                        # Create a new model entry
-                        if isinstance(value['model'],list):
-                            dataset_list = value['datasets'][0]
-                            # print(value['model'][i])
-                            for idx,model in enumerate(value['model']):
-                                if isinstance(model,dict):
-                                    model_entry = {
-                                        'model':model.get(self.keyword,''),
-                                        'datasets': []
-                                    }
-                                else:
-                                    model_entry = {
-                                        'model':str(model),
-                                        'datasets': []
-                                    }
-                                i += 1
-                                
-                                
-                                for dataset in dataset_list:
-                           
-                                    dataset_used = False
-                                    for prev_entry in name_list[:idx]:
-                                        if dataset[self.keyword] in prev_entry['datasets']:
-                                            dataset_used = True
-                                            break
-                                    
-                                    if not dataset_used and (self.datasets_amount is None or len(model_entry['datasets']) < self.datasets_amount):
-                                        model_entry['datasets'].append(dataset[self.keyword])
-                                        
-                           
-                                if self.model_amount is None or i < self.model_amount:
-                                    name_list.append(model_entry)
-                                    
-
-                            
-                            
-                            
-                            
-                        else:
-                            if isinstance(value['model'],dict):
-                                    model_entry = {
-                                        'model':value['model'].get(self.keyword,''),
-                                        'datasets': []
-                                    }
+                if key == 'data_model':
+                    # Create a new model entry
+                    if isinstance(value['model'],list):
+                        dataset_list = value['datasets']
+                        for idx,model in enumerate(value['model']):
+                            if isinstance(model,dict):
+                                model_entry = {
+                                    'model':model.get(self.keyword,''),
+                                    'datasets': []
+                                }
                             else:
-                                    model_entry = {
-                                        'model':str(value['model']),
-                                        'datasets': []
-                                    }
-                        
-                            # Add all datasets for this model
-                            for dataset in value['datasets']:
-                                if self.datasets_amount is None or len(model_entry['datasets']) < self.datasets_amount:
-                                    model_entry['datasets'].append(dataset[self.keyword])
-                        
+                                model_entry = {
+                                    'model':str(model),
+                                    'datasets': []
+                                }
+                            i += 1
+                            
+                            # Handle datasets
+                            for dataset in dataset_list:
+                                if isinstance(dataset, dict):
+                                    dataset_id = dataset.get(self.keyword, '')
+                                else:
+                                    dataset_id = str(dataset)
+                                
+                                dataset_used = False
+                                for prev_entry in name_list[:idx]:
+                                    if dataset_id in prev_entry['datasets']:
+                                        dataset_used = True
+                                        break
+                                
+                                if not dataset_used and (self.datasets_amount is None or len(model_entry['datasets']) < self.datasets_amount):
+                                    model_entry['datasets'].append(dataset_id)
+                            
+                            if self.model_amount is None or i < self.model_amount:
+                                name_list.append(model_entry)
+                    else:
+                        if isinstance(value['model'],dict):
+                            model_entry = {
+                                'model':value['model'].get(self.keyword,''),
+                                'datasets': []
+                            }
+                        else:
+                            model_entry = {
+                                'model':str(value['model']),
+                                'datasets': []
+                            }
+                    
+                        # Add all datasets for this model
+                        for dataset in value['datasets']:
+                            if isinstance(dataset, dict):
+                                dataset_id = dataset.get(self.keyword, '')
+                            else:
+                                dataset_id = str(dataset)
+                            
+                            if self.datasets_amount is None or len(model_entry['datasets']) < self.datasets_amount:
+                                model_entry['datasets'].append(dataset_id)
+                    
                         # Add the model entry if we haven't reached the limit
                         if len(name_list) < self.model_amount:
-                                name_list.append(model_entry)
-                
+                            name_list.append(model_entry)
         
         # Write the final result to file
         with open(file_path, 'w+') as f:
@@ -326,8 +326,12 @@ class Convert(BaseModel):
 
 class Manager:
     def __init__(self):
-
         self.data_type = ["models","datasets"]
+        self.session = create_session()
+        # Initialize Hugging Face API
+        self.hf_api = HfApi()
+        # Set longer timeout for dataset operations
+        os.environ['HF_HUB_DOWNLOAD_TIMEOUT'] = '300'  # 5 minutes timeout
     
     def handle_data(self,file_path,model_name:Optional[list]=[],
                     datasets_name:Optional[list]=[],task:Optional[list]=[],
@@ -359,12 +363,11 @@ class Manager:
         )
         
         all_model_name = model_api.get_api_json()
-
-
-        # all_datasets_name = datasets_api.get_api_json()
-        converter = Convert(data_model=all_model_name
-                            ,keyword="id",model_amount=model_amount,datasets_amount=datasets_amount)
-        return    converter.convert_to_json(file_path)
+        converter = Convert(data_model=all_model_name,
+                          keyword="id",
+                          model_amount=model_amount,
+                          datasets_amount=datasets_amount)
+        return converter.convert_to_json(file_path)
         
         
 

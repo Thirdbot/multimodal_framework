@@ -366,16 +366,29 @@ class FinetuneModel:
             self.dataset_name = dataset_name
             if config is not None:
                 try:
+                    print(f"{Fore.YELLOW}Attempting to load dataset with config: {config}{Style.RESET_ALL}")
                     dataset = load_dataset(dataset_name, config, trust_remote_code=True, split=split)
+                    print(f"{Fore.GREEN}Successfully loaded dataset with config{Style.RESET_ALL}")
                 except Exception as e:
-                    print(f"{Fore.RED}Error loading dataset {dataset_name}: {str(e)}{Style.RESET_ALL}")
-                    return None
+                    print(f"{Fore.RED}Error loading dataset with config: {str(e)}{Style.RESET_ALL}")
+                    print(f"{Fore.YELLOW}Trying to load dataset without config...{Style.RESET_ALL}")
+                    try:
+                        dataset = load_dataset(dataset_name, trust_remote_code=True, split=split)
+                        print(f"{Fore.GREEN}Successfully loaded dataset without config{Style.RESET_ALL}")
+                    except Exception as e2:
+                        print(f"{Fore.RED}Error loading dataset without config: {str(e2)}{Style.RESET_ALL}")
+                        return None
             else:
-                dataset = load_dataset(dataset_name, trust_remote_code=True)
+                try:
+                    dataset = load_dataset(dataset_name, trust_remote_code=True, split=split)
+                    print(f"{Fore.GREEN}Successfully loaded dataset without config{Style.RESET_ALL}")
+                except Exception as e:
+                    print(f"{Fore.RED}Error loading dataset: {str(e)}{Style.RESET_ALL}")
+                    return None
             return dataset
         except Exception as e:
-            print(f"{Fore.RED}Error loading dataset {dataset_name}: {str(e)}{Style.RESET_ALL}")
-            return load_dataset(dataset_name, config, trust_remote_code=True)
+            print(f"{Fore.RED}Unexpected error loading dataset {dataset_name}: {str(e)}{Style.RESET_ALL}")
+            return None
     
     def map_tokenizer(self, dataset_name: str, tokenizer: AutoTokenizer, dataset: DatasetDict, 
                      max_length: int = 384, return_embedded_dataset: bool = False) -> Optional[DatasetDict]:
@@ -414,6 +427,9 @@ class FinetuneModel:
             Training arguments
         """
         model_folder = self.CHECKPOINT_DIR / self.model_task
+        if "custom_models" in modelname.split("\\"):
+            modelname = modelname.split("\\")
+            modelname = modelname[-1]
         output_dir = model_folder / modelname if '/' not in modelname else model_folder / modelname.replace('/', '_')
         output_dir.mkdir(parents=True, exist_ok=True)
         
@@ -628,29 +644,48 @@ class Manager:
                     first_dataset = None
                     second_dataset = None
                     
-                    for count, dataset_name in enumerate(datasets):
-                        print(f"{Fore.CYAN}Loading dataset config: {dataset_name} {config[dataset_name]}{Style.RESET_ALL}")
-                        dataset = self.finetune_model.load_dataset(dataset_name, config[dataset_name], split='train')
-                        
-                        count += 1
-                        if (count) % 3 != 0:
+                    for idx, dataset_name in enumerate(datasets):
+                        try:
+                            print(f"{Fore.CYAN}Loading dataset config: {dataset_name} {config.get(dataset_name, 'No config found')}{Style.RESET_ALL}")
+                            
+                            # Check if dataset exists in config
+                            if dataset_name not in config:
+                                print(f"{Fore.YELLOW}Warning: No config found for dataset {dataset_name}, trying to load without config{Style.RESET_ALL}")
+                                dataset = self.finetune_model.load_dataset(dataset_name, None, split='train')
+                            else:
+                                dataset = self.finetune_model.load_dataset(dataset_name, config[dataset_name], split='train')
+                            
+                            if dataset is None:
+                                print(f"{Fore.RED}Failed to load dataset {dataset_name}, skipping...{Style.RESET_ALL}")
+                                continue
+                            
                             if first_dataset is None:
+                                print(f"{Fore.GREEN}Processing first dataset: {dataset_name}{Style.RESET_ALL}")
                                 first_dataset = self.finetune_model.map_tokenizer(dataset_name, tokenizer, dataset, return_embedded_dataset=True)
-                            elif second_dataset is None:
+                                concat_dataset = first_dataset
+                            else:
+                                print(f"{Fore.GREEN}Processing additional dataset: {dataset_name}{Style.RESET_ALL}")
                                 second_dataset = self.finetune_model.map_tokenizer(dataset_name, tokenizer, dataset, return_embedded_dataset=True)
-                        
-                        concat_dataset = first_dataset
-                        if first_dataset is not None and second_dataset is not None:
-                            concat_dataset = concatenate_datasets([first_dataset, second_dataset])
-                        
-                        saved_dataset = self.finetune_model.map_tokenizer(dataset_name, tokenizer, concat_dataset, return_embedded_dataset=False)
+                                if first_dataset is not None and second_dataset is not None:
+                                    print(f"{Fore.GREEN}Concatenating datasets...{Style.RESET_ALL}")
+                                    concat_dataset = concatenate_datasets([first_dataset, second_dataset])
+                                    first_dataset = concat_dataset  # Update first_dataset for next iteration
+                            
+                            saved_dataset = self.finetune_model.map_tokenizer(dataset_name, tokenizer, concat_dataset, return_embedded_dataset=False)
+                            
+                        except Exception as e:
+                            print(f"{Fore.RED}Error processing dataset {dataset_name}: {str(e)}{Style.RESET_ALL}")
+                            print(f"{Fore.YELLOW}Stack trace:", exc_info=True)
+                            continue
                     
                     dataset = saved_dataset
                 
-                self.finetune_model.runtuning(model, tokenizer, dataset, modelname)
+                if model is not None and dataset is not None:
+                    self.finetune_model.runtuning(model, tokenizer, dataset, modelname)
             
             return model, dataset
             
         except Exception as e:
             print(f"{Fore.RED}Error running finetune: {str(e)}{Style.RESET_ALL}")
-            return model, dataset
+            print(f"{Fore.YELLOW}Stack trace:", exc_info=True)
+            return None, None

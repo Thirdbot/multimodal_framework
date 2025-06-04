@@ -76,8 +76,8 @@ class Main:
     def _setup_model_params(self):
         """Set up model parameters."""
         self.model_data_params = {
-            # "model_name": ["kyutai/helium-1-2b"],
-            "model_name":["custom_models/text-generation/model-1"],
+            "model_name": ["kyutai/helium-1-2b"],
+            # "model_name":["custom_models/text-generation/model-1"],
             # "datasets_name": ["pythainlp/han-instruct-dataset-v4.0"],
             "datasets_name":['AdaptLLM/food-visual-instructions'],
             "model_amount": 1,
@@ -180,7 +180,6 @@ if __name__ == "__main__":
 
 
 #make model seperate tokenizer and model
-#create suitable model and dataset loader from outside huggingface but loadable and have history from path
 #renew interference utilize langchain model
 # #try cut conner of chat template and create or utilize model's tokenizer to make dataste compatible with model include add model's compatible pipeline for multimodal
 
