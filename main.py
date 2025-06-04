@@ -78,7 +78,8 @@ class Main:
         self.model_data_params = {
             # "model_name": ["kyutai/helium-1-2b"],
             "model_name":["custom_models/text-generation/model-1"],
-            "datasets_name": ["pythainlp/han-instruct-dataset-v4.0"],
+            # "datasets_name": ["pythainlp/han-instruct-dataset-v4.0"],
+            "datasets_name":['AdaptLLM/food-visual-instructions'],
             "model_amount": 1,
             "datasets_amount": 1,
         }

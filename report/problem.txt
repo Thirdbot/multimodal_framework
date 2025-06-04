@@ -224,3 +224,43 @@ Dataset: Dataset({
     features: ['input_ids', 'attention_mask'],
     num_rows: 1000
 })
+Model: c:\Users\astro\Desktop\multimodal_agentic\custom_models\text-generation\model-1
+Dataset: Dataset({
+    features: ['input_ids', 'attention_mask'],
+    num_rows: 1000
+})
+Model: c:\Users\astro\Desktop\multimodal_agentic\custom_models\text-generation\model-1
+Dataset: Dataset({
+    features: ['input_ids', 'attention_mask'],
+    num_rows: 1000
+})
+Model: kyutai/helium-1-2b
+Dataset: Dataset({
+    features: ['input_ids', 'attention_mask'],
+    num_rows: 1000
+})
+Model: c:\Users\astro\Desktop\multimodal_agentic\custom_models\text-generation\model-1
+Dataset: Dataset({
+    features: ['input_ids', 'attention_mask'],
+    num_rows: 1000
+})
+Model: c:\Users\astro\Desktop\multimodal_agentic\custom_models\text-generation\model-1
+Model: c:\Users\astro\Desktop\multimodal_agentic\custom_models\text-generation\model-1
+Model: c:\Users\astro\Desktop\multimodal_agentic\custom_models\text-generation\model-1
+Model: c:\Users\astro\Desktop\multimodal_agentic\custom_models\text-generation\model-1
+Model: c:\Users\astro\Desktop\multimodal_agentic\custom_models\text-generation\model-1
+Model: c:\Users\astro\Desktop\multimodal_agentic\custom_models\text-generation\model-1
+Dataset: Dataset({
+    features: ['input_ids', 'attention_mask'],
+    num_rows: 1000
+})
+Model: c:\Users\astro\Desktop\multimodal_agentic\custom_models\text-generation\model-1
+Dataset: Dataset({
+    features: ['input_ids', 'attention_mask'],
+    num_rows: 1000
+})
+Model: kyutai/helium-1-2b
+Dataset: Dataset({
+    features: ['input_ids', 'attention_mask'],
+    num_rows: 1000
+})

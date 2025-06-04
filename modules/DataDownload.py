@@ -135,12 +135,11 @@ class ModelLoader:
         
     def load_model(self, name):
         try:
-    
             # Get the model info to find the actual files
-            split_name = name.split('/')
-            print(split_name)
-            if "custom_models" in split_name[-3:]:
-                pass
+            local_path = Path(name)
+            if local_path.exists() :
+                # For custom models, use the relative path from the workspace
+                print(f"{Fore.GREEN}Using custom model from: {local_path}{Style.RESET_ALL}")
             else:
                 model_info = self.api.model_info(name)
                 

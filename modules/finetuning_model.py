@@ -198,11 +198,13 @@ class FinetuneModel:
         print(f"Load from last checkpoint: {self.resume_from_checkpoint}")
         
         try:
-            split_name = model_id.split("/")
-            if "custom_models" in split_name[-3:]:
-                model_task_dir = model_id[:-1]
-                self.model_task = model_task_dir
-            self.model_task = self.get_model_task(model_id)
+            split_name = model_id.split("\\")
+            # local_path = Path(model_id)
+            if "custom_models" in split_name:
+                model_task = split_name[-2]
+                self.model_task = model_task
+            else:
+                self.model_task = self.get_model_task(model_id)
             print(f"{Fore.CYAN}Model task detected: {self.model_task}{Style.RESET_ALL}")
             
             self.TASK_MODEL_DIR = self.MODEL_DIR / self.model_task
@@ -541,6 +543,9 @@ class FinetuneModel:
             modelname: The model identifier
         """
         try:
+            if "custom_models" in modelname.split("/"):
+                modelname = modelname.split("/")
+                modelname = modelname[-1]
             trainer = self.Trainer(model=model, dataset=dataset, tokenizer=tokenizer, modelname=modelname)
             trainer.train()
             
