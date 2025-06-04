@@ -176,11 +176,23 @@ class APIFetch(BaseModel):
                 else:
                     try:
                         response = requests.get(url['model'])
-                        print(f"{Fore.CYAN}Fetching model data from: {url['model']}{Style.RESET_ALL}")
-                        response.raise_for_status()
-                        model_response = response.json()
-                        model_entry = {"model": model_response, "datasets": []}
-                        concatenated_json.append(model_entry)
+                        
+                        Home_dir = Path(__file__).parent.parent.absolute()
+                        split_index = url['model'].split('/')
+                        local_files_dir = split_index[-3:]
+                        
+                        if "custom_models" in local_files_dir:
+                            for path in local_files_dir:
+                                Home_dir = Home_dir.joinpath(path)
+                            model_entry = {"model": Home_dir, "datasets": []}
+                            concatenated_json.append(model_entry)
+                            
+                        else:
+                            print(f"{Fore.CYAN}Fetching model data from: {url['model']}{Style.RESET_ALL}")
+                            response.raise_for_status()
+                            model_response = response.json()
+                            model_entry = {"model": model_response, "datasets": []}
+                            concatenated_json.append(model_entry)
                         
                         for dataset_url in url['datasets']:
                             try:
@@ -244,10 +256,16 @@ class Convert(BaseModel):
                             dataset_list = value['datasets'][0]
                             # print(value['model'][i])
                             for idx,model in enumerate(value['model']):
-                                model_entry = {
-                                    'model':model.get(self.keyword,''),
-                                    'datasets': []
-                                }
+                                if isinstance(model,dict):
+                                    model_entry = {
+                                        'model':model.get(self.keyword,''),
+                                        'datasets': []
+                                    }
+                                else:
+                                    model_entry = {
+                                        'model':str(model),
+                                        'datasets': []
+                                    }
                                 i += 1
                                 
                                 
@@ -272,10 +290,16 @@ class Convert(BaseModel):
                             
                             
                         else:
-                            model_entry = {
-                                'model': value['model'].get(self.keyword,''),
-                                'datasets': []
-                            }
+                            if isinstance(value['model'],dict):
+                                    model_entry = {
+                                        'model':value['model'].get(self.keyword,''),
+                                        'datasets': []
+                                    }
+                            else:
+                                    model_entry = {
+                                        'model':str(value['model']),
+                                        'datasets': []
+                                    }
                         
                             # Add all datasets for this model
                             for dataset in value['datasets']:
@@ -337,11 +361,4 @@ class Manager:
         return    converter.convert_to_json(file_path)
         
         
-# Example usage
-if __name__ == "__main__":
-    file_path = Path(__file__).parent.parent.absolute() / 'DataModel_config' / 'data_model.json'
-    file_path.touch(exist_ok=True)
-    manager = Manager()
-    manager.handle_data(file_path)
-    
 

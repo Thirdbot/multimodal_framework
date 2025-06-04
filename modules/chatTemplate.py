@@ -92,12 +92,12 @@ class ChatTemplate:
             #format thinfg back to its original format except for multimodal
             dataset_formated = {"conversations":[]}
             get_keys = None
-            print(f"Processing dataset with key: {keys}")
+            # print(f"Processing dataset with key: {keys}")
             
             #chat data
             set_data = dataset[keys]
             if isinstance(set_data, list):
-                print(f"Found {len(set_data)} conversations to process")
+                # print(f"Found {len(set_data)} conversations to process")
                 for list_data in dataset[keys]:
                     get_keys = tuple(list_data[0].keys())
                     message_list = []
@@ -137,7 +137,7 @@ class ChatTemplate:
                                 pattern = r"{mul}(.*?)"
                                 match = re.findall(pattern,msg['content'])
                                 if match:
-                                    print(f"Found {mul_field} in content: {match}")
+                                    # print(f"Found {mul_field} in content: {match}")
                                     pass
             
             # Convert to Dataset object
@@ -173,11 +173,11 @@ class ChatTemplate:
             if mul_field is None:
                 # Process batches in parallel using all available CPU cores
                 n_jobs = min(mp.cpu_count(), 4)  # Limit to 4 processes to avoid memory issues
-                print(f"Using {n_jobs} CPU cores for parallel processing")
+                # print(f"Using {n_jobs} CPU cores for parallel processing")
                 
-                # Debug multiprocessing
-                print(f"Number of batches to process: {len(batch_list)}")
-                print(f"First batch size: {len(batch_list[0][keys]) if batch_list else 0}")
+                # # Debug multiprocessing
+                # print(f"Number of batches to process: {len(batch_list)}")
+                # print(f"First batch size: {len(batch_list[0][keys]) if batch_list else 0}")
                 
                 # Use multiprocessing with proper backend
                 with mp.Pool(processes=n_jobs) as pool:
@@ -203,12 +203,12 @@ class ChatTemplate:
             
             elif mul_field is not None:
                 # Process batches in parallel using all available CPU cores
-                n_jobs = min(mp.cpu_count(), 4)  # Limit to 4 processes to avoid memory issues
-                print(f"Using {n_jobs} CPU cores for parallel processing")
+                n_jobs = max(mp.cpu_count(), 4)  # Limit to 4 processes to avoid memory issues
+                # print(f"Using {n_jobs} CPU cores for parallel processing")
                 
                 # Debug multiprocessing
-                print(f"Number of batches to process: {len(batch_list)}")
-                print(f"First batch size: {len(batch_list[0][keys]) if batch_list else 0}")
+                # print(f"Number of batches to process: {len(batch_list)}")
+                # print(f"First batch size: {len(batch_list[0][keys]) if batch_list else 0}")
                 
                 # Use multiprocessing with proper backend
                 with mp.Pool(processes=n_jobs) as pool:
@@ -250,7 +250,7 @@ class ChatTemplate:
     
     def mul_process(self,dataset_name,dataset,keys,mul_field=None):
         if mul_field is None:
-            print(f"Processing non multimodal conversation",end="\r")
+            # print(f"Processing non multimodal conversation",end="\r")
             # Create new lists to store embedded data
             batch_data = []
             
@@ -312,12 +312,12 @@ class ChatTemplate:
             # Process each multimodal field
             for mul in mul_field:
                 try:
-                    print(f"Processing field: {mul}")
+                    # print(f"Processing field: {mul}")
                     
                     # Get the data for this field
                     mul_data = dataset[mul]
                     if not mul_data:
-                        print(f"Warning: No data found for field {mul}")
+                        # print(f"Warning: No data found for field {mul}")
                         continue
                     
                     # Process each item in the dataset
@@ -384,8 +384,8 @@ class ChatTemplate:
                             role_type = role_type
                             break
                     
-                    embedded_content = self.text_embedding(msg[content])
-                    # embedded_content = msg[content]
+                    # embedded_content = self.text_embedding(msg[content])
+                    embedded_content = msg[content]
                     if embedded_content is not None:
                         msg[content] = embedded_content
 
@@ -557,7 +557,7 @@ class ChatTemplate:
             with torch.no_grad():
                 # Get model outputs
                 outputs = self.sentence_model.encode(text)
-                print(f"outputs: {outputs}")
+                # print(f"outputs: {outputs}")
                 
                 # Get the last hidden state
                 # last_hidden_state = outputs.last_hidden_state
@@ -624,7 +624,7 @@ class ChatTemplate:
         
         # Second level check - conversation confirm
         elif is_check and is_conversation:
-            print("Found conversations type dataset with 'conversations' column")
+            # print("Found conversations type dataset with 'conversations' column")
             #control what being returned as embed or not
             return self.seperated_data(dataset_name=dataset_name,dataset=dataset,keys='conversations',mul_field=mul_field,return_embedded_dataset=return_embedded_dataset)
         
@@ -636,7 +636,7 @@ class ChatTemplate:
                     matching_keys = [key for key in dataset_keys if re.search(pattern, key, re.IGNORECASE)]
                     if matching_keys:
                         data_info = dataset[matching_keys[0]]
-                        print(f"Found conversation type dataset with '{matching_keys[0]}' column")
+                        # print(f"Found conversation type dataset with '{matching_keys[0]}' column")
                         if isinstance(data_info, list):
                             return self.seperated_data(dataset_name=dataset_name,dataset=dataset,keys=matching_keys[0],mul_field=mul_field,return_embedded_dataset=return_embedded_dataset)
                         else:
@@ -784,29 +784,29 @@ class ChatTemplate:
     def prepare_dataset(self, dataset_name, dataset, max_length=1000,return_embedded_dataset=False):
         if not return_embedded_dataset:
             try:
-                print(f"DEBUG: Starting prepare_dataset with dataset_name: {dataset_name}")
-                print(f"DEBUG: Dataset type: {type(dataset)}")
+                # print(f"DEBUG: Starting prepare_dataset with dataset_name: {dataset_name}")
+                # print(f"DEBUG: Dataset type: {type(dataset)}")
                 first_example = dataset
                 available_fields = list(first_example.features.keys())
-                print(f"DEBUG: Available fields: {available_fields}")
+                # print(f"DEBUG: Available fields: {available_fields}")
                 
                 def process_examples(examples, batch_size=32):  # Increased batch size for CPU processing
-                    print(f"DEBUG: Processing examples batch")
+                    # print(f"DEBUG: Processing examples batch")
                     #since it outer column
                     mul_field = []
                     for pattern in self.MULTIMODAL_PATTERNS:
                         matching_keys = [key for key in available_fields if re.search(pattern, key, re.IGNORECASE)]
                         if matching_keys:
                             mul_field.extend(matching_keys)
-                            print(f"DEBUG: Found multimodal field: {matching_keys[0]}")
+                            # print(f"DEBUG: Found multimodal field: {matching_keys[0]}")
                         
                     if mul_field and len(mul_field) > 0:
-                        print(f"DEBUG: Found multimodal fields: {mul_field}")
+                        # print(f"DEBUG: Found multimodal fields: {mul_field}")
                         # Convert LazyBatch to Dataset before processing
                         examples_dataset = Dataset.from_dict({k: examples[k] for k in examples.keys()})
                         formatted = self.process_dataset(dataset_name=dataset_name,dataset=examples_dataset,is_conversation=False,is_check=False,mul_field=mul_field)
                     else:
-                        print(f"DEBUG: No multimodal fields found")
+                        # print(f"DEBUG: No multimodal fields found")
                         # Convert LazyBatch to Dataset before processing
                         examples_dataset = Dataset.from_dict({k: examples[k] for k in examples.keys()})
                         formatted = self.process_dataset(dataset_name=dataset_name,dataset=examples_dataset,is_conversation=False,is_check=False)
@@ -830,7 +830,7 @@ class ChatTemplate:
                     return tokenized
                 
                 # Process the dataset with batched processing
-                print(f"DEBUG: Starting dataset mapping")
+                # print(f"DEBUG: Starting dataset mapping")
                 tokenized_dataset = dataset.map(
                     process_examples,
                     batched=True,
@@ -838,7 +838,7 @@ class ChatTemplate:
                     remove_columns=dataset.column_names  # Remove original columns
                 )
                 
-                print(f"{Fore.GREEN}Successfully prepared dataset with {len(tokenized_dataset)} examples{Style.RESET_ALL}")
+                # print(f"{Fore.GREEN}Successfully prepared dataset with {len(tokenized_dataset)} examples{Style.RESET_ALL}")
                 return tokenized_dataset
                 
             except Exception as e:
@@ -846,10 +846,10 @@ class ChatTemplate:
                 raise
         elif return_embedded_dataset:
             try:
-                print(f"DEBUG: Starting prepare_dataset with embedded dataset")
+                # print(f"DEBUG: Starting prepare_dataset with embedded dataset")
                 first_example = dataset
                 available_fields = list(first_example.features.keys())
-                print(f"DEBUG: Available fields for embedded dataset: {available_fields}")
+                # print(f"DEBUG: Available fields for embedded dataset: {available_fields}")
                 
                 #since it outer column
                 mul_field = []
@@ -857,13 +857,13 @@ class ChatTemplate:
                     matching_keys = [key for key in available_fields if re.search(pattern, key, re.IGNORECASE)]
                     if matching_keys:
                         mul_field.extend(matching_keys)
-                        print(f"DEBUG: Found multimodal field: {matching_keys[0]}")
+                        # print(f"DEBUG: Found multimodal field: {matching_keys[0]}")
                     
                 if mul_field and len(mul_field) > 0:
-                    print(f"DEBUG: Found multimodal fields for embedded dataset: {mul_field}")
+                    # print(f"DEBUG: Found multimodal fields for embedded dataset: {mul_field}")
                     formatted = self.process_dataset(dataset_name=dataset_name,dataset=first_example,is_conversation=False,is_check=False,mul_field=mul_field,return_embedded_dataset=True)
                 else:
-                    print(f"DEBUG: No multimodal fields found for embedded dataset")
+                    # print(f"DEBUG: No multimodal fields found for embedded dataset")
                     formatted = self.process_dataset(dataset_name=dataset_name,dataset=first_example,is_conversation=False,is_check=False,return_embedded_dataset=True)
                 
                 return formatted

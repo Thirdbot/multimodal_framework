@@ -49,7 +49,7 @@ class FinetuneModel:
         self.per_device_eval_batch_size = 64
         self.gradient_accumulation_steps = 2
         self.learning_rate = 2e-4
-        self.num_train_epochs = 100
+        self.num_train_epochs = 1
         self.save_strategy = "best"
         
         # Initialize paths and directories
@@ -198,6 +198,10 @@ class FinetuneModel:
         print(f"Load from last checkpoint: {self.resume_from_checkpoint}")
         
         try:
+            split_name = model_id.split("/")
+            if "custom_models" in split_name[-3:]:
+                model_task_dir = model_id[:-1]
+                self.model_task = model_task_dir
             self.model_task = self.get_model_task(model_id)
             print(f"{Fore.CYAN}Model task detected: {self.model_task}{Style.RESET_ALL}")
             
@@ -272,7 +276,8 @@ class FinetuneModel:
             
         Returns:
             Tuple of (model, tokenizer)
-        """
+        """     
+                
         tokenizer = AutoTokenizer.from_pretrained(
             model_id,
             trust_remote_code=True,
@@ -328,8 +333,10 @@ class FinetuneModel:
         model = get_peft_model(model, lora_config)
         
         model.train()
-        for param in model.parameters():
-            param.requires_grad = True
+        # Only enable gradients for float parameters
+        for name, param in model.named_parameters():
+            if param.dtype in [torch.float32, torch.float16, torch.bfloat16]:
+                param.requires_grad = True
         
         model.gradient_checkpointing_enable()
         model.print_trainable_parameters()
