@@ -483,9 +483,11 @@ class ChatTemplate:
                     image_obj = Image.open(get_file_obj).convert("RGB")
                     # Resize image to expected size
                     image_obj = image_obj.resize((224, 224), Image.Resampling.LANCZOS)
-                    print(f"Processing image from zip: {file_path}")
-                    print(f"Image size: {image_obj.size}, mode: {image_obj.mode}")
-                    embedded_image = self.image_embedding(image_obj)
+                    # print(f"Processing image from zip: {file_path}")
+                    # print(f"Image size: {image_obj.size}, mode: {image_obj.mode}")
+                    
+                    embedded_image = image_obj
+                    # embedded_image = self.image_embedding(image_obj)
                     if embedded_image is not None:
                         print(f"Successfully embedded image from zip: {file_path}")
                     return embedded_image

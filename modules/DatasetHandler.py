@@ -7,11 +7,25 @@ from typing import Optional
 from pydantic import BaseModel, Field
 from datasets import load_dataset, get_dataset_config_names
 from colorama import Fore, Style, init
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 # Initialize colorama
 init(autoreset=True)
 
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
+
+def create_session():
+    session = requests.Session()
+    retry_strategy = Retry(
+        total=3,  # number of retries
+        backoff_factor=1,  # wait 1, 2, 4 seconds between retries
+        status_forcelist=[429, 500, 502, 503, 504]  # HTTP status codes to retry on
+    )
+    adapter = HTTPAdapter(max_retries=retry_strategy)
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+    return session
 
 # -- get data from huggingface api
 # need to add more function to get data from other api
@@ -70,21 +84,17 @@ class APIFetch(BaseModel):
                 if len(self.model_name) > 1 and any(isinstance(i,list) for i in self.datasets_name):
                     for idx,datasets_name in enumerate(self.datasets_name):
                         for datasets_name in datasets_name:
-                            web_address = web_address + '/' + datasets_name
+                            web_address = self.web_address.rstrip(',') + type + '/' + datasets_name
                             data_list.append(web_address)
-                            web_address = self.web_address + type
                         target_url[idx]['datasets'] = data_list
                         data_list = []
                     if len(target_url) > 1:
                         return target_url
                     
-                    
-                
                 elif len(self.model_name) > 1 and len(self.datasets_name) > 1:
                     for datasets_name in self.datasets_name:
-                        web_address = web_address + '/' + datasets_name
+                        web_address = self.web_address.rstrip(',') + type + '/' + datasets_name
                         data_list.append(web_address)
-                        web_address = self.web_address + type
                     target_url = [{**trt, 'datasets': data_list} for trt in target_url]
                     data_list = []
                     if len(target_url) > 1:
@@ -92,31 +102,24 @@ class APIFetch(BaseModel):
                 
                 elif len(self.model_name) > 1 and len(self.datasets_name) == 1:
                     for idx,model_name in enumerate(self.model_name):
-                        web_address = web_address + '/' + self.datasets_name[0]
+                        web_address = self.web_address.rstrip(',') + type + '/' + self.datasets_name[0]
                         data_list.append(web_address)
-                        web_address = self.web_address + type
                         target_url[idx]['datasets'] = data_list
                         data_list = []
-                        # web_address = self.web_address + type
                     if len(target_url) > 1:
                         return target_url
 
-
                 elif len(self.model_name) == 1 and len(self.datasets_name) > 1:
                     for datasets_name in self.datasets_name:
-                        web_address = web_address + '/' + datasets_name
+                        web_address = self.web_address.rstrip(',') + type + '/' + datasets_name
                         data_list.append(web_address)
-                        web_address = self.web_address + type
                     target_url[0]['datasets'] = data_list
-                    # if len(target_url) > 1:
-                    #     return target_url
                     return target_url
                     
                 elif len(self.model_name) == 1 and len(self.datasets_name) == 1:
                     for datasets_name in self.datasets_name:
-                        web_address = web_address + '/' + datasets_name
+                        web_address = self.web_address.rstrip(',') + type + '/' + datasets_name
                         data_list.append(web_address)
-                        web_address = self.web_address + type
                     target_url = [{**trt, 'datasets': data_list} for trt in target_url]
                     return target_url
 
@@ -163,10 +166,11 @@ class APIFetch(BaseModel):
         if not url:
             return None
         if isinstance(url,list):
+            session = create_session()
             for idx,url in enumerate(url):
                 if not isinstance(url,dict):
                     try:
-                        response = requests.get(url)
+                        response = session.get(url, timeout=30)  # 30 second timeout
                         print(f"{Fore.CYAN}Fetching data from: {url}{Style.RESET_ALL}")
                         response.raise_for_status()
                         concatenated_json.append(response.json())
@@ -175,19 +179,20 @@ class APIFetch(BaseModel):
                         continue
                 else:
                     try:
-                        response = requests.get(url['model'])
-                        
                         Home_dir = Path(__file__).parent.parent.absolute()
                         split_index = url['model'].split('/')
                         local_files_dir = split_index[-3:]
                         
                         if "custom_models" in local_files_dir:
+                            Home_dir = str(Home_dir)
+                            # Store relative path instead of absolute path
                             for path in local_files_dir:
-                                Home_dir = Home_dir.joinpath(path)
+                                Home_dir = os.path.join(Home_dir,path)
                             model_entry = {"model": Home_dir, "datasets": []}
                             concatenated_json.append(model_entry)
                             
                         else:
+                            response = session.get(url['model'], timeout=30)  # 30 second timeout
                             print(f"{Fore.CYAN}Fetching model data from: {url['model']}{Style.RESET_ALL}")
                             response.raise_for_status()
                             model_response = response.json()
@@ -196,7 +201,7 @@ class APIFetch(BaseModel):
                         
                         for dataset_url in url['datasets']:
                             try:
-                                response = requests.get(dataset_url)
+                                response = session.get(dataset_url, timeout=30)  # 30 second timeout
                                 print(f"{Fore.CYAN}Fetching dataset from: {dataset_url}{Style.RESET_ALL}")
                                 response.raise_for_status()
                                 dataset_response = response.json()
@@ -214,7 +219,8 @@ class APIFetch(BaseModel):
             return concatenated_json
         else:
             try:
-                response = requests.get(url)
+                session = create_session()
+                response = session.get(url, timeout=30)  # 30 second timeout
                 print(f"{Fore.CYAN}Fetching data from: {url}{Style.RESET_ALL}")
                 response.raise_for_status()
                 return response.json()
