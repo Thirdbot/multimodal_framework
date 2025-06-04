@@ -264,3 +264,13 @@ Dataset: Dataset({
     features: ['input_ids', 'attention_mask'],
     num_rows: 1000
 })
+Model: kyutai/helium-1-2b
+Dataset: Dataset({
+    features: ['input_ids', 'attention_mask'],
+    num_rows: 1000
+})
+Model: kyutai/helium-1-2b
+Dataset: Dataset({
+    features: ['input_ids', 'attention_mask'],
+    num_rows: 2000
+})
