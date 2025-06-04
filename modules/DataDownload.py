@@ -137,22 +137,27 @@ class ModelLoader:
         try:
     
             # Get the model info to find the actual files
-            model_info = self.api.model_info(name)
-            
-            # Download each file from the model
-            for file_info in model_info.siblings:
-                try:
-                    file_path = hf_hub_download(
-                        repo_id=name,
-                        filename=file_info.rfilename,
-                        repo_type="model",
-                        cache_dir=self.REPO_DIR
-                    )
-                    self.file_paths[file_info.rfilename] = file_path
-                    print(f"{Fore.GREEN}Downloaded {file_info.rfilename} to: {file_path}{Style.RESET_ALL}")
-                except Exception as e:
-                    print(f"{Fore.YELLOW}Warning: Could not download {file_info.rfilename}: {str(e)}{Style.RESET_ALL}")
-                    continue
+            split_name = name.split('/')
+            print(split_name)
+            if "custom_models" in split_name[-3:]:
+                pass
+            else:
+                model_info = self.api.model_info(name)
+                
+                # Download each file from the model
+                for file_info in model_info.siblings:
+                    try:
+                        file_path = hf_hub_download(
+                            repo_id=name,
+                            filename=file_info.rfilename,
+                            repo_type="model",
+                            cache_dir=self.REPO_DIR
+                        )
+                        self.file_paths[file_info.rfilename] = file_path
+                        print(f"{Fore.GREEN}Downloaded {file_info.rfilename} to: {file_path}{Style.RESET_ALL}")
+                    except Exception as e:
+                        print(f"{Fore.YELLOW}Warning: Could not download {file_info.rfilename}: {str(e)}{Style.RESET_ALL}")
+                        continue
                     
         except Exception as e:
             print(f"{Fore.RED}Error downloading model {name}: {str(e)}{Style.RESET_ALL}")

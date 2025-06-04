@@ -7,3 +7,5 @@ DataModel_config/
 conversation_history/
 repositories/
 # models/
+custom_models
+

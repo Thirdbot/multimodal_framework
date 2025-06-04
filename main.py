@@ -27,6 +27,7 @@ from modules.DatasetHandler import Manager as DatasetHandler
 from modules.finetuning_model import Manager as FinetuneModel
 from modules.interference import ConversationManager
 from modules.chatTemplate import ChatTemplate
+from modules.createbasemodel import CreateModel
 import argparse
 
 # Initialize colorama
@@ -63,6 +64,7 @@ class Main:
         
         self.model_data_json_path = self.DataModelFolder / "installed.json"
         self.model_data_json_path.touch(exist_ok=True)
+        
     
     def _initialize_components(self):
         """Initialize all required components."""
@@ -74,13 +76,11 @@ class Main:
     def _setup_model_params(self):
         """Set up model parameters."""
         self.model_data_params = {
-            "model_name": ["beatajackowska/DialoGPT-RickBot"],
-            "datasets_name": [
-                "AnonymousSub/MedQuAD_47441_Context_Question_Answer_Triples",
-                "Menlo/high-quality-text-only-instruction"
-            ],
+            # "model_name": ["kyutai/helium-1-2b"],
+            "model_name":["custom_models/text-generation/model-1"],
+            "datasets_name": ["pythainlp/han-instruct-dataset-v4.0"],
             "model_amount": 1,
-            "datasets_amount": 2,
+            "datasets_amount": 1,
         }
         self.config = {}
     
@@ -151,9 +151,13 @@ def save_conversation_history(manager: ConversationManager):
 
 if __name__ == "__main__":
     main = Main()
+   
+    
+    create_model = CreateModel(model_name="model-1",model_category="text-generation")
+    
     main.load_datas()
     main.runtrain()
-    run_conversation()
+    # run_conversation()
 
 # Load the dataset type 1 Conversations column or instruction column
     # dataset = load_dataset("theneuralmaze/rick-and-morty-transcripts-sharegpt", split="train")
