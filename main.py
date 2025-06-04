@@ -3,6 +3,8 @@ import gc
 import json
 from datetime import datetime
 from pathlib import Path
+from typing import Optional, Dict, Any
+
 # Set environment variables before any other imports
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 os.environ['OMP_NUM_THREADS'] = '1'  # Limit OpenMP threads
@@ -27,6 +29,9 @@ from modules.interference import ConversationManager
 from modules.chatTemplate import ChatTemplate
 import argparse
 
+# Initialize colorama
+init(autoreset=True)
+
 # Set PyTorch settings
 torch.set_num_threads(1)
 torch.set_num_interop_threads(1)
@@ -42,77 +47,76 @@ set_seed(42)
 
 class Main:
     def __init__(self):
+        """Initialize the main application class."""
         self.HomePath = Path(__file__).parent.absolute()
+        self._setup_directories()
+        self._initialize_components()
+        self._setup_model_params()
         
-        self.DataModelFolder = f"{self.HomePath}/DataModel_config"
-        Path(self.DataModelFolder).mkdir(parents=True, exist_ok=True)
-        self.temporal_file_path = f'{self.DataModelFolder}/data_model.json'
-        Path(self.temporal_file_path).touch(exist_ok=True)
+    def _setup_directories(self):
+        """Set up required directories and files."""
+        self.DataModelFolder = self.HomePath / "DataModel_config"
+        self.DataModelFolder.mkdir(parents=True, exist_ok=True)
         
-        self.datafile = 'installed.json'
-        self.model_data_json_path = f"{self.DataModelFolder}/{self.datafile}"
-        Path(self.model_data_json_path).touch(exist_ok=True)
+        self.temporal_file_path = self.DataModelFolder / "data_model.json"
+        self.temporal_file_path.touch(exist_ok=True)
         
+        self.model_data_json_path = self.DataModelFolder / "installed.json"
+        self.model_data_json_path.touch(exist_ok=True)
+    
+    def _initialize_components(self):
+        """Initialize all required components."""
         self.dataset_handler = DatasetHandler()
         self.data_loader = DataLoader()
-        self.finetune_model = FinetuneModel(model_data_json_path=self.model_data_json_path)
-        
-        self.model_data_params = {
-            "model_name":["beatajackowska/DialoGPT-RickBot"],
-            "datasets_name":["AnonymousSub/MedQuAD_47441_Context_Question_Answer_Triples","Menlo/high-quality-text-only-instruction"],
-            "model_amount":1,
-            "datasets_amount":2,
-            # "datasets_name":["OpenAssistant/oasst2"],
-            # "task":["image-to-text"],
-            # "search":"image",
-            # "modality":"image"
-        }
-        self.config = dict()
-        
-        # Initialize ChatTemplate
+        self.finetune_model = FinetuneModel(model_data_json_path=str(self.model_data_json_path))
         self.chat_template = None
+    
+    def _setup_model_params(self):
+        """Set up model parameters."""
+        self.model_data_params = {
+            "model_name": ["beatajackowska/DialoGPT-RickBot"],
+            "datasets_name": [
+                "AnonymousSub/MedQuAD_47441_Context_Question_Answer_Triples",
+                "Menlo/high-quality-text-only-instruction"
+            ],
+            "model_amount": 1,
+            "datasets_amount": 2,
+        }
+        self.config = {}
+    
     def load_datas(self):
-        #place holder for load data
-        self.dataset_handler.handle_data(self.temporal_file_path,**self.model_data_params)
-        #load data from api
+        """Load and process datasets."""
+        self.dataset_handler.handle_data(self.temporal_file_path, **self.model_data_params)
         self.data_loader.run(self.model_data_params)
-        self.config = self.data_loader.saved_config 
+        self.config = self.data_loader.saved_config
         print(f"{Fore.CYAN}Dataset Config:{Style.RESET_ALL} {self.config}")
-        
-        
-        
+    
     def runtrain(self):
+        """Run the training process."""
         model = None
         dataset = None
         failed_models = None
+        
         try:
-            # #fetch api data
-            # self.dataset_handler.handle_data(self.temporal_file_path,**self.model_data_params)
-            # #load data from api
-            # failed_models = self.data_loader.run(self.model_data_params)
             self.list_model_data = self.finetune_model.generate_model_data()
-            #finetune model
-            model,dataset = self.finetune_model.run_finetune(self.list_model_data,self.config)
-
-           
+            model, dataset = self.finetune_model.run_finetune(self.list_model_data, self.config)
         except Exception as e:
-            report = Report()
-            if model and dataset is not None:
-                report.store_problem(model=model,dataset=dataset)
-            else:
-                # report.store_problem(model=model,dataset=dataset)
-                print(Fore.RED + f"Error happen: {e} but no reported." + Style.RESET_ALL)
-            if failed_models is not None:
-                for element in failed_models:
-                    report.store_problem(model=element['model'],dataset=element['datasets'])
-            
-
-if __name__ == "__main__":
-    main = Main()
-
-    main.load_datas()
-    main.runtrain()
+            self._handle_training_error(e, model, dataset, failed_models)
     
+    def _handle_training_error(self, error: Exception, model: Any, dataset: Any, failed_models: Any):
+        """Handle training errors and generate reports."""
+        report = Report()
+        if model and dataset is not None:
+            report.store_problem(model=model, dataset=dataset)
+        else:
+            print(Fore.RED + f"Error occurred: {error} but no report generated." + Style.RESET_ALL)
+        
+        if failed_models is not None:
+            for element in failed_models:
+                report.store_problem(model=element['model'], dataset=element['datasets'])
+
+def run_conversation():
+    """Run the conversation loop."""
     manager = ConversationManager(
         model_name="kyutai_helium-1-2b",
         max_length=100,
@@ -123,26 +127,33 @@ if __name__ == "__main__":
     print(f"{Fore.CYAN}Starting conversation. Type 'quit' to exit.{Style.RESET_ALL}")
     
     while True:
-        # Get user input
         user_input = input(f"{Fore.YELLOW}You: {Style.RESET_ALL}")
         if user_input.lower() == 'quit':
             break
         
-        # Generate response
         response = manager.chat(user_input)
         if response:
             print(f"{Fore.GREEN}Assistant: {response}{Style.RESET_ALL}")
     
-    # Save conversation history
+    save_conversation_history(manager)
+
+def save_conversation_history(manager: ConversationManager):
+    """Save the conversation history to a file."""
     conversation_history = manager.get_memory()
     if conversation_history:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        history_file = main.HomePath / "conversation_history" / f"chat_{timestamp}.json"
+        history_file = WORKSPACE_DIR / "conversation_history" / f"chat_{timestamp}.json"
         history_file.parent.mkdir(parents=True, exist_ok=True)
         
         with open(history_file, 'w') as f:
             json.dump(conversation_history, f, indent=2)
         print(f"{Fore.CYAN}Conversation history saved to {history_file}{Style.RESET_ALL}")
+
+if __name__ == "__main__":
+    main = Main()
+    main.load_datas()
+    main.runtrain()
+    run_conversation()
 
 # Load the dataset type 1 Conversations column or instruction column
     # dataset = load_dataset("theneuralmaze/rick-and-morty-transcripts-sharegpt", split="train")
@@ -166,7 +177,9 @@ if __name__ == "__main__":
 #make model seperate tokenizer and model
 #create suitable model and dataset loader from outside huggingface but loadable and have history from path
 #renew interference utilize langchain model
-# #try cut conner of chat template
+# #try cut conner of chat template and create or utilize model's tokenizer to make dataste compatible with model include add model's compatible pipeline for multimodal
+
+
 #handle various of datasets downloadble files need each column
 #create template dataset
 #auto fallback dataset load request when failed to tokenize a dataset in case of naming convension

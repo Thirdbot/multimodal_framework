@@ -23,7 +23,7 @@ from tqdm import tqdm
 
 from joblib import Parallel, delayed
 
-
+from sentence_transformers import SentenceTransformer
 from transformers import AutoImageProcessor, AutoModel
 from matplotlib.image import imread
 # from pydub import AudioSegment
@@ -80,8 +80,8 @@ class ChatTemplate:
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
         ])
         
-        self.sentence_tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/msmarco-distilbert-cos-v5")
-        self.sentence_model = AutoModel.from_pretrained("sentence-transformers/msmarco-distilbert-cos-v5").to(self.device)
+        # self.sentence_tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/msmarco-distilbert-cos-v5")
+        self.sentence_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2").to(self.device)
         self.sentence_model.eval()  # Ensure model is in eval mode from the start
     
     def seperated_data(self,dataset_name,dataset,keys,mul_field=None,return_embedded_dataset=False):
@@ -544,36 +544,36 @@ class ChatTemplate:
             self.sentence_model.eval()
             
             # Tokenize the text
-            encoded_input = self.sentence_tokenizer(
-                text, 
-                padding=True, 
-                truncation=True, 
-                max_length=512,
-                return_tensors='pt'
-            )
-            
+            # encoded_input = self.sentence_tokenizer(
+            #     str(text), 
+            #     padding=True, 
+            #     truncation=True, 
+            #     max_length=512
+            # )
+            # print(f"encoded_input: {encoded_input}")
             # Move inputs to the same device as the model
-            encoded_input = {k: v.to(self.device) for k, v in encoded_input.items()}
+            # encoded_input = {k: v.to(self.device) for k, v in encoded_input.items()}
             
             with torch.no_grad():
                 # Get model outputs
-                outputs = self.sentence_model(**encoded_input)
+                outputs = self.sentence_model.encode(text)
+                print(f"outputs: {outputs}")
                 
                 # Get the last hidden state
-                last_hidden_state = outputs.last_hidden_state
+                # last_hidden_state = outputs.last_hidden_state
                 
                 # Get attention mask
-                attention_mask = encoded_input['attention_mask']
+                # attention_mask = encoded_input['attention_mask']
                 
-                # Mean pooling
-                token_embeddings = last_hidden_state
-                input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
-                embeddings = torch.sum(token_embeddings * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1), min=1e-9)
+                # # Mean pooling
+                # token_embeddings = last_hidden_state
+                # input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
+                # embeddings = torch.sum(token_embeddings * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1), min=1e-9)
                 
-                # Normalize embeddings
-                normalized_embeddings = F.normalize(embeddings, p=2, dim=1)
+                # # Normalize embeddings
+                normalized_embeddings = F.normalize(outputs, p=2, dim=1)
                 
-                # Convert to numpy
+                # # Convert to numpy
                 final_embeddings = normalized_embeddings.detach().cpu().numpy()
                 
                 
