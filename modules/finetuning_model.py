@@ -1,103 +1,99 @@
 import os
 import json
+from pathlib import Path
+from typing import Optional, List, Dict, Any, Union, Tuple
+import torch
+import numpy as np
 from colorama import Fore, Style, init
-os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
+from datasets import load_dataset, concatenate_datasets, DatasetDict
+from transformers import (
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    AutoConfig,
+    BitsAndBytesConfig,
+    DataCollatorForLanguageModeling,
+    Trainer,
+    TrainingArguments
+)
+from peft import (
+    LoraConfig,
+    get_peft_model,
+    PeftModel,
+    AutoPeftModelForCausalLM,
+    prepare_model_for_kbit_training
+)
+from trl import SFTTrainer
+import evaluate
+from huggingface_hub import HfApi
+
 from modules.defect import Report
 from modules.chatTemplate import ChatTemplate
+from modules.chainpipe import Chainpipe
+
 # Initialize colorama
 init(autoreset=True)
 
-# from langchain.llms import LlamaCpp
-from langchain.callbacks import StreamingStdOutCallbackHandler
-from langchain.callbacks.manager import CallbackManager
-from langchain.prompts import PromptTemplate
-from trl import SFTTrainer
-
-
-
-# from peft.tuners.lora import mark_only_lora_as_trainable
-
-from peft import LoraConfig, get_peft_model,PeftModel, AutoPeftModelForCausalLM, prepare_model_for_kbit_training
-
-import torch
-
-from pathlib import Path
-import evaluate
-
-import numpy as np
-from transformers import  AutoModel,AutoTokenizer,AutoConfig,BitsAndBytesConfig,DataCollatorForLanguageModeling,AutoModelForCausalLM, Trainer, TrainingArguments,pipeline
-from datasets import load_dataset, concatenate_datasets, DatasetDict
-import re
-from huggingface_hub import HfApi
-from modules.chainpipe import Chainpipe
-# --fine-tune and merge with base-model through finetuning_model.py with custom multimodal embedding
-
-# -- finetume with  any model that compatible with base-model architecture with autoclass to make same architecture from base-model
-
-
-
-# os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
-# os.environ["PYTORCH_USE_CUDA_DSA"] = "1"
-
-
-
-# # Make sure the model path is correct for your system!
-# llm = LlamaCpp(
-#     model_path="/Users/rlm/Desktop/Code/llama.cpp/models/openorca-platypus2-13b.gguf.q4_0.bin",
-#     temperature=0.75,
-#     max_tokens=2000,
-#     top_p=1,
-#     callback_manager=callback_manager,
-#     verbose=True,  # Verbose is required to pass to the callback manager
-# )
-
+# Set environment variables
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True,max_split_size_mb:256"
+os.environ["CUDA_LAUNCH_BLOCKING"] = "0"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 class FinetuneModel:
+    """Class for handling model fine-tuning operations."""
+    
     def __init__(self):
+        """Initialize the FinetuneModel with default parameters."""
         # Training parameters
-        self.per_device_train_batch_size = 64        
+        self.per_device_train_batch_size = 64
         self.per_device_eval_batch_size = 64
-        self.gradient_accumulation_steps = 2    
+        self.gradient_accumulation_steps = 2
         self.learning_rate = 2e-4
-        self.num_train_epochs =  100      
+        self.num_train_epochs = 100
         self.save_strategy = "best"
         
-        # Define paths
+        # Initialize paths and directories
+        self._setup_directories()
+        
+        # Initialize components
+        self.device_map = "cuda:0" if torch.cuda.is_available() else "cpu"
+        self.metric = evaluate.load("accuracy")
+        self.chainpipe = Chainpipe()
+        
+        # Clear CUDA cache
+        torch.cuda.empty_cache()
+        
+        # Initialize state variables
+        self.model_id = None
+        self.dataset_name = None
+        self.model_task = None
+        self.resume_from_checkpoint = True
+        self.chat_template = None
+        self.last_checkpoint = None
+    
+    def _setup_directories(self):
+        """Set up required directories."""
         self.WORKSPACE_DIR = Path(__file__).parent.parent.absolute()
         self.MODEL_DIR = self.WORKSPACE_DIR / "models"
         self.CHECKPOINT_DIR = self.WORKSPACE_DIR / "checkpoints"
         self.OFFLOAD_DIR = self.WORKSPACE_DIR / "offload"
         
-        # Create directories
-        self.MODEL_DIR.mkdir(parents=True, exist_ok=True)
-        self.CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
-        self.OFFLOAD_DIR.mkdir(parents=True, exist_ok=True)
-        
-        self.device_map = "cuda:0" if torch.cuda.is_available() else "cpu"
-        
-        # Set memory optimization environment variables
-        os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True,max_split_size_mb:256"
-        os.environ["CUDA_LAUNCH_BLOCKING"] = "0"
-        os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-        torch.cuda.empty_cache()
-        
-        self.model_id = None
-        self.dataset_name = None
-        self.metric = evaluate.load("accuracy")
-        self.model_task = None
-        self.resume_from_checkpoint = True
-        self.chainpipe = Chainpipe()
-        self.chat_template = None  # Initialize chat_template as None
-        self.last_checkpoint = None  # Initialize last_checkpoint as None
+        for directory in [self.MODEL_DIR, self.CHECKPOINT_DIR, self.OFFLOAD_DIR]:
+            directory.mkdir(parents=True, exist_ok=True)
     
-    
-    def get_model_architecture(self, model_id):
-        """Detect the model architecture and return appropriate LoRA configuration"""
+    def get_model_architecture(self, model_id: str) -> List[str]:
+        """Detect the model architecture and return appropriate LoRA configuration.
+        
+        Args:
+            model_id: The model identifier
+            
+        Returns:
+            List of target modules for LoRA configuration
+        """
         try:
             config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
             model_type = config.model_type.lower()
             
-            # Common target modules for different architectures
             target_modules_map = {
                 "gpt2": ["c_attn", "c_proj"],
                 "llama": ["q_proj", "k_proj", "v_proj", "o_proj"],
@@ -118,7 +114,6 @@ class FinetuneModel:
                 "stablelm": ["q_proj", "k_proj", "v_proj", "o_proj"]
             }
             
-            # Default to common attention patterns if architecture not found
             target_modules = target_modules_map.get(model_type, ["q_proj", "k_proj", "v_proj", "o_proj"])
             
             print(f"{Fore.CYAN}Detected model architecture: {model_type}{Style.RESET_ALL}")
@@ -128,21 +123,36 @@ class FinetuneModel:
         except Exception as e:
             print(f"{Fore.YELLOW}Warning: Could not detect model architecture, using default target modules: {str(e)}{Style.RESET_ALL}")
             return ["q_proj", "k_proj", "v_proj", "o_proj"]
-
-    def get_model_task(self, model_name):
+    
+    def get_model_task(self, model_name: str) -> str:
+        """Get the task type for a model.
+        
+        Args:
+            model_name: The model identifier
+            
+        Returns:
+            The model's task type
+        """
         try:
             api = HfApi()
             models = api.list_models(search=model_name)
             for model in models:
-                if model.id.startswith(model_name):  # match closely
+                if model.id.startswith(model_name):
                     return model.pipeline_tag
-            return "text-generation"  # default task if not found
+            return "text-generation"
         except Exception as e:
             print(f"{Fore.YELLOW}Warning: Could not determine model task, using default: {str(e)}{Style.RESET_ALL}")
             return "text-generation"
-
-    def find_last_checkpoint(self, model_name):
-        """Find the last checkpoint for a model"""
+    
+    def find_last_checkpoint(self, model_name: str) -> Optional[Path]:
+        """Find the last checkpoint for a model.
+        
+        Args:
+            model_name: The model identifier
+            
+        Returns:
+            Path to the last checkpoint if found, None otherwise
+        """
         try:
             model_task = self.get_model_task(model_name)
             model_name = model_name.replace('/', '_') if '/' in model_name else model_name
@@ -153,17 +163,14 @@ class FinetuneModel:
                 print(f"{Fore.YELLOW}No checkpoint directory found at {checkpoint_dir}{Style.RESET_ALL}")
                 return None
             
-            # Get all checkpoint directories
             checkpoints = [d for d in checkpoint_dir.iterdir() if d.is_dir() and d.name.startswith("checkpoint-")]
             
             if not checkpoints:
                 print(f"{Fore.YELLOW}No checkpoints found in {checkpoint_dir}{Style.RESET_ALL}")
                 return None
             
-            # Sort by checkpoint number and get the latest
             latest_checkpoint = max(checkpoints, key=lambda x: int(x.name.split("-")[1]))
             
-            # Verify checkpoint integrity
             if not (latest_checkpoint / "model.safetensors").exists() and not (latest_checkpoint / "adapter_model.safetensors").exists():
                 print(f"{Fore.YELLOW}Latest checkpoint {latest_checkpoint} is incomplete, starting from scratch{Style.RESET_ALL}")
                 return None
@@ -174,204 +181,207 @@ class FinetuneModel:
         except Exception as e:
             print(f"{Fore.RED}Error finding last checkpoint: {str(e)}{Style.RESET_ALL}")
             return None
-
-    def load_model(self, model_id, resume_from_checkpoint=False):
-        print(f"{Fore.CYAN}retrieve model {model_id}{Style.RESET_ALL}")
+    
+    def load_model(self, model_id: str, resume_from_checkpoint: bool = False) -> Tuple[Optional[AutoModelForCausalLM], Optional[AutoTokenizer]]:
+        """Load a model and its tokenizer.
+        
+        Args:
+            model_id: The model identifier
+            resume_from_checkpoint: Whether to resume from a checkpoint
+            
+        Returns:
+            Tuple of (model, tokenizer)
+        """
+        print(f"{Fore.CYAN}Retrieving model {model_id}{Style.RESET_ALL}")
         
         self.resume_from_checkpoint = resume_from_checkpoint
         print(f"Load from last checkpoint: {self.resume_from_checkpoint}")
         
         try:
-            # Get model task
             self.model_task = self.get_model_task(model_id)
             print(f"{Fore.CYAN}Model task detected: {self.model_task}{Style.RESET_ALL}")
             
-            # Create task-specific directories
             self.TASK_MODEL_DIR = self.MODEL_DIR / self.model_task
             self.TASK_MODEL_DIR.mkdir(parents=True, exist_ok=True)
             
-            # Find last checkpoint if resuming
             if resume_from_checkpoint:
-                self.last_checkpoint = self.find_last_checkpoint(model_id)
-                if self.last_checkpoint:
-                    print(f"{Fore.CYAN}Resuming from checkpoint: {self.last_checkpoint}{Style.RESET_ALL}")
-                    # Load base model first
-                    base_model = AutoModelForCausalLM.from_pretrained(
-                        model_id,  # Use original model_id as base
-                        device_map=self.device_map,
-                        trust_remote_code=True,
-                        torch_dtype=torch.bfloat16,
-                        low_cpu_mem_usage=True,
-                        offload_folder=str(self.OFFLOAD_DIR),
-                        offload_state_dict=True,
-                        max_memory={0: "40GB"},
-                        use_cache=False  # Disable KV cache during training
-                    )
-                    
-                    # Load the PEFT model with adapter weights
-                    model = PeftModel.from_pretrained(
-                        base_model,
-                        str(self.last_checkpoint),
-                        device_map=self.device_map,
-                        torch_dtype=torch.bfloat16
-                    )
-                    
-                    # Ensure model is in training mode and parameters are trainable
-                    model.train()
-                    for param in model.parameters():
-                        param.requires_grad = True
-                    
-                    # Enable gradient checkpointing
-                    model.gradient_checkpointing_enable()
-                    
-                    # Load tokenizer from checkpoint
-                    tokenizer = AutoTokenizer.from_pretrained(
-                        str(self.last_checkpoint),
-                        trust_remote_code=True,
-                        padding_side="right",
-                        truncation_side="right"
-                    )
-                    
-                    # Initialize ChatTemplate with the tokenizer and chainpipe
-                    self.chat_template = ChatTemplate(
-                        tokenizer=tokenizer,
-                        
-                    )
-                    
-                    return model, tokenizer
-                else:
-                    print(f"{Fore.YELLOW}No valid checkpoint found, starting from scratch{Style.RESET_ALL}")
-            
-            # If not resuming or no valid checkpoint found, load from base model
-            # Load tokenizer first
-            tokenizer = AutoTokenizer.from_pretrained(
-                model_id,
-                trust_remote_code=True,
-                padding_side="right",
-                truncation_side="right"
-            )
-            
-            # Initialize ChatTemplate with the tokenizer and chainpipe
-            self.chat_template = ChatTemplate(
-                tokenizer=tokenizer,
-                
-            )
-            
-            # Configure quantization
-            quantization_config = BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_compute_dtype=torch.bfloat16,
-                bnb_4bit_quant_type="nf4",
-                bnb_4bit_use_double_quant=True,
-                llm_int8_threshold=6.0,
-                llm_int8_has_fp16_weight=False,
-            )
-            
-            # Load model config
-            config = AutoConfig.from_pretrained(
-                model_id,
-                trust_remote_code=True,
-                use_cache=False,
-                torch_dtype=torch.bfloat16,
-                low_cpu_mem_usage=True
-            )
-            
-            # Load base model
-            model = AutoModelForCausalLM.from_pretrained(
-                model_id,
-                config=config,
-                quantization_config=quantization_config,
-                device_map=self.device_map,
-                trust_remote_code=True,
-                torch_dtype=torch.bfloat16,
-                low_cpu_mem_usage=True,
-                offload_folder=str(self.OFFLOAD_DIR),
-                offload_state_dict=True,
-                max_memory={0: "40GB"}
-            )
-            
-            # Prepare model for k-bit training
-            model = prepare_model_for_kbit_training(
-                model,
-                use_gradient_checkpointing=True
-            )
-            
-            # Get target modules
-            target_modules = self.get_model_architecture(model_id)
-            
-            # Configure LoRA
-            lora_config = LoraConfig(
-                r=8,
-                lora_alpha=16,
-                target_modules=target_modules,
-                lora_dropout=0.05,
-                bias="none",
-                task_type="CAUSAL_LM"
-            )
-            
-            # Get PEFT model
-            model = get_peft_model(model, lora_config)
-            
-            # Ensure model is in training mode and parameters are trainable
-            model.train()
-            for param in model.parameters():
-                param.requires_grad = True
-            
-            # Enable gradient checkpointing
-            model.gradient_checkpointing_enable()
-            
-            # Print trainable parameters
-            model.print_trainable_parameters()
-            
-            # Set padding token if needed
-            if tokenizer.pad_token is None:
-                tokenizer.pad_token = tokenizer.eos_token
-                model.config.pad_token_id = tokenizer.pad_token_id
-            
-            return model, tokenizer
+                return self._load_from_checkpoint(model_id)
+            return self._load_from_scratch(model_id)
             
         except Exception as e:
             print(f"{Fore.RED}Error loading model {model_id}: {str(e)}{Style.RESET_ALL}")
             return None, None
-
-    def load_dataset(self,dataset_name,config,split=None):
-        print(f"{Fore.CYAN}retrieve dataset {dataset_name}{Style.RESET_ALL}")
+    
+    def _load_from_checkpoint(self, model_id: str) -> Tuple[Optional[AutoModelForCausalLM], Optional[AutoTokenizer]]:
+        """Load model and tokenizer from checkpoint.
+        
+        Args:
+            model_id: The model identifier
+            
+        Returns:
+            Tuple of (model, tokenizer)
+        """
+        self.last_checkpoint = self.find_last_checkpoint(model_id)
+        if not self.last_checkpoint:
+            print(f"{Fore.YELLOW}No valid checkpoint found, starting from scratch{Style.RESET_ALL}")
+            return self._load_from_scratch(model_id)
+        
+        print(f"{Fore.CYAN}Resuming from checkpoint: {self.last_checkpoint}{Style.RESET_ALL}")
+        
+        base_model = AutoModelForCausalLM.from_pretrained(
+            model_id,
+            device_map=self.device_map,
+            trust_remote_code=True,
+            torch_dtype=torch.bfloat16,
+            low_cpu_mem_usage=True,
+            offload_folder=str(self.OFFLOAD_DIR),
+            offload_state_dict=True,
+            max_memory={0: "40GB"},
+            use_cache=False
+        )
+        
+        model = PeftModel.from_pretrained(
+            base_model,
+            str(self.last_checkpoint),
+            device_map=self.device_map,
+            torch_dtype=torch.bfloat16
+        )
+        
+        model.train()
+        for param in model.parameters():
+            param.requires_grad = True
+        
+        model.gradient_checkpointing_enable()
+        
+        tokenizer = AutoTokenizer.from_pretrained(
+            str(self.last_checkpoint),
+            trust_remote_code=True,
+            padding_side="right",
+            truncation_side="right"
+        )
+        
+        self.chat_template = ChatTemplate(tokenizer=tokenizer)
+        
+        return model, tokenizer
+    
+    def _load_from_scratch(self, model_id: str) -> Tuple[Optional[AutoModelForCausalLM], Optional[AutoTokenizer]]:
+        """Load model and tokenizer from scratch.
+        
+        Args:
+            model_id: The model identifier
+            
+        Returns:
+            Tuple of (model, tokenizer)
+        """
+        tokenizer = AutoTokenizer.from_pretrained(
+            model_id,
+            trust_remote_code=True,
+            padding_side="right",
+            truncation_side="right"
+        )
+        
+        self.chat_template = ChatTemplate(tokenizer=tokenizer)
+        
+        quantization_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=torch.bfloat16,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_use_double_quant=True,
+            llm_int8_threshold=6.0,
+            llm_int8_has_fp16_weight=False,
+        )
+        
+        config = AutoConfig.from_pretrained(
+            model_id,
+            trust_remote_code=True,
+            use_cache=False,
+            torch_dtype=torch.bfloat16,
+            low_cpu_mem_usage=True
+        )
+        
+        model = AutoModelForCausalLM.from_pretrained(
+            model_id,
+            config=config,
+            quantization_config=quantization_config,
+            device_map=self.device_map,
+            trust_remote_code=True,
+            torch_dtype=torch.bfloat16,
+            low_cpu_mem_usage=True,
+            offload_folder=str(self.OFFLOAD_DIR),
+            offload_state_dict=True,
+            max_memory={0: "40GB"}
+        )
+        
+        model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
+        
+        target_modules = self.get_model_architecture(model_id)
+        
+        lora_config = LoraConfig(
+            r=8,
+            lora_alpha=16,
+            target_modules=target_modules,
+            lora_dropout=0.05,
+            bias="none",
+            task_type="CAUSAL_LM"
+        )
+        
+        model = get_peft_model(model, lora_config)
+        
+        model.train()
+        for param in model.parameters():
+            param.requires_grad = True
+        
+        model.gradient_checkpointing_enable()
+        model.print_trainable_parameters()
+        
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
+            model.config.pad_token_id = tokenizer.pad_token_id
+        
+        return model, tokenizer
+    
+    def load_dataset(self, dataset_name: str, config: Optional[Dict] = None, split: Optional[str] = None) -> Optional[DatasetDict]:
+        """Load a dataset.
+        
+        Args:
+            dataset_name: The dataset identifier
+            config: Dataset configuration
+            split: Dataset split to load
+            
+        Returns:
+            Loaded dataset
+        """
+        print(f"{Fore.CYAN}Retrieving dataset {dataset_name}{Style.RESET_ALL}")
         
         try:
-            # Load dataset from Hugging Face
             self.dataset_name = dataset_name
             if config is not None:
-                    try:
-                        dataset = load_dataset(dataset_name,config,trust_remote_code=True,split=split)
-                    except Exception as e:
-                        print(f"{Fore.RED}Error loading dataset {dataset_name}: {str(e)}{Style.RESET_ALL}")
-                        return None
+                try:
+                    dataset = load_dataset(dataset_name, config, trust_remote_code=True, split=split)
+                except Exception as e:
+                    print(f"{Fore.RED}Error loading dataset {dataset_name}: {str(e)}{Style.RESET_ALL}")
+                    return None
             else:
-                dataset = load_dataset(dataset_name,trust_remote_code=True)
-            # print(Fore.YELLOW+"Dataset feature: "+str(dataset.features)+Fore.RESET)
+                dataset = load_dataset(dataset_name, trust_remote_code=True)
             return dataset
         except Exception as e:
             print(f"{Fore.RED}Error loading dataset {dataset_name}: {str(e)}{Style.RESET_ALL}")
-            
-            return load_dataset(dataset_name,config,trust_remote_code=True)
+            return load_dataset(dataset_name, config, trust_remote_code=True)
+    
+    def map_tokenizer(self, dataset_name: str, tokenizer: AutoTokenizer, dataset: DatasetDict, 
+                     max_length: int = 384, return_embedded_dataset: bool = False) -> Optional[DatasetDict]:
+        """Map tokenizer to dataset.
         
-    def tokenizer(self):
-        try:
-            tokenizer = AutoTokenizer.from_pretrained(
-                self.model_id,
-                trust_remote_code=True,
-                padding_side="right",
-                truncation_side="right"
-            )
-            # Set padding token if not set
-            if tokenizer.pad_token is None:
-                tokenizer.pad_token = tokenizer.eos_token
-            return tokenizer
-        except Exception as e:
-            print(f"{Fore.RED}Error loading tokenizer: {str(e)}{Style.RESET_ALL}")
-            return None
-
-    def map_tokenizer(self, dataset_name, tokenizer, dataset, max_length=384,return_embedded_dataset=False):
+        Args:
+            dataset_name: The dataset identifier
+            tokenizer: The tokenizer to use
+            dataset: The dataset to process
+            max_length: Maximum sequence length
+            return_embedded_dataset: Whether to return embedded dataset
+            
+        Returns:
+            Processed dataset
+        """
         try:
             tokenized_dataset = self.chat_template.prepare_dataset(
                 dataset_name,
@@ -384,30 +394,155 @@ class FinetuneModel:
         except Exception as e:
             print(f"{Fore.RED}Error tokenizing dataset: {str(e)}{Style.RESET_ALL}")
             return None
+    
+    def train_args(self, modelname: str) -> TrainingArguments:
+        """Get training arguments.
         
-   
-    def runtuning(self,model,tokenizer,dataset,modelname):
+        Args:
+            modelname: The model identifier
+            
+        Returns:
+            Training arguments
+        """
+        model_folder = self.CHECKPOINT_DIR / self.model_task
+        output_dir = model_folder / modelname if '/' not in modelname else model_folder / modelname.replace('/', '_')
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        cuda_available = torch.cuda.is_available()
+        
+        return TrainingArguments(
+            output_dir=str(output_dir),
+            learning_rate=self.learning_rate,
+            per_device_train_batch_size=self.per_device_train_batch_size,
+            per_device_eval_batch_size=self.per_device_eval_batch_size,
+            num_train_epochs=self.num_train_epochs,
+            weight_decay=0.01,
+            save_strategy="steps",
+            eval_strategy="steps",
+            eval_steps=20,
+            save_steps=20,
+            save_total_limit=3,
+            logging_dir=str(self.CHECKPOINT_DIR),
+            logging_strategy="steps",
+            logging_steps=20,
+            logging_first_step=True,
+            gradient_accumulation_steps=self.gradient_accumulation_steps,
+            fp16=False,
+            bf16=True,
+            optim="adamw_torch",
+            lr_scheduler_type="cosine",
+            warmup_ratio=0.1,
+            remove_unused_columns=False,
+            label_names=["labels"],
+            gradient_checkpointing=True,
+            gradient_checkpointing_kwargs={"use_reentrant": False},
+            ddp_find_unused_parameters=False,
+            ddp_bucket_cap_mb=200,
+            dataloader_pin_memory=cuda_available,
+            dataloader_num_workers=2,
+            max_grad_norm=1.0,
+            group_by_length=True,
+            length_column_name="length",
+            report_to="none",
+            resume_from_checkpoint=self.last_checkpoint if self.resume_from_checkpoint else None,
+            load_best_model_at_end=True,
+            metric_for_best_model="eval_loss",
+            greater_is_better=False,
+            save_safetensors=True,
+            save_only_model=True,
+            overwrite_output_dir=True,
+            torch_compile=False,
+            use_mps_device=False
+        )
+    
+    def compute_metrics(self, eval_pred: Tuple[np.ndarray, np.ndarray]) -> Dict[str, float]:
+        """Compute evaluation metrics.
+        
+        Args:
+            eval_pred: Tuple of (predictions, labels)
+            
+        Returns:
+            Dictionary of metrics
+        """
+        logits, labels = eval_pred
+        predictions = np.argmax(logits[:, -1, :], axis=-1)
+        valid_labels = labels[:, -1]
+        mask = valid_labels != -100
+        filtered_predictions = predictions[mask]
+        filtered_labels = valid_labels[mask]
+        
+        if len(filtered_predictions) == 0 or len(filtered_labels) == 0:
+            return {"accuracy": 0.0}
+            
         try:
-            # model, tokenizer = self.load_model(self.model_id,self.resume_from_checkpoint)
-            # if model is None or tokenizer is None:
-            #     raise ValueError("Failed to load model or tokenizer")
+            metrics = self.metric.compute(predictions=filtered_predictions, references=filtered_labels)
+            if metrics is None or np.isnan(metrics.get("accuracy", 0.0)):
+                return {"accuracy": 0.0}
+            return metrics
+        except Exception as e:
+            print(f"{Fore.YELLOW}Warning: Error computing metrics: {str(e)}{Style.RESET_ALL}")
+            return {"accuracy": 0.0}
+    
+    def Trainer(self, model: AutoModelForCausalLM, dataset: DatasetDict, 
+               tokenizer: AutoTokenizer, modelname: str) -> Trainer:
+        """Create a trainer instance.
+        
+        Args:
+            model: The model to train
+            dataset: The dataset to use
+            tokenizer: The tokenizer to use
+            modelname: The model identifier
             
-            # dataset = self.load_dataset(datasetname)
+        Returns:
+            Trainer instance
+        """
+        data_collator = DataCollatorForLanguageModeling(
+            tokenizer=tokenizer,
+            mlm=False
+        )
+        
+        try:
+            if isinstance(dataset, DatasetDict):
+                train_dataset = dataset.get('train', dataset)
+                eval_dataset = dataset.get('test', dataset)
+            else:
+                split_dataset = dataset.train_test_split(test_size=0.1, seed=42)
+                train_dataset = split_dataset['train']
+                eval_dataset = split_dataset['test']
+        except:
+            split_dataset = dataset.train_test_split(test_size=0.1, seed=42)
+            train_dataset = split_dataset['train']
+            eval_dataset = split_dataset['test']
 
-            # tokenized_dataset = self.map_tokenizer(tokenizer, dataset)
-            
-            trainer = self.Trainer(model=model, dataset=dataset, tokenizer=tokenizer,modelname=modelname)
+        return Trainer(
+            model=model,
+            args=self.train_args(modelname),
+            train_dataset=train_dataset,
+            eval_dataset=eval_dataset,
+            data_collator=data_collator,
+            compute_metrics=self.compute_metrics
+        )
+    
+    def runtuning(self, model: AutoModelForCausalLM, tokenizer: AutoTokenizer, 
+                 dataset: DatasetDict, modelname: str) -> None:
+        """Run the fine-tuning process.
+        
+        Args:
+            model: The model to train
+            tokenizer: The tokenizer to use
+            dataset: The dataset to use
+            modelname: The model identifier
+        """
+        try:
+            trainer = self.Trainer(model=model, dataset=dataset, tokenizer=tokenizer, modelname=modelname)
             trainer.train()
             
-            # Save the model in task-specific directory
             model_save_path = self.TASK_MODEL_DIR / modelname.replace('/', '_')
             model_save_path.mkdir(parents=True, exist_ok=True)
             
-            # Save model and tokenizer
             model.save_pretrained(str(model_save_path))
             tokenizer.save_pretrained(str(model_save_path))
             
-            # Save model info for inference
             model_info = {
                 "model_id": modelname,
                 "model_task": self.model_task,
@@ -431,207 +566,79 @@ class FinetuneModel:
             print(f"{Fore.RED}Error running tuning: {str(e)}{Style.RESET_ALL}")
             report = Report()
             report.store_problem(model=modelname, dataset=dataset)
-            return None
-        
-    def train_args(self,modelname):
-        model_folder =  self.CHECKPOINT_DIR / self.model_task
-        output_dir = model_folder / modelname if '/' not in modelname else model_folder / modelname.replace('/', '_')
-        
-        # Ensure checkpoint directory exists
-        output_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Check if CUDA is available
-        cuda_available = torch.cuda.is_available()
-        
-        return TrainingArguments(
-            output_dir=str(output_dir),  # Convert Path to string
-            learning_rate=self.learning_rate,
-            per_device_train_batch_size=self.per_device_train_batch_size,
-            per_device_eval_batch_size=self.per_device_eval_batch_size,
-            num_train_epochs=self.num_train_epochs,
-            weight_decay=0.01,
-            save_strategy="steps",  # Save every N steps
-            eval_strategy="steps",  # Evaluate every N steps
-            eval_steps=20,  # Evaluate every 100 steps
-            save_steps=20,  # Save every 100 steps
-            save_total_limit=3,  # Keep last 3 checkpoints
-            logging_dir=str(self.CHECKPOINT_DIR),  # Convert Path to string
-            logging_strategy="steps",
-            logging_steps=20,
-            logging_first_step=True,
-            gradient_accumulation_steps=self.gradient_accumulation_steps,
-            fp16=False,
-            bf16=True,
-            optim="adamw_torch",
-            lr_scheduler_type="cosine",
-            warmup_ratio=0.1,
-            remove_unused_columns=False,
-            label_names=["labels"],
-            gradient_checkpointing=True,
-            gradient_checkpointing_kwargs={"use_reentrant": False},
-            ddp_find_unused_parameters=False,
-            ddp_bucket_cap_mb=200,
-            dataloader_pin_memory=cuda_available,  # Only enable pin_memory when CUDA is available
-            dataloader_num_workers=2,
-            max_grad_norm=1.0,
-            group_by_length=True,
-            length_column_name="length",
-            report_to="none",
-            resume_from_checkpoint=self.last_checkpoint if self.resume_from_checkpoint else None,
-            load_best_model_at_end=True,  # Load the best model at the end of training
-            metric_for_best_model="eval_loss",  # Use evaluation loss to determine best model
-            greater_is_better=False,  # Lower loss is better
-            save_safetensors=True,  # Save in safetensors format
-            save_only_model=True,  # Only save the model, not the optimizer state
-            overwrite_output_dir=True,  # Overwrite the output directory
-            torch_compile=False,  # Disable torch.compile
-            use_mps_device=False,  # Disable MPS device
-            # include_for_metrics=True  # Include inputs when computing metrics
-        )
-    def compute_metrics(self,eval_pred):
-        logits, labels = eval_pred
-        # Get predictions for the last non-padded token in each sequence
-        predictions = np.argmax(logits[:, -1, :], axis=-1)  # Take last token prediction
-        # Get the last non-padded label for each sequence
-        valid_labels = labels[:, -1]  # Take last token label
-        # Filter out padding tokens (-100)
-        mask = valid_labels != -100
-        filtered_predictions = predictions[mask]
-        filtered_labels = valid_labels[mask]
-        
-        # Safety check - if no valid predictions, return 0 accuracy
-        if len(filtered_predictions) == 0 or len(filtered_labels) == 0:
-            return {"accuracy": 0.0}
-            
-        try:
-            metrics = self.metric.compute(predictions=filtered_predictions, references=filtered_labels)
-            # Ensure metrics are not None or NaN
-            if metrics is None or np.isnan(metrics.get("accuracy", 0.0)):
-                return {"accuracy": 0.0}
-            return metrics
-        except Exception as e:
-            print(f"{Fore.YELLOW}Warning: Error computing metrics: {str(e)}{Style.RESET_ALL}")
-            return {"accuracy": 0.0}
-    
-    def Trainer(self, model, dataset, tokenizer,modelname):
-        # Create data collator for language modeling
-        data_collator = DataCollatorForLanguageModeling(
-            tokenizer=tokenizer,
-            mlm=False  # We're doing causal language modeling, not masked language modeling
-        )
-        
-        try:
-            if isinstance(dataset, DatasetDict):
-                train_dataset = dataset.get('train',dataset)
-                eval_dataset = dataset.get('test',dataset)
-            else:
-                  # If it's a single dataset, split it into train and validation
-                split_dataset = dataset.train_test_split(test_size=0.1, seed=42)
-                train_dataset = split_dataset['train']
-                eval_dataset = split_dataset['test']
-        except:
-                # If it's a single dataset, split it into train and validation
-                split_dataset = dataset.train_test_split(test_size=0.1, seed=42)
-                train_dataset = split_dataset['train']
-                eval_dataset = split_dataset['test']
-
-        return Trainer(
-            model=model,
-            args=self.train_args(modelname),
-            train_dataset=train_dataset,
-            eval_dataset=eval_dataset,
-            data_collator=data_collator,
-            compute_metrics=self.compute_metrics
-        )
 
 class Manager:
-    def __init__(self,model_data_json_path=None):
+    """Manager class for handling fine-tuning operations."""
+    
+    def __init__(self, model_data_json_path: Optional[str] = None):
+        """Initialize the Manager.
+        
+        Args:
+            model_data_json_path: Path to the model data JSON file
+        """
         self.data_json_path = model_data_json_path
         self.finetune_model = FinetuneModel()
     
-    def generate_model_data(self):
+    def generate_model_data(self) -> List[Dict[str, Any]]:
+        """Generate model data from JSON file.
+        
+        Returns:
+            List of model data dictionaries
+        """
         if self.data_json_path is None:
             raise ValueError("data_json_path is required")
         with open(self.data_json_path, "r") as f:
-            data = json.load(f)
-            return data
-    def run_finetune(self,list_model_data,config):
+            return json.load(f)
+    
+    def run_finetune(self, list_model_data: List[Dict[str, Any]], config: Dict[str, Any]) -> Tuple[Optional[AutoModelForCausalLM], Optional[DatasetDict]]:
+        """Run the fine-tuning process.
+        
+        Args:
+            list_model_data: List of model data dictionaries
+            config: Configuration dictionary
+            
+        Returns:
+            Tuple of (model, dataset)
+        """
         try:
             model = None
             combined_dataset = None
             dataset = None
+            
             for el in list_model_data:
-                # First, load the model
                 if "model" in el:
                     modelname = el["model"]
-                    model,tokenizer = self.finetune_model.load_model(modelname,self.finetune_model.resume_from_checkpoint)
+                    model, tokenizer = self.finetune_model.load_model(modelname, self.finetune_model.resume_from_checkpoint)
                 
-                # Then, combine all datasets for this model
                 if "datasets" in el:
                     datasets = el["datasets"]
-                    
                     saved_dataset = None
                     first_dataset = None
-                    secound_dataset = None
-                    for count,dataset_name in enumerate(datasets):
-                        
-                        print(f"{Fore.CYAN}Loading dataset'config: {dataset_name} {config[dataset_name]}{Style.RESET_ALL}")
-                        dataset = self.finetune_model.load_dataset(dataset_name,config[dataset_name],split='train')
-                       
-                        # Process and tokenize the dataset that combined and gonna return a embedding of 2 datasets if condition met
+                    second_dataset = None
+                    
+                    for count, dataset_name in enumerate(datasets):
+                        print(f"{Fore.CYAN}Loading dataset config: {dataset_name} {config[dataset_name]}{Style.RESET_ALL}")
+                        dataset = self.finetune_model.load_dataset(dataset_name, config[dataset_name], split='train')
                         
                         count += 1
                         if (count) % 3 != 0:
                             if first_dataset is None:
-                                first_dataset = self.finetune_model.map_tokenizer(dataset_name,tokenizer, dataset,return_embedded_dataset=True)
-                            elif secound_dataset is None:
-                                secound_dataset = self.finetune_model.map_tokenizer(dataset_name,tokenizer, dataset,return_embedded_dataset=True)
-                            
+                                first_dataset = self.finetune_model.map_tokenizer(dataset_name, tokenizer, dataset, return_embedded_dataset=True)
+                            elif second_dataset is None:
+                                second_dataset = self.finetune_model.map_tokenizer(dataset_name, tokenizer, dataset, return_embedded_dataset=True)
                         
                         concat_dataset = first_dataset
-                        if (first_dataset is not None and secound_dataset is not None):
-                            # first_dataset = first_dataset.to_csv('first_dataset.csv')
-                            # secound_dataset = secound_dataset.to_csv('secound_dataset.csv')
-                            ###concatenate and merge modality
-                            
-                            concat_dataset = concatenate_datasets([first_dataset,secound_dataset])
-                            # concat_dataset.to_csv('concat_dataset.csv')                            
-                            #merge dataset and return to the first 1 and it should be multimodal the return to map_token without return_embedded_dataset=True
-                            
-                            # dataset =self.finetune_model.map_tokenizer(dataset_name,tokenizer, merged_dataset,return_embedded_dataset=False)
+                        if first_dataset is not None and second_dataset is not None:
+                            concat_dataset = concatenate_datasets([first_dataset, second_dataset])
                         
-                            #should merge first 
-                            
-                            #and format to normal text and it modal array
-                            
-                            
-                            
-                        #after merge
-                        saved_dataset = self.finetune_model.map_tokenizer(dataset_name,tokenizer, concat_dataset,return_embedded_dataset=False)
-                       
+                        saved_dataset = self.finetune_model.map_tokenizer(dataset_name, tokenizer, concat_dataset, return_embedded_dataset=False)
                     
-                    # Set the final combined dataset
                     dataset = saved_dataset
-                    
-                self.finetune_model.runtuning(model,tokenizer,dataset,modelname)
-               
+                
+                self.finetune_model.runtuning(model, tokenizer, dataset, modelname)
+            
             return model, dataset
+            
         except Exception as e:
             print(f"{Fore.RED}Error running finetune: {str(e)}{Style.RESET_ALL}")
             return model, dataset
-                        
-                        
-# if __name__ == "__main__":
-#     HomePath = Path(__file__).parent.parent.absolute()
-#     DataModelFolder = f"{HomePath}/DataModel_config"
-#     datafile = 'installed.json'
-#     model_data_json_path = f"{DataModelFolder}/{datafile}"
-#     manager = Manager(model_data_json_path)
-#     list_model_data = manager.generate_model_data()
-#     manager.run_finetune(list_model_data)
-                    
-    # finetune_model = FinetuneModel(model_id="")
-    # print(finetune_model.tokenizer())
-    # print(finetune_model.model())
-    # print(finetune_model.config())
-    
