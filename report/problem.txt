@@ -446,3 +446,13 @@ Dataset: Dataset({
     features: ['input_ids', 'attention_mask', 'pixel_values'],
     num_rows: 1000
 })
+Model: c:\Users\astro\Desktop\multimodal_agentic\custom_models\text-generation\model-1
+Dataset: Dataset({
+    features: ['input_ids', 'attention_mask', 'pixel_values'],
+    num_rows: 200
+})
+Model: c:\Users\astro\Desktop\multimodal_agentic\custom_models\text-generation\model-1
+Dataset: Dataset({
+    features: ['input_ids', 'attention_mask', 'pixel_values'],
+    num_rows: 200
+})
