@@ -137,7 +137,7 @@ class ChatTemplate:
                                 pattern = r"{mul}(.*?)"
                                 match = re.findall(pattern,msg['content'])
                                 if match:
-                                    # print(f"Found {mul_field} in content: {match}")
+                                    print(f"Found {mul_field} in content: {match}")
                                     pass
             
             # Convert to Dataset object
@@ -236,13 +236,11 @@ class ChatTemplate:
                 combined_data = []
                 for msg, img in zip(embedded_messages, embedded_images):
                     combined_data.append({
-                        'conversations': msg,
+                        'conversations':msg,
                         'image': img
                     })
                 
-                return Dataset.from_dict({
-                    'conversations': combined_data
-                })
+                return Dataset.from_list(combined_data)
                     
                     
     
@@ -786,38 +784,50 @@ class ChatTemplate:
     def prepare_dataset(self, dataset_name, dataset, max_length=1000,return_embedded_dataset=False):
         if not return_embedded_dataset:
             try:
-                # print(f"DEBUG: Starting prepare_dataset with dataset_name: {dataset_name}")
-                # print(f"DEBUG: Dataset type: {type(dataset)}")
                 first_example = dataset
                 available_fields = list(first_example.features.keys())
-                # print(f"DEBUG: Available fields: {available_fields}")
                 
-                def process_examples(examples, batch_size=32):  # Increased batch size for CPU processing
-                    # print(f"DEBUG: Processing examples batch")
-                    #since it outer column
+                def process_examples(examples, batch_size=32):
                     mul_field = []
                     for pattern in self.MULTIMODAL_PATTERNS:
                         matching_keys = [key for key in available_fields if re.search(pattern, key, re.IGNORECASE)]
                         if matching_keys:
                             mul_field.extend(matching_keys)
-                            # print(f"DEBUG: Found multimodal field: {matching_keys[0]}")
-                        
+                    
+                    # Convert examples to a proper Dataset format
+                    examples_dict = {k: examples[k] for k in examples.keys()}
+                    examples_dataset = Dataset.from_dict(examples_dict)
+                    
                     if mul_field and len(mul_field) > 0:
-                        # print(f"DEBUG: Found multimodal fields: {mul_field}")
-                        # Convert LazyBatch to Dataset before processing
-                        examples_dataset = Dataset.from_dict({k: examples[k] for k in examples.keys()})
-                        formatted = self.process_dataset(dataset_name=dataset_name,dataset=examples_dataset,is_conversation=False,is_check=False,mul_field=mul_field)
+                        formatted = self.process_dataset(
+                            dataset_name=dataset_name,
+                            dataset=examples_dataset,
+                            is_conversation=False,
+                            is_check=False,
+                            mul_field=mul_field,
+                            return_embedded_dataset=return_embedded_dataset
+                        )
                     else:
-                        # print(f"DEBUG: No multimodal fields found")
-                        # Convert LazyBatch to Dataset before processing
-                        examples_dataset = Dataset.from_dict({k: examples[k] for k in examples.keys()})
-                        formatted = self.process_dataset(dataset_name=dataset_name,dataset=examples_dataset,is_conversation=False,is_check=False)
+                        formatted = self.process_dataset(
+                            dataset_name=dataset_name,
+                            dataset=examples_dataset,
+                            is_conversation=False,
+                            is_check=False,
+                            return_embedded_dataset=return_embedded_dataset
+                        )
+                    
+                    if formatted is None:
+                        return None
                     
                     # Format all messages in the batch
                     formatted_texts = []
                     for conversation in formatted['conversations']:
-                        formatted_text = self.format_message(conversation)
-                        formatted_texts.append(formatted_text)
+                        if isinstance(conversation, list):
+                            formatted_text = self.format_message(conversation)
+                            formatted_texts.append(formatted_text)
+                    
+                    if not formatted_texts:
+                        return None
                     
                     # Tokenize the entire batch at once
                     tokenized = self.tokenizer(
@@ -828,45 +838,56 @@ class ChatTemplate:
                         return_tensors="pt"
                     )
                     
-                    # Convert to lists for dataset compatibility
                     return tokenized
                 
                 # Process the dataset with batched processing
-                # print(f"DEBUG: Starting dataset mapping")
                 tokenized_dataset = dataset.map(
                     process_examples,
                     batched=True,
                     batch_size=32,
-                    remove_columns=dataset.column_names  # Remove original columns
+                    remove_columns=dataset.column_names
                 )
                 
-                # print(f"{Fore.GREEN}Successfully prepared dataset with {len(tokenized_dataset)} examples{Style.RESET_ALL}")
+                # Filter out None values
+                # tokenized_dataset = tokenized_dataset.filter(lambda x: x is not None)
+                
                 return tokenized_dataset
                 
             except Exception as e:
                 print(f"{Fore.RED}Error preparing dataset: {str(e)}{Style.RESET_ALL}")
                 raise
+            
         elif return_embedded_dataset:
             try:
-                # print(f"DEBUG: Starting prepare_dataset with embedded dataset")
                 first_example = dataset
                 available_fields = list(first_example.features.keys())
-                # print(f"DEBUG: Available fields for embedded dataset: {available_fields}")
                 
-                #since it outer column
                 mul_field = []
                 for pattern in self.MULTIMODAL_PATTERNS:
                     matching_keys = [key for key in available_fields if re.search(pattern, key, re.IGNORECASE)]
                     if matching_keys:
                         mul_field.extend(matching_keys)
-                        # print(f"DEBUG: Found multimodal field: {matching_keys[0]}")
-                    
+                
                 if mul_field and len(mul_field) > 0:
-                    # print(f"DEBUG: Found multimodal fields for embedded dataset: {mul_field}")
-                    formatted = self.process_dataset(dataset_name=dataset_name,dataset=first_example,is_conversation=False,is_check=False,mul_field=mul_field,return_embedded_dataset=True)
+                    formatted = self.process_dataset(
+                        dataset_name=dataset_name,
+                        dataset=first_example,
+                        is_conversation=False,
+                        is_check=False,
+                        mul_field=mul_field,
+                        return_embedded_dataset=True
+                    )
                 else:
-                    # print(f"DEBUG: No multimodal fields found for embedded dataset")
-                    formatted = self.process_dataset(dataset_name=dataset_name,dataset=first_example,is_conversation=False,is_check=False,return_embedded_dataset=True)
+                    formatted = self.process_dataset(
+                        dataset_name=dataset_name,
+                        dataset=first_example,
+                        is_conversation=False,
+                        is_check=False,
+                        return_embedded_dataset=True
+                    )
+                
+                if formatted is None:
+                    return None
                 
                 return formatted
                 
