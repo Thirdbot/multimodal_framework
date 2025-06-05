@@ -648,16 +648,17 @@ class Manager:
                         try:
                             print(f"{Fore.CYAN}Loading dataset config: {dataset_name} {config.get(dataset_name, 'No config found')}{Style.RESET_ALL}")
                             
+                            dataset = self.finetune_model.load_dataset(dataset_name, config.get(dataset_name, None), split='train')
                             # Check if dataset exists in config
-                            if dataset_name not in config:
-                                print(f"{Fore.YELLOW}Warning: No config found for dataset {dataset_name}, trying to load without config{Style.RESET_ALL}")
-                                dataset = self.finetune_model.load_dataset(dataset_name, None, split='train')
-                            else:
-                                dataset = self.finetune_model.load_dataset(dataset_name, config[dataset_name], split='train')
+                            # if dataset_name not in config:
+                            #     print(f"{Fore.YELLOW}Warning: No config found for dataset {dataset_name}, trying to load without config{Style.RESET_ALL}")
+                            #     dataset = self.finetune_model.load_dataset(dataset_name, None, split='train')
+                            # else:
+                            #     dataset = self.finetune_model.load_dataset(dataset_name, config[dataset_name], split='train')
                             
-                            if dataset is None:
-                                print(f"{Fore.RED}Failed to load dataset {dataset_name}, skipping...{Style.RESET_ALL}")
-                                continue
+                            # if dataset is None:
+                            #     print(f"{Fore.RED}Failed to load dataset {dataset_name}, skipping...{Style.RESET_ALL}")
+                            #     continue
                             
                             if first_dataset is None:
                                 print(f"{Fore.GREEN}Processing first dataset: {dataset_name}{Style.RESET_ALL}")
