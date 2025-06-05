@@ -620,7 +620,7 @@ class ChatTemplate:
             if any(re.search(self.CONVERSATION_PATTERN, key, re.IGNORECASE) for key in dataset_keys):
                 is_conversation = True
             is_check = True
-            return self.process_dataset(dataset_name=dataset_name,dataset=dataset, is_conversation=is_conversation, is_check=is_check,return_embedded_dataset=return_embedded_dataset)
+            return self.process_dataset(dataset_name=dataset_name,dataset=dataset,mul_field=mul_field, is_conversation=is_conversation, is_check=is_check,return_embedded_dataset=return_embedded_dataset)
         
         # Second level check - conversation confirm
         elif is_check and is_conversation:
@@ -641,8 +641,8 @@ class ChatTemplate:
                             return self.seperated_data(dataset_name=dataset_name,dataset=dataset,keys=matching_keys[0],mul_field=mul_field,return_embedded_dataset=return_embedded_dataset)
                         else:
                             print("Trying to format irregular dataset because of no list type")
-                            return self.process_dataset(dataset_name=dataset_name,dataset=dataset, is_conversation=is_conversation, is_check=is_check, is_regular=False,return_embedded_dataset=return_embedded_dataset)
-                return self.process_dataset(dataset_name=dataset_name,dataset=dataset, is_conversation=is_conversation, is_check=is_check, is_regular=False,return_embedded_dataset=return_embedded_dataset)
+                            return self.process_dataset(dataset_name=dataset_name,dataset=dataset,mul_field=mul_field, is_conversation=is_conversation, is_check=is_check, is_regular=False,return_embedded_dataset=return_embedded_dataset)
+                return self.process_dataset(dataset_name=dataset_name,dataset=dataset,mul_field=mul_field, is_conversation=is_conversation, is_check=is_check, is_regular=False,return_embedded_dataset=return_embedded_dataset)
             
             # Fourth level check - irregular dataset processing
             if not is_regular:
