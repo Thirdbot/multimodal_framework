@@ -76,12 +76,12 @@ class Main:
     def _setup_model_params(self):
         """Set up model parameters."""
         self.model_data_params = {
-            "model_name": ["kyutai/helium-1-2b"],
-            # "model_name":["custom_models/text-generation/model-1"],
+            # "model_name": ["kyutai/helium-1-2b"],
+            "model_name":["custom_models/text-generation/model-1"],
             # "datasets_name": ["pythainlp/han-instruct-dataset-v4.0"],
-            "datasets_name":['AdaptLLM/food-visual-instructions'],
-            "model_amount": 1,
-            "datasets_amount": 1,
+            "datasets_name":['AdaptLLM/food-visual-instructions','pythainlp/han-instruct-dataset-v4.0'],
+            "model_amount": 2,
+            "datasets_amount": 2,
         }
         self.config = {}
     

@@ -644,21 +644,12 @@ class Manager:
                     first_dataset = None
                     second_dataset = None
                     
-                    for idx, dataset_name in enumerate(datasets):
+                    for dataset_name in datasets:
                         try:
                             print(f"{Fore.CYAN}Loading dataset config: {dataset_name} {config.get(dataset_name, 'No config found')}{Style.RESET_ALL}")
                             
                             dataset = self.finetune_model.load_dataset(dataset_name, config.get(dataset_name, None), split='train')
-                            # Check if dataset exists in config
-                            # if dataset_name not in config:
-                            #     print(f"{Fore.YELLOW}Warning: No config found for dataset {dataset_name}, trying to load without config{Style.RESET_ALL}")
-                            #     dataset = self.finetune_model.load_dataset(dataset_name, None, split='train')
-                            # else:
-                            #     dataset = self.finetune_model.load_dataset(dataset_name, config[dataset_name], split='train')
-                            
-                            # if dataset is None:
-                            #     print(f"{Fore.RED}Failed to load dataset {dataset_name}, skipping...{Style.RESET_ALL}")
-                            #     continue
+                           
                             
                             if first_dataset is None:
                                 print(f"{Fore.GREEN}Processing first dataset: {dataset_name}{Style.RESET_ALL}")
@@ -669,8 +660,26 @@ class Manager:
                                 second_dataset = self.finetune_model.map_tokenizer(dataset_name, tokenizer, dataset, return_embedded_dataset=True)
                                 if first_dataset is not None and second_dataset is not None:
                                     print(f"{Fore.GREEN}Concatenating datasets...{Style.RESET_ALL}")
+                                    # concat_dataset = concatenate_datasets([first_dataset, second_dataset])
+                                    # Get column names from both datasets
+                                    first_cols = set(first_dataset.column_names)
+                                    second_cols = set(second_dataset.column_names)
+                                    print(f"{Fore.GREEN}First dataset columns: {first_cols}{Style.RESET_ALL}")
+                                    print(f"{Fore.GREEN}Second dataset columns: {second_cols}{Style.RESET_ALL}")
+                                    
+                                    # For columns only in second dataset, add them to first dataset with None values
+                                    for col in second_cols - first_cols:
+                                        first_dataset = first_dataset.add_column(col, [None] * len(first_dataset))
+                                    
+                                    # For columns only in first dataset, add them to second dataset with None values  
+                                    for col in first_cols - second_cols:
+                                        second_dataset = second_dataset.add_column(col, [None] * len(second_dataset))
+                                    
+                                    # Now both datasets have same columns, concatenate them
                                     concat_dataset = concatenate_datasets([first_dataset, second_dataset])
-                                    first_dataset = concat_dataset  # Update first_dataset for next iteration
+                                    
+                                    print(f"{Fore.GREEN}Successfully joined datasets with columns: {concat_dataset.column_names}{Style.RESET_ALL}")
+                                    
                             
                             saved_dataset = self.finetune_model.map_tokenizer(dataset_name, tokenizer, concat_dataset, return_embedded_dataset=False)
                             
