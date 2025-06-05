@@ -508,7 +508,7 @@ class FinetuneModel:
             print(f"{Fore.YELLOW}Warning: Error computing metrics: {str(e)}{Style.RESET_ALL}")
             return {"accuracy": 0.0}
     
-    def Trainer(self, model: AutoModelForCausalLM, dataset: DatasetDict, 
+    def Trainer(self, model: AutoModelForCausalLM, dataset, 
                tokenizer: AutoTokenizer, modelname: str) -> Trainer:
         """Create a trainer instance.
         

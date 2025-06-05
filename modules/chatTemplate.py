@@ -32,6 +32,7 @@ import torch.nn.functional as F
 import numpy as np
 
 from datasets import Dataset
+import io
 
 class ChatTemplate:
     """Class for handling chat templates and conversation formatting"""
@@ -80,68 +81,96 @@ class ChatTemplate:
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
         ])
         
-        # self.sentence_tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/msmarco-distilbert-cos-v5")
+        self.sentence_tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/msmarco-distilbert-cos-v5")
+        self.image_processor = AutoImageProcessor.from_pretrained("microsoft/resnet-50")
+        
         self.sentence_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2").to(self.device)
         self.sentence_model.eval()  # Ensure model is in eval mode from the start
     
     def seperated_data(self,dataset_name,dataset,keys,mul_field=None,return_embedded_dataset=False):
         #cut dataset to 1000 temporary
-        dataset = dataset[:1000]
-
+        dataset = dataset[:200]  # Changed from [:1] to [:1000] to ensure enough samples for splitting
+        
+        Home_dir = Path(__file__).parent.parent.absolute()
+        os.makedirs(f"{Home_dir}/multimodal_tokenizer", exist_ok=True)
+        os.makedirs(f"{Home_dir}/tokenizer", exist_ok=True)
+        
         if not return_embedded_dataset:
-            #format thinfg back to its original format except for multimodal
-            dataset_formated = {"conversations":[]}
-            get_keys = None
-            # print(f"Processing dataset with key: {keys}")
+            if mul_field is None:
+                # Format text data for tokenization
+                formatted_texts = []
+                for conversation in dataset[keys]:
+                    if isinstance(conversation, list):
+                        formatted_text = self.format_message(conversation)
+                        formatted_texts.append(formatted_text)
+                
+                if not formatted_texts:
+                    return None
+                
+                # Tokenize the formatted texts
+                text_tokenized = self.tokenizer(
+                    formatted_texts,
+                    padding=True,
+                    truncation=True,
+                    max_length=10000,
+                    return_tensors="pt"
+                )
+                
+                # Convert to Dataset format with required fields
+                tokenized_dataset ={
+                    'input_ids': text_tokenized['input_ids'],
+                    'attention_mask': text_tokenized['attention_mask']
+                }
+                self.tokenizer.save_pretrained(f"{Home_dir}/tokenizer/text_tokenizer")
+                return Dataset.from_dict(tokenized_dataset)
             
-            #chat data
-            set_data = dataset[keys]
-            if isinstance(set_data, list):
-                # print(f"Found {len(set_data)} conversations to process")
-                for list_data in dataset[keys]:
-                    get_keys = tuple(list_data[0].keys())
-                    message_list = []
-                    
-                    # Process each message in the conversation
-                    for data in list_data:
-                        #some conversation have like swap index of role and content(this is just extra check)
-                        if get_keys[0] in ('role','from'):
-                            role = get_keys[0]
-                            content = get_keys[1]
-                        elif get_keys[1] in ('content','value'):
-                            role = get_keys[1]
-                            content = get_keys[0]
-                        elif get_keys[0] in ('content','value'):
-                            role = get_keys[1]
-                            content = get_keys[0]
-                        elif get_keys[1] in ('role','from'):
-                            role = get_keys[1]
-                            content = get_keys[0]
-                        else:
-                            raise ValueError(f"Invalid keys: {get_keys}")
+            # Check for multimodal content if needed
+            if mul_field is not None:
+                # Format and tokenize text data
+                formatted_texts = []
+                for conversation in dataset[keys]:
+                    if isinstance(conversation, list):
+                        formatted_text = self.format_message(conversation)
+                        formatted_texts.append(formatted_text)
+                
+                if not formatted_texts:
+                    return None
+                
+                # Tokenize text
+                text_tokenized = self.tokenizer(
+                    formatted_texts,
+                    padding=True,
+                    truncation=True,
+                    max_length=10000,
+                    return_tensors="pt"
+                )
+                
+                # Process multimodal data
+                multimodal_data = {
+                    'input_ids': text_tokenized['input_ids'],
+                    'attention_mask': text_tokenized['attention_mask'],
+                }
+                self.tokenizer.save_pretrained(f"{Home_dir}/multimodal_tokenizer/text_tokenizer")
+                
+                for mul in mul_field:
+                    set_data = dataset[mul]
+                    if mul == "image":
+                        # Ensure images are in the correct format
+                        processed_images = []
+                        for img in set_data:
+                            if isinstance(img, Image.Image):
+                                # Process image using the image processor
+                                processed = self.image_processor(img, return_tensors="pt")
+                                processed_images.append(processed['pixel_values'])
                         
-                        role = data[role]
-                        content = data[content]
-                        # content = self.emb_to_text(content)
-                        format_dict = {"role":role,"content":content}
-                        # print(f"Format dict: {format_dict}")
-                        message_list.append(format_dict)
-                    
-                    # Add the complete conversation to the dataset
-                    dataset_formated['conversations'].append(message_list)
-                    
-                    # Check for multimodal content if needed
-                    if mul_field is not None:
-                        for msg in message_list:
-                            for mul in mul_field:
-                                pattern = r"{mul}(.*?)"
-                                match = re.findall(pattern,msg['content'])
-                                if match:
-                                    print(f"Found {mul_field} in content: {match}")
-                                    pass
-            
-            # Convert to Dataset object
-            return Dataset.from_dict({"conversations": dataset_formated['conversations']})
+                        if processed_images:
+                            # Stack all processed images into a single batch
+                            image_batch = torch.cat(processed_images, dim=0)
+                            multimodal_data['pixel_values'] = image_batch
+                            self.image_processor.save_pretrained(f"{Home_dir}/multimodal_tokenizer/image_tokenizer")
+                        
+                
+                return Dataset.from_dict(multimodal_data)
         
         elif return_embedded_dataset:
             print(f"Processing embedded dataset")
@@ -194,7 +223,9 @@ class ChatTemplate:
                 embedded_messages = []
                 for batch_result in batch_output:
                     if batch_result is not None:
-                        embedded_messages.extend(batch_result)
+                        messages, _ = batch_result  # Unpack the tuple
+                        if messages:
+                            embedded_messages.extend(messages)
                 
                 print(f"\nCompleted processing {len(embedded_messages)} items")
                 return Dataset.from_dict({
@@ -248,7 +279,6 @@ class ChatTemplate:
     
     def mul_process(self,dataset_name,dataset,keys,mul_field=None):
         if mul_field is None:
-            # print(f"Processing non multimodal conversation",end="\r")
             # Create new lists to store embedded data
             batch_data = []
             
@@ -257,7 +287,7 @@ class ChatTemplate:
                 
             if not data:
                 print(f"Warning: No data found for key {keys}")
-                return None
+                return None, None  # Return tuple of None values to match expected format
                 
             for list_data in tqdm(data, desc="Processing non-multimodal sub-batches"):
                 if not isinstance(list_data, (dict, list)):
@@ -293,7 +323,7 @@ class ChatTemplate:
                 if processed_content is not None:
                     batch_data.append(processed_content)
             
-            return batch_data if batch_data else None
+            return batch_data, None  # Return tuple with batch_data and None for images
         
         elif mul_field is not None:
             # Create new lists to store embedded data
@@ -368,7 +398,7 @@ class ChatTemplate:
                     print(f"Error processing {mul} field: {str(e)}")
                     continue
             
-            return (embedded_messages, embedded_images) if embedded_messages or embedded_images else (None, None)
+            return (embedded_messages, embedded_images) if embedded_messages and embedded_images else (None, None)
 
     def get_text_content(self, role, content, full_data):
         # Process all messages in the conversation
@@ -451,20 +481,20 @@ class ChatTemplate:
             return False
         pattern = r"^" + re.escape(data_name) + r"$"
         
-        for file in file_in_path:
+        for file in tqdm(file_in_path, desc="Searching for file"):
             if re.match(pattern, file.name):
                 # print("file founded")
                 return self.read_file(file.name,zip=None)
 
         for folder in folder_in_path:
             # print("folder founded")
-            for file_path in Path(folder).rglob(data_name):
+            for file_path in tqdm(Path(folder).rglob(data_name), desc="Searching for file"):
                 # print("files founded")
                 return self.read_file(file_path,zip=None)
 
         for zip_file in zip_file_in_path:
             with zipfile.ZipFile(zip_file, 'r') as zip_ref:
-                for zip_file_name in zip_ref.namelist():
+                for zip_file_name in tqdm(zip_ref.namelist(), desc="Searching for file"):
                     if re.match(pattern, zip_file_name):
                         # print("zip file founded")
                         return self.read_file(zip_file_name,zip=zip_ref)
@@ -486,8 +516,8 @@ class ChatTemplate:
                     
                     embedded_image = image_obj
                     # embedded_image = self.image_embedding(image_obj)
-                    if embedded_image is not None:
-                        print(f"Successfully embedded image from zip: {file_path}")
+                    # if embedded_image is not None:
+                    #     print(f"Successfully embedded image from zip: {file_path}")
                     return embedded_image
                 except Exception as e:
                     print(f"Error processing image {file_path}: {str(e)}")
@@ -787,7 +817,7 @@ class ChatTemplate:
                 first_example = dataset
                 available_fields = list(first_example.features.keys())
                 
-                def process_examples(examples, batch_size=32):
+                def process_examples():
                     mul_field = []
                     for pattern in self.MULTIMODAL_PATTERNS:
                         matching_keys = [key for key in available_fields if re.search(pattern, key, re.IGNORECASE)]
@@ -795,13 +825,13 @@ class ChatTemplate:
                             mul_field.extend(matching_keys)
                     
                     # Convert examples to a proper Dataset format
-                    examples_dict = {k: examples[k] for k in examples.keys()}
-                    examples_dataset = Dataset.from_dict(examples_dict)
+                    # examples_dict = {k: examples[k] for k in examples.keys()}
+                    # examples_dataset = Dataset.from_dict(examples_dict)
                     
                     if mul_field and len(mul_field) > 0:
                         formatted = self.process_dataset(
                             dataset_name=dataset_name,
-                            dataset=examples_dataset,
+                            dataset=dataset,
                             is_conversation=False,
                             is_check=False,
                             mul_field=mul_field,
@@ -810,7 +840,7 @@ class ChatTemplate:
                     else:
                         formatted = self.process_dataset(
                             dataset_name=dataset_name,
-                            dataset=examples_dataset,
+                            dataset=dataset,
                             is_conversation=False,
                             is_check=False,
                             return_embedded_dataset=return_embedded_dataset
@@ -819,35 +849,11 @@ class ChatTemplate:
                     if formatted is None:
                         return None
                     
-                    # Format all messages in the batch
-                    formatted_texts = []
-                    for conversation in formatted['conversations']:
-                        if isinstance(conversation, list):
-                            formatted_text = self.format_message(conversation)
-                            formatted_texts.append(formatted_text)
-                    
-                    if not formatted_texts:
-                        return None
-                    
-                    # Tokenize the entire batch at once
-                    tokenized = self.tokenizer(
-                        formatted_texts,
-                        padding=True,
-                        truncation=True,
-                        max_length=max_length,
-                        return_tensors="pt"
-                    )
-                    
-                    return tokenized
+                    return formatted
                 
-                # Process the dataset with batched processing
-                tokenized_dataset = dataset.map(
-                    process_examples,
-                    batched=True,
-                    batch_size=32,
-                    remove_columns=dataset.column_names
-                )
+                # Process the dataset if included multimodal data it not supporting batching
                 
+                tokenized_dataset = process_examples()
                 # Filter out None values
                 # tokenized_dataset = tokenized_dataset.filter(lambda x: x is not None)
                 
@@ -895,29 +901,3 @@ class ChatTemplate:
                 print(f"{Fore.RED}Error preparing dataset: {str(e)}{Style.RESET_ALL}")
                 raise
     
-    def get_tokenizer(self):
-        """Get the tokenizer instance"""
-        return self.tokenizer
-    
-    def get_chat_template(self):
-        """Get the current chat template"""
-        return self.tokenizer.chat_template
-    
-    def set_chat_template(self, template):
-        """Set a custom chat template"""
-        self.tokenizer.chat_template = template
-        print(f"{Fore.CYAN}Set custom chat template{Style.RESET_ALL}")
-    
-    def tokenize_text(self, text, max_length=384):
-        """Tokenize a single text input"""
-        return self.tokenizer(
-            text,
-            padding="max_length",
-            truncation=True,
-            max_length=max_length,
-            return_tensors="pt"
-        )
-    
-    def decode_tokens(self, tokens):
-        """Decode tokenized input back to text"""
-        return self.tokenizer.decode(tokens, skip_special_tokens=True)
