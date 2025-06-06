@@ -189,19 +189,14 @@ class ConversationManager:
         )
     
     def format_messages(self, history: Optional[List[Dict]] = None) -> str:
-        """Format messages into a prompt string.
-        
-        Args:
-            history: Conversation history
-            
-        Returns:
-            Formatted prompt string
-        """
+        """Format messages into a prompt string with better context handling."""
         prompt = []
         
+        # Add system message first
         if self.messages["system"]["content"][0]["text"]:
             prompt.append(f"system: {self.messages['system']['content'][0]['text']}")
         
+        # Add conversation history with clear turn markers
         if history:
             for turn in history:
                 if isinstance(turn, dict):
@@ -209,22 +204,18 @@ class ConversationManager:
                         prompt.append(f"Human: {turn['user']}")
                     elif "assistant" in turn and turn["assistant"]:
                         prompt.append(f"Assistant: {turn['assistant']}")
-                    elif "role" in turn and "content" in turn:
-                        role_prefix = "system" if turn["role"] == "system" else "Human" if turn["role"] == "user" else "Assistant"
-                        prompt.append(f"{role_prefix}: {turn['content']}")
         
+        # Add current user message
         if self.messages["user"]["content"][0]["text"]:
             prompt.append(f"Human: {self.messages['user']['content'][0]['text']}")
         
-        if self.messages["assistant"]["content"][0]["text"]:
-            prompt.append(f"Assistant: {self.messages['assistant']['content'][0]['text']}")
-        
+        # Add assistant marker for response
         prompt.append("Assistant:")
         
         return "\n".join(prompt)
     
     def generate_response(self, prompt: str) -> Optional[str]:
-        """Generate a response using the model with optimized settings."""
+        """Generate a response using the model with improved context handling."""
         try:
             # Check cache first
             if prompt in self.cache:
@@ -237,23 +228,33 @@ class ConversationManager:
                 "top_p": self.top_p,
                 "num_return_sequences": 1,
                 "pad_token_id": self.tokenizer.pad_token_id,
-                "repetition_penalty": 1.1,  # Reduced from 1.2
-                "no_repeat_ngram_size": 2,  # Reduced from 3
+                "repetition_penalty": 1.2,  # Increased to reduce repetition
+                "no_repeat_ngram_size": 3,  # Increased to improve coherence
                 "num_beams": 1,
-                "early_stopping": True,  # Enable early stopping
-                "use_cache": True,  # Enable KV cache
+                "early_stopping": True,
+                "use_cache": True,
                 "return_dict_in_generate": True,
-                "output_scores": False,  # Disable score computation for speed
-                "output_hidden_states": False,  # Disable hidden states for speed
+                "output_scores": False,
+                "output_hidden_states": False,
+                "min_length": 10,  # Ensure responses aren't too short
+                "length_penalty": 1.0,  # Balance between short and long responses
             }
             
-            with torch.inference_mode():  # Use inference mode for faster computation
-                with torch.cuda.amp.autocast():  # Enable automatic mixed precision
+            with torch.inference_mode():
+                with torch.cuda.amp.autocast():
                     output = self.generator(prompt, **generation_config)
                     response = output[0]['generated_text'][len(prompt):].strip()
                     
-                    # Extract first complete response
-                    response = response.split('\n')[0].split('system:')[0].split('Human:')[0].split('Assistant:')[0].strip()
+                    # Clean up response
+                    response = response.split('\n')[0]  # Take first line
+                    response = response.split('Human:')[0]  # Remove any Human: markers
+                    response = response.split('Assistant:')[0]  # Remove any Assistant: markers
+                    response = response.split('system:')[0]  # Remove any system: markers
+                    response = response.strip()
+                    
+                    # Ensure response is not empty
+                    if not response:
+                        response = "I apologize, but I need more context to provide a meaningful response."
                     
                     # Cache the result
                     self.cache[prompt] = response
