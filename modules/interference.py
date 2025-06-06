@@ -13,6 +13,7 @@ from modules.chatTemplate import ChatTemplate
 from modules.chainpipe import Chainpipe
 from typing import List, Dict, Optional, Union, Any
 import re
+import json
 
 # from langchain.llms import HuggingFacePipeline
 # from transformers import pipeline, AutoModelForCausalLM, AutoTokenizer
@@ -55,9 +56,11 @@ class ConversationManager:
         self.WORKSPACE_DIR = Path(__file__).parent.parent.absolute()
         self.MODEL_DIR = self.WORKSPACE_DIR / "models" / "text-generation"
         self.OFFLOAD_DIR = self.WORKSPACE_DIR / "offload"
+        self.HISTORY_DIR = self.WORKSPACE_DIR / "conversation_history"
         
         self.MODEL_DIR.mkdir(parents=True, exist_ok=True)
         self.OFFLOAD_DIR.mkdir(parents=True, exist_ok=True)
+        self.HISTORY_DIR.mkdir(parents=True, exist_ok=True)
     
     def _setup_device(self):
         """Set up the device for model execution with optimized GPU settings."""
@@ -260,6 +263,31 @@ class ConversationManager:
             print(f"{Fore.RED}Error generating response: {str(e)}{Style.RESET_ALL}")
             return None
     
+    def _load_latest_memory(self) -> List[Dict]:
+        """Load the latest conversation memory from files.
+        
+        Returns:
+            List of conversation turns or empty list if no history found
+        """
+        try:
+            # Get all history files
+            history_files = list(self.HISTORY_DIR.glob("chat_*.json"))
+            if not history_files:
+                return []
+            
+            # Get the latest file
+            latest_file = max(history_files, key=lambda x: x.stat().st_mtime)
+            
+            # Load the conversation history
+            with open(latest_file, 'r') as f:
+                history = json.load(f)
+                print(f"{Fore.GREEN}Loaded conversation history from {latest_file}{Style.RESET_ALL}")
+                return history
+                
+        except Exception as e:
+            print(f"{Fore.YELLOW}Warning: Could not load conversation history: {str(e)}{Style.RESET_ALL}")
+            return []
+
     def chat(self, user_input: str) -> Optional[str]:
         """Process a user input and generate a response.
         
@@ -270,8 +298,13 @@ class ConversationManager:
             Generated response or None if generation fails
         """
         try:
+            # Load memory from file if empty
+            if len(self.memory) == 0:
+                self.memory = self._load_latest_memory()
+                if self.memory:
+                    print(f"{Fore.CYAN}Using previous conversation context with {len(self.memory)} turns{Style.RESET_ALL}")
+            
             self.messages["user"]["content"][0]["text"] = user_input
-            # self.memory.append(self.messages)
             
             formatted_prompt = self.format_messages(self.memory)
             response = self.generate_response(formatted_prompt)
