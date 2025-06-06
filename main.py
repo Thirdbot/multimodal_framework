@@ -117,12 +117,14 @@ class Main:
                 report.store_problem(model=element['model'], dataset=element['datasets'])
 
 def run_conversation():
+    Home_dir = Path(__file__).parent.absolute()
+    model_path = Home_dir / "checkpoints" / "text-generation" / "model-1" / "checkpoint-1"
     """Run the conversation loop."""
     manager = ConversationManager(
-        model_name="kyutai_helium-1-2b",
+        model_name="kyutai/helium-1-2b",
         max_length=100,
-        temperature=0.7,
-        top_p=0.9
+        temperature=0.9,
+        top_p=0.95
     )
     
     print(f"{Fore.CYAN}Starting conversation. Type 'quit' to exit.{Style.RESET_ALL}")
@@ -156,9 +158,9 @@ if __name__ == "__main__":
     
     create_model = CreateModel(model_name="model-1",model_category="text-generation")
     
-    main.load_datas()
-    main.runtrain()
-    # run_conversation()
+    # main.load_datas()
+    # main.runtrain()
+    run_conversation()
 
 # Load the dataset type 1 Conversations column or instruction column
     # dataset = load_dataset("theneuralmaze/rick-and-morty-transcripts-sharegpt", split="train")

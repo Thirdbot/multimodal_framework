@@ -40,12 +40,15 @@ class ConversationManager:
         self.max_length = max_length
         self.temperature = temperature
         self.top_p = top_p
-        self.max_new_tokens = 100000
+        self.max_new_tokens = 512  # Reduced from 100000 for faster inference
         
         self._setup_paths()
         self._setup_device()
         self._initialize_state()
         self._load_model(model_name)
+        
+        # Initialize cache for faster repeated queries
+        self.cache = {}
     
     def _setup_paths(self):
         """Set up directory paths."""
@@ -57,8 +60,21 @@ class ConversationManager:
         self.OFFLOAD_DIR.mkdir(parents=True, exist_ok=True)
     
     def _setup_device(self):
-        """Set up the device for model execution."""
-        self.device_map = "cuda:0" if torch.cuda.is_available() else "cpu"
+        """Set up the device for model execution with optimized GPU settings."""
+        if torch.cuda.is_available():
+            self.device_map = "cuda:0"
+            # Clear GPU cache
+            torch.cuda.empty_cache()
+            # Set memory growth to prevent OOM
+            torch.cuda.set_per_process_memory_fraction(0.8)
+            # Enable TF32 for faster computation on Ampere GPUs
+            torch.backends.cuda.matmul.allow_tf32 = True
+            torch.backends.cudnn.allow_tf32 = True
+            # Enable cudnn benchmarking for faster inference
+            torch.backends.cudnn.benchmark = True
+        else:
+            self.device_map = "cpu"
+            print(f"{Fore.YELLOW}Warning: Running on CPU. Performance will be significantly slower.{Style.RESET_ALL}")
     
     def _initialize_state(self):
         """Initialize conversation state and message structure."""
@@ -123,32 +139,34 @@ class ConversationManager:
         return model_path
     
     def _load_model_and_tokenizer(self, model_path: Union[str, Path]):
-        """Load the model and tokenizer from the given path.
-        
-        Args:
-            model_path: Path to the model
-        """
-        quantization_config = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_compute_dtype=torch.float16,
-            bnb_4bit_quant_type="nf4",
-            bnb_4bit_use_double_quant=True
-        )
-        
+        """Load the model and tokenizer with optimized settings for GPU."""
+        # Enable model optimizations
         self.model = AutoModelForCausalLM.from_pretrained(
             str(model_path),
             device_map=self.device_map,
-            torch_dtype=torch.float16,
-            quantization_config=quantization_config,
+            torch_dtype=torch.float16,  # Use float16 for better memory efficiency
             low_cpu_mem_usage=True,
             offload_folder=str(self.OFFLOAD_DIR),
-            trust_remote_code=True
+            trust_remote_code=True,
+            use_cache=True  # Enable KV cache
         )
+        
+        # Optimize model for inference
+        self.model.eval()  # Set to evaluation mode
+        
+        # Enable gradient checkpointing for memory efficiency
+        if hasattr(self.model, "gradient_checkpointing_enable"):
+            self.model.gradient_checkpointing_enable()
+        
+        # Enable model optimizations
+        if hasattr(self.model, "enable_input_require_grads"):
+            self.model.enable_input_require_grads()
         
         self.tokenizer = AutoTokenizer.from_pretrained(
             str(model_path),
             trust_remote_code=True,
-            padding_side="right"
+            padding_side="right",
+            use_fast=True  # Use fast tokenizer
         )
         
         if self.tokenizer.pad_token is None:
@@ -203,15 +221,12 @@ class ConversationManager:
         return "\n".join(prompt)
     
     def generate_response(self, prompt: str) -> Optional[str]:
-        """Generate a response using the model.
-        
-        Args:
-            prompt: Input prompt
-            
-        Returns:
-            Generated response or None if generation fails
-        """
+        """Generate a response using the model with optimized settings."""
         try:
+            # Check cache first
+            if prompt in self.cache:
+                return self.cache[prompt]
+            
             generation_config = {
                 "max_new_tokens": self.max_new_tokens,
                 "do_sample": True,
@@ -219,19 +234,27 @@ class ConversationManager:
                 "top_p": self.top_p,
                 "num_return_sequences": 1,
                 "pad_token_id": self.tokenizer.pad_token_id,
-                "repetition_penalty": 1.2,
-                "no_repeat_ngram_size": 3,
+                "repetition_penalty": 1.1,  # Reduced from 1.2
+                "no_repeat_ngram_size": 2,  # Reduced from 3
                 "num_beams": 1,
-                "early_stopping": False
+                "early_stopping": True,  # Enable early stopping
+                "use_cache": True,  # Enable KV cache
+                "return_dict_in_generate": True,
+                "output_scores": False,  # Disable score computation for speed
+                "output_hidden_states": False,  # Disable hidden states for speed
             }
             
-            output = self.generator(prompt, **generation_config)
-            response = output[0]['generated_text'][len(prompt):].strip()
-            
-            # Extract first complete response
-            response = response.split('\n')[0].split('system:')[0].split('Human:')[0].split('Assistant:')[0].strip()
-            
-            return response
+            with torch.inference_mode():  # Use inference mode for faster computation
+                with torch.cuda.amp.autocast():  # Enable automatic mixed precision
+                    output = self.generator(prompt, **generation_config)
+                    response = output[0]['generated_text'][len(prompt):].strip()
+                    
+                    # Extract first complete response
+                    response = response.split('\n')[0].split('system:')[0].split('Human:')[0].split('Assistant:')[0].strip()
+                    
+                    # Cache the result
+                    self.cache[prompt] = response
+                    return response
             
         except Exception as e:
             print(f"{Fore.RED}Error generating response: {str(e)}{Style.RESET_ALL}")
@@ -248,7 +271,7 @@ class ConversationManager:
         """
         try:
             self.messages["user"]["content"][0]["text"] = user_input
-            self.memory.append(self.messages)
+            # self.memory.append(self.messages)
             
             formatted_prompt = self.format_messages(self.memory)
             response = self.generate_response(formatted_prompt)
