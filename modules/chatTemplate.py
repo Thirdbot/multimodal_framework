@@ -89,7 +89,7 @@ class ChatTemplate:
     
     def seperated_data(self,dataset_name,dataset,keys,mul_field=None,return_embedded_dataset=False):
         #cut dataset to 1000 temporary
-        dataset = dataset[:200]  # Changed from [:1] to [:1000] to ensure enough samples for splitting
+        dataset = dataset[:10]  # Changed from [:1] to [:1000] to ensure enough samples for splitting
         
         Home_dir = Path(__file__).parent.parent.absolute()
         os.makedirs(f"{Home_dir}/multimodal_tokenizer", exist_ok=True)
