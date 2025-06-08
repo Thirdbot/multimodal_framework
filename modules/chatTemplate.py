@@ -25,6 +25,7 @@ from joblib import Parallel, delayed
 
 from sentence_transformers import SentenceTransformer
 from transformers import AutoImageProcessor, AutoModel
+from transformers.image_utils import load_image
 from matplotlib.image import imread
 # from pydub import AudioSegment
 
@@ -497,7 +498,7 @@ class ChatTemplate:
                 for zip_file_name in tqdm(zip_ref.namelist(), desc="Searching for file"):
                     if re.match(pattern, zip_file_name):
                         # print("zip file founded")
-                        return self.read_file(zip_file_name,zip=zip_ref)
+                        return self.read_file(zip_file_name,zip=zip_file)
                         
     #get actual data from file
     def read_file(self,file_path,zip=None):
@@ -506,14 +507,14 @@ class ChatTemplate:
             # image
             if file_ext in ['jpg', 'jpeg', 'png']:
                 try:
-                    get_file_obj = zip.open(file_path)
+                    # get_file_obj = zip.open(file_path)
                     # Convert to PIL Image for processing
-                    image_obj = Image.open(get_file_obj).convert("RGB")
-                    # Resize image to expected size
-                    image_obj = image_obj.resize((224, 224), Image.Resampling.LANCZOS)
+                    # image_obj = Image.open(get_file_obj).convert("RGB")
+                    # # Resize image to expected size
+                    # image_obj = image_obj.resize((224, 224), Image.Resampling.LANCZOS)
                     # print(f"Processing image from zip: {file_path}")
                     # print(f"Image size: {image_obj.size}, mode: {image_obj.mode}")
-                    
+                    image_obj = load_image(os.path.join(zip,file_path))
                     embedded_image = image_obj
                     # embedded_image = self.image_embedding(image_obj)
                     # if embedded_image is not None:
@@ -536,11 +537,12 @@ class ChatTemplate:
                 try:
                     get_file_obj = open(file_path, 'rb')
                     # Convert to PIL Image for processing
-                    image_obj = Image.open(get_file_obj).convert("RGB")
-                    # Resize image to expected size
-                    image_obj = image_obj.resize((224, 224), Image.Resampling.LANCZOS)
-                    print(f"Processing image: {file_path}")
-                    print(f"Image size: {image_obj.size}, mode: {image_obj.mode}")
+                    # image_obj = Image.open(get_file_obj).convert("RGB")
+                    # # Resize image to expected size
+                    # image_obj = image_obj.resize((224, 224), Image.Resampling.LANCZOS)
+                    # print(f"Processing image: {file_path}")
+                    # print(f"Image size: {image_obj.size}, mode: {image_obj.mode}")
+                    image_obj = load_image(file_path)
                     embedded_image = self.image_embedding(image_obj)
                     if embedded_image is not None:
                         print(f"Successfully embedded image: {file_path}")

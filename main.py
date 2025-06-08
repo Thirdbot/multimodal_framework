@@ -50,6 +50,7 @@ class Main:
     def __init__(self):
         """Initialize the main application class."""
         self.HomePath = Path(__file__).parent.absolute()
+        self.allow_mod_model = True
         self._setup_directories()
         self._initialize_components()
         self._setup_model_params()
@@ -76,8 +77,8 @@ class Main:
     def _setup_model_params(self):
         """Set up model parameters."""
         self.model_data_params = {
-            # "model_name": ["kyutai/helium-1-2b"],
-            "model_name":["custom_models/text-generation/model-1"],
+            "model_name": ["kyutai/helium-1-2b"],
+            # "model_name":["custom_models/text-generation/model-1"],
             # "datasets_name": ["pythainlp/han-instruct-dataset-v4.0"],
             "datasets_name":['AdaptLLM/food-visual-instructions','pythainlp/han-instruct-dataset-v4.0'],
             "model_amount": 2,
@@ -100,7 +101,7 @@ class Main:
         
         try:
             self.list_model_data = self.finetune_model.generate_model_data()
-            model, dataset = self.finetune_model.run_finetune(self.list_model_data, self.config)
+            model, dataset = self.finetune_model.run_finetune(self.list_model_data, self.config,self.allow_mod_model)
         except Exception as e:
             self._handle_training_error(e, model, dataset, failed_models)
     
@@ -156,10 +157,10 @@ if __name__ == "__main__":
     main = Main()
    
     
-    create_model = CreateModel(model_name="model-1",model_category="text-generation")
+    # create_model = CreateModel(model_name="model-1",model_category="text-generation")
     
-    # main.load_datas()
-    # main.runtrain()
+    main.load_datas()
+    main.runtrain()
     run_conversation()
 
 # Load the dataset type 1 Conversations column or instruction column

@@ -29,6 +29,7 @@ from huggingface_hub import HfApi
 from modules.defect import Report
 from modules.chatTemplate import ChatTemplate
 from modules.chainpipe import Chainpipe
+from modules.createbasemodel import load_saved_model, CreateModel
 
 # Initialize colorama
 init(autoreset=True)
@@ -38,6 +39,7 @@ os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True,max_split_size_mb:256"
 os.environ["CUDA_LAUNCH_BLOCKING"] = "0"
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+os.environ["PYTORCH_NO_CUDA_MEMORY_CACHING"] = "1"
 
 class FinetuneModel:
     """Class for handling model fine-tuning operations."""
@@ -70,6 +72,7 @@ class FinetuneModel:
         self.resume_from_checkpoint = True
         self.chat_template = None
         self.last_checkpoint = None
+        
     
     def _setup_directories(self):
         """Set up required directories."""
@@ -234,18 +237,29 @@ class FinetuneModel:
         
         print(f"{Fore.CYAN}Resuming from checkpoint: {self.last_checkpoint}{Style.RESET_ALL}")
         
-        base_model = AutoModelForCausalLM.from_pretrained(
-            model_id,
-            device_map=self.device_map,
-            trust_remote_code=True,
-            torch_dtype=torch.bfloat16,
-            low_cpu_mem_usage=True,
-            offload_folder=str(self.OFFLOAD_DIR),
-            offload_state_dict=True,
-            max_memory={0: "40GB"},
-            use_cache=False
-        )
-        
+        try:
+            base_model = AutoModelForCausalLM.from_pretrained(
+                model_id,
+                device_map=self.device_map,
+                trust_remote_code=True,
+                torch_dtype=torch.bfloat16,
+                low_cpu_mem_usage=True,
+                offload_folder=str(self.OFFLOAD_DIR),
+                offload_state_dict=True,
+                max_memory={0: "40GB"},
+                use_cache=False
+            )
+            
+            tokenizer = AutoTokenizer.from_pretrained(
+                str(self.last_checkpoint),
+                trust_remote_code=True,
+                padding_side="right",
+                truncation_side="right"
+            )
+        except:
+            base_model, processor = load_saved_model(model_id)
+            tokenizer = processor.tokenizer
+            
         model = PeftModel.from_pretrained(
             base_model,
             str(self.last_checkpoint),
@@ -259,12 +273,6 @@ class FinetuneModel:
         
         model.gradient_checkpointing_enable()
         
-        tokenizer = AutoTokenizer.from_pretrained(
-            str(self.last_checkpoint),
-            trust_remote_code=True,
-            padding_side="right",
-            truncation_side="right"
-        )
         
         self.chat_template = ChatTemplate(tokenizer=tokenizer)
         
@@ -316,8 +324,9 @@ class FinetuneModel:
             low_cpu_mem_usage=True,
             offload_folder=str(self.OFFLOAD_DIR),
             offload_state_dict=True,
-            max_memory={0: "40GB"}
+            max_memory={0: "20GB"}
         )
+        
         
         model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
         
@@ -618,7 +627,7 @@ class Manager:
         with open(self.data_json_path, "r") as f:
             return json.load(f)
     
-    def run_finetune(self, list_model_data: List[Dict[str, Any]], config: Dict[str, Any]) -> Tuple[Optional[AutoModelForCausalLM], Optional[DatasetDict]]:
+    def run_finetune(self, list_model_data: List[Dict[str, Any]], config: Dict[str, Any],allow_mod_model: bool) -> Tuple[Optional[AutoModelForCausalLM], Optional[DatasetDict]]:
         """Run the fine-tuning process.
         
         Args:
@@ -636,6 +645,7 @@ class Manager:
             for el in list_model_data:
                 if "model" in el:
                     modelname = el["model"]
+                    
                     model, tokenizer = self.finetune_model.load_model(modelname, self.finetune_model.resume_from_checkpoint)
                 
                 if "datasets" in el:
@@ -666,6 +676,27 @@ class Manager:
                                     second_cols = set(second_dataset.column_names)
                                     print(f"{Fore.GREEN}First dataset columns: {first_cols}{Style.RESET_ALL}")
                                     print(f"{Fore.GREEN}Second dataset columns: {second_cols}{Style.RESET_ALL}")
+                                    
+                                    if not allow_mod_model:
+                                        if "image" in first_cols or "audio" in first_cols or "image" in second_cols or "audio" in second_cols:
+                                            print(f"{Fore.RED}Due to allow_mod_model is False, skipping dataset {dataset_name} because it contains image or audio columns{Style.RESET_ALL}")
+                                            continue
+                                    else:
+                                        if "image" in first_cols or  "image" in second_cols:
+                                            if modelname.replace("/","-") not in self.finetune_model.CHECKPOINT_DIR:
+                                                print(f"{Fore.GREEN}Creating vision model...from {modelname}{Style.RESET_ALL}")
+                                                create_model = CreateModel(modelname, self.model_task)
+                                                create_model.add_vision()
+                                                create_model.save_vision_model()
+                                                model, processor = load_saved_model(modelname)
+                                                tokenizer = processor.tokenizer
+                                        else:
+                                            if modelname.replace("/","-") not in self.finetune_model.CHECKPOINT_DIR:
+                                                print(f"{Fore.GREEN}Creating regular model...from {modelname}{Style.RESET_ALL}")
+                                                create_model = CreateModel(modelname, self.model_task)
+                                                create_model.save_regular_model()
+                                                model, processor = load_saved_model(modelname)
+                                                tokenizer = processor.tokenizer
                                     
                                     # For columns only in second dataset, add them to first dataset with None values
                                     for col in second_cols - first_cols:
