@@ -245,6 +245,18 @@ class CreateModel:
         self.config = VisionConfig()
         self.model = VisionModel(self.config, self.vision_model, self.model)
         
+    def save_regular_model(self):
+        """Save the model and all its components with optimizations."""
+        # Create necessary directories
+        lang_model_path = os.path.join(self.model_path, "lang_model")
+        os.makedirs(lang_model_path, exist_ok=True)
+        
+        # Save language model
+        self.lang_model.save_pretrained(lang_model_path)
+        
+        # Save tokenizer
+        self.tokenizer.save_pretrained(self.model_path)
+        
         
         
     def save_vision_model(self):
@@ -319,7 +331,7 @@ class CreateModel:
  
 
 
-# created_model = CreateModel("kyutai/helium-1-2b","text-generation")
+created_model = CreateModel("kyutai/helium-1-2b","text-generation")
 # created_model.add_vision()
 # created_model.save_vision_model()
 
@@ -331,9 +343,9 @@ AutoConfig.register("multimodal", VisionConfig)
 AutoModel.register(VisionModel, VisionConfig)
 
 # Load model and processor from demo_path
-def load_saved_model():
+def load_saved_model(model_path):
     """Load a saved model and its processor."""
-    demo_path = Path(__file__).parent.parent.absolute() / "custom_models" / "text-generation" / "kyutai-helium-1-2b"
+    demo_path = model_path
     
     # Load the config
     config = AutoConfig.from_pretrained(demo_path)
@@ -365,9 +377,9 @@ def load_saved_model():
     return model, processor
 
 # Example usage:
-model, processor = load_saved_model()
-image = load_image("https://media.istockphoto.com/id/155439315/photo/passenger-airplane-flying-above-clouds-during-sunset.jpg?s=612x612&w=0&k=20&c=LJWadbs3B-jSGJBVy9s0f8gZMHi2NvWFXa3VJ2lFcL0=")
-inputs = processor(text="What do you see in this image?", images=image)
-outputs = model.generate(**inputs)
-print(processor.tokenizer.batch_decode(outputs, skip_special_tokens=False))
+# model, processor = load_saved_model()
+# image = load_image("https://media.istockphoto.com/id/155439315/photo/passenger-airplane-flying-above-clouds-during-sunset.jpg?s=612x612&w=0&k=20&c=LJWadbs3B-jSGJBVy9s0f8gZMHi2NvWFXa3VJ2lFcL0=")
+# inputs = processor(text="What do you see in this image?", images=image)
+# outputs = model.generate(**inputs)
+# print(processor.tokenizer.batch_decode(outputs, skip_special_tokens=False))
         
