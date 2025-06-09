@@ -88,7 +88,7 @@ class ChatTemplate:
         self.sentence_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2").to(self.device)
         self.sentence_model.eval()  # Ensure model is in eval mode from the start
     
-    def seperated_data(self,dataset_name,dataset,keys,mul_field=None,return_embedded_dataset=False):
+    def seperated_data(self,dataset_name,dataset,keys,mul_field=None,return_embedded_dataset=False,return_processed=False):
         #cut dataset to 1000 temporary
         dataset = dataset[:10]  # Changed from [:1] to [:1000] to ensure enough samples for splitting
         
@@ -96,7 +96,7 @@ class ChatTemplate:
         os.makedirs(f"{Home_dir}/multimodal_tokenizer", exist_ok=True)
         os.makedirs(f"{Home_dir}/tokenizer", exist_ok=True)
         
-        if not return_embedded_dataset:
+        if not return_embedded_dataset and not return_processed:
             if mul_field is None:
                 # Format text data for tokenization
                 formatted_texts = []
@@ -117,12 +117,13 @@ class ChatTemplate:
                     return_tensors="pt"
                 )
                 
+                
                 # Convert to Dataset format with required fields
                 tokenized_dataset ={
                     'input_ids': text_tokenized['input_ids'],
                     'attention_mask': text_tokenized['attention_mask']
                 }
-                self.tokenizer.save_pretrained(f"{Home_dir}/tokenizer/text_tokenizer")
+                # self.tokenizer.save_pretrained(f"{Home_dir}/tokenizer/text_tokenizer")
                 return Dataset.from_dict(tokenized_dataset)
             
             # Check for multimodal content if needed
@@ -151,7 +152,7 @@ class ChatTemplate:
                     'input_ids': text_tokenized['input_ids'],
                     'attention_mask': text_tokenized['attention_mask'],
                 }
-                self.tokenizer.save_pretrained(f"{Home_dir}/multimodal_tokenizer/text_tokenizer")
+                # self.tokenizer.save_pretrained(f"{Home_dir}/multimodal_tokenizer/text_tokenizer")
                 
                 for mul in mul_field:
                     set_data = dataset[mul]
@@ -168,12 +169,12 @@ class ChatTemplate:
                             # Stack all processed images into a single batch
                             image_batch = torch.cat(processed_images, dim=0)
                             multimodal_data['pixel_values'] = image_batch
-                            self.image_processor.save_pretrained(f"{Home_dir}/multimodal_tokenizer/image_tokenizer")
+                            # self.image_processor.save_pretrained(f"{Home_dir}/multimodal_tokenizer/image_tokenizer")
                         
                 
                 return Dataset.from_dict(multimodal_data)
         
-        elif return_embedded_dataset:
+        elif return_embedded_dataset or return_processed:
             print(f"Processing embedded dataset")
             total_items = len(dataset[keys])
             
@@ -202,7 +203,7 @@ class ChatTemplate:
             
             if mul_field is None:
                 # Process batches in parallel using all available CPU cores
-                n_jobs = min(mp.cpu_count(), 4)  # Limit to 4 processes to avoid memory issues
+                n_jobs = max(mp.cpu_count(), 4)  # Limit to 4 processes to avoid memory issues
                 # print(f"Using {n_jobs} CPU cores for parallel processing")
                 
                 # # Debug multiprocessing
@@ -214,7 +215,7 @@ class ChatTemplate:
                     batch_output = list(tqdm(
                         pool.starmap(
                             self.mul_process,
-                            [(dataset_name, batch, keys, None) for batch in batch_list]
+                            [(dataset_name, batch, keys, None,return_embedded_dataset,return_processed) for batch in batch_list]
                         ),
                         total=len(batch_list),
                         desc="Processing batches in parallel"
@@ -247,7 +248,7 @@ class ChatTemplate:
                     results = list(tqdm(
                         pool.starmap(
                             self.mul_process,
-                            [(dataset_name, batch, keys, mul_field) for batch in batch_list]
+                            [(dataset_name, batch, keys, mul_field,return_embedded_dataset,return_processed) for batch in batch_list]
                         ),
                         total=len(batch_list),
                         desc="Processing multimodal batches in parallel"
@@ -278,7 +279,7 @@ class ChatTemplate:
     
     
     
-    def mul_process(self,dataset_name,dataset,keys,mul_field=None):
+    def mul_process(self,dataset_name,dataset,keys,mul_field=None,return_embedded_dataset=False,return_processed=False):
         if mul_field is None:
             # Create new lists to store embedded data
             batch_data = []
@@ -320,7 +321,7 @@ class ChatTemplate:
                     print(f"Warning: Invalid keys: {get_keys}")
                     continue
                 
-                processed_content = self.get_text_content(role, content, list_data)
+                processed_content = self.get_text_content(role, content, list_data,return_embedded_dataset,return_processed)
                 if processed_content is not None:
                     batch_data.append(processed_content)
             
@@ -383,7 +384,9 @@ class ChatTemplate:
                                 mul_content=mul_item,
                                 full_content=text_item,
                                 role=role,
-                                content=content
+                                content=content,
+                                return_embedded_dataset=return_embedded_dataset,
+                                return_processed=return_processed
                             )
                             
                             if processed_messages:
@@ -401,7 +404,7 @@ class ChatTemplate:
             
             return (embedded_messages, embedded_images) if embedded_messages and embedded_images else (None, None)
 
-    def get_text_content(self, role, content, full_data):
+    def get_text_content(self, role, content, full_data,return_embedded_dataset=False,return_processed=False):
         # Process all messages in the conversation
         try:
             for msg in full_data:
@@ -412,9 +415,13 @@ class ChatTemplate:
                         if any(re.search(pattern, msg[role], re.IGNORECASE) for pattern in patterns):
                             role_type = role_type
                             break
-                    
-                    # embedded_content = self.text_embedding(msg[content])
-                    embedded_content = msg[content]
+                    if return_embedded_dataset:
+                        embedded_content = self.text_embedding(msg[content])
+                    elif return_processed:
+                        embedded_content = msg[content]
+                    else:
+                        embedded_content = None
+                        
                     if embedded_content is not None:
                         msg[content] = embedded_content
 
@@ -423,7 +430,7 @@ class ChatTemplate:
             print(f"Error processing text content: {str(e)}")
             return None
     #make a dataset of mul content
-    def get_mul_content(self,dataset_name,mul_content,full_content,role,content):
+    def get_mul_content(self,dataset_name,mul_content,full_content,role,content,return_embedded_dataset=False,return_processed=False):
         #change particular text content inside full content to embedding and every multimodal data to embedding
         if isinstance(mul_content,list):
             if len(mul_content) == 1:
@@ -431,13 +438,13 @@ class ChatTemplate:
                 mul_content_list = []
                 for mul_content_item in mul_content:
                     name_image = mul_content_item
-                    mul_embedded = self.get_mul_file(name_image,dataset_name)
+                    mul_embedded = self.get_mul_file(name_image,dataset_name,return_embedded_dataset,return_processed)
                     if mul_embedded is not None:
                         mul_content_list.append(mul_embedded)
                 
                 # Process all messages in the conversation
                 processed_messages = []
-                processed_content = self.get_text_content(role, content, full_content)
+                processed_content = self.get_text_content(role, content, full_content,return_embedded_dataset,return_processed)
                 if processed_content is not None:
                     processed_messages.append(processed_content)
                 
@@ -447,20 +454,20 @@ class ChatTemplate:
                 mul_content_list = []
                 for mul_content_item in mul_content:
                     name_image = mul_content_item
-                    mul_embedded = self.get_mul_file(name_image,dataset_name)
+                    mul_embedded = self.get_mul_file(name_image,dataset_name,return_embedded_dataset,return_processed)
                     if mul_embedded is not None:
                         mul_content_list.append(mul_embedded)
                 
                 # Process all messages in the conversation
                 processed_messages = []
-                processed_content = self.get_text_content(role, content, full_content)
+                processed_content = self.get_text_content(role, content, full_content,return_embedded_dataset,return_processed)
                 if processed_content is not None:
                     processed_messages.append(processed_content)
                 
                 return processed_messages, mul_content_list
         elif isinstance(mul_content,str):
             name_image = mul_content
-            mul_embedded = self.get_mul_file(name_image,dataset_name)
+            mul_embedded = self.get_mul_file(name_image,dataset_name,return_embedded_dataset,return_processed)
             if mul_embedded is not None:
                 mul_content_list.append(mul_embedded)
                 
@@ -469,7 +476,7 @@ class ChatTemplate:
             return [], []
     
     #get file from local repository
-    def get_mul_file(self,data_name,dataset_name):
+    def get_mul_file(self,data_name,dataset_name,return_embedded_dataset=False,return_processed=False):
         short_name = dataset_name.split("/")[-1]
         
         HomePath = Path(__file__).parent.parent.absolute()
@@ -485,49 +492,48 @@ class ChatTemplate:
         for file in tqdm(file_in_path, desc="Searching for file"):
             if re.match(pattern, file.name):
                 # print("file founded")
-                return self.read_file(file.name,zip=None)
+                return self.read_file(file.name,zip=None,return_embedded_dataset=return_embedded_dataset,return_processed=return_processed)
 
         for folder in folder_in_path:
             # print("folder founded")
             for file_path in tqdm(Path(folder).rglob(data_name), desc="Searching for file"):
                 # print("files founded")
-                return self.read_file(file_path,zip=None)
+                return self.read_file(file_path,zip=None,return_embedded_dataset=return_embedded_dataset,return_processed=return_processed)
 
         for zip_file in zip_file_in_path:
             with zipfile.ZipFile(zip_file, 'r') as zip_ref:
                 for zip_file_name in tqdm(zip_ref.namelist(), desc="Searching for file"):
                     if re.match(pattern, zip_file_name):
                         # print("zip file founded")
-                        return self.read_file(zip_file_name,zip=zip_file)
+                        return self.read_file(zip_file_name,zip=zip_file,return_embedded_dataset=return_embedded_dataset,return_processed=return_processed)
                         
     #get actual data from file
-    def read_file(self,file_path,zip=None):
+    def read_file(self,file_path,zip=None,return_embedded_dataset=False,return_processed=False):
         file_ext = file_path.split('.')[-1].lower()
         if zip:
             # image
             if file_ext in ['jpg', 'jpeg', 'png']:
                 try:
-                    # get_file_obj = zip.open(file_path)
-                    # Convert to PIL Image for processing
-                    # image_obj = Image.open(get_file_obj).convert("RGB")
-                    # # Resize image to expected size
-                    # image_obj = image_obj.resize((224, 224), Image.Resampling.LANCZOS)
-                    # print(f"Processing image from zip: {file_path}")
-                    # print(f"Image size: {image_obj.size}, mode: {image_obj.mode}")
-                    image_obj = load_image(os.path.join(zip,file_path))
-                    embedded_image = image_obj
-                    # embedded_image = self.image_embedding(image_obj)
-                    # if embedded_image is not None:
-                    #     print(f"Successfully embedded image from zip: {file_path}")
-                    return embedded_image
+                    # Load and process image from zip
+                    image_path = str(os.path.join(zip,file_path))
+                    if return_embedded_dataset:
+                        image_obj = load_image(image_path)
+                        processed = self.image_processor(image_obj, return_tensors="pt")
+                        return processed['pixel_values']
+                    elif return_processed:
+                        return image_path
+                    else:
+                        return None
+
                 except Exception as e:
-                    print(f"Error processing image {file_path}: {str(e)}")
+                    print(f"Error processing image from zip {file_path}: {str(e)}")
                     return None
             elif file_ext in ['mp3', 'wav']:
                 try:
                     get_file_obj = zip.open(file_path)
                     # audio_obj = AudioSegment.from_file(get_file_obj)
                     # return self.audio_embedding(audio_obj)
+                    return None
                 except Exception as e:
                     print(f"Error processing audio {file_path}: {str(e)}")
                     return None
@@ -535,115 +541,113 @@ class ChatTemplate:
             #image
             if file_ext in ['jpg', 'jpeg', 'png']:
                 try:
-                    get_file_obj = open(file_path, 'rb')
-                    # Convert to PIL Image for processing
-                    # image_obj = Image.open(get_file_obj).convert("RGB")
-                    # # Resize image to expected size
-                    # image_obj = image_obj.resize((224, 224), Image.Resampling.LANCZOS)
-                    # print(f"Processing image: {file_path}")
-                    # print(f"Image size: {image_obj.size}, mode: {image_obj.mode}")
-                    image_obj = load_image(file_path)
-                    embedded_image = self.image_embedding(image_obj)
-                    if embedded_image is not None:
-                        print(f"Successfully embedded image: {file_path}")
-                    return embedded_image
+                    if return_embedded_dataset:
+                        image_obj = load_image(file_path)
+                        processed = self.image_processor(image_obj, return_tensors="pt")
+                        return processed['pixel_values']
+                    elif return_processed:
+                        return file_path
+                    else:
+                        return None
+    
                 except Exception as e:
                     print(f"Error processing image {file_path}: {str(e)}")
-                    return None
+                return None
             elif file_ext in ['mp3', 'wav']:
                 try:
                     get_file_obj = open(file_path, 'rb')
                     # audio_obj = AudioSegment.from_file(get_file_obj)
                     # return self.audio_embedding(audio_obj)
+                    return None
                 except Exception as e:
                     print(f"Error processing audio {file_path}: {str(e)}")
                     return None
     
 
 
-    #Mean Pooling - Take average of all tokens
-    def mean_pooling(self,model_output, attention_mask):
-        token_embeddings = model_output.last_hidden_state #First element of model_output contains all token embeddings
-        input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
-        return torch.sum(token_embeddings * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1), min=1e-9)
+    # #Mean Pooling - Take average of all tokens
+    # def mean_pooling(self,model_output, attention_mask):
+    #     token_embeddings = model_output.last_hidden_state #First element of model_output contains all token embeddings
+    #     input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
+    #     return torch.sum(token_embeddings * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1), min=1e-9)
 
-    def text_embedding(self,text):
-        try:
-            if isinstance(text, (bytes, bytearray)):
-                text = text.decode('utf-8')
+    # def text_embedding(self,text):
+    #     try:
+    #         if isinstance(text, (bytes, bytearray)):
+    #             text = text.decode('utf-8')
             
-            # Ensure model is in eval mode
-            self.sentence_model.eval()
+    #         # Ensure model is in eval mode
+    #         self.sentence_model.eval()
             
-            # Tokenize the text
-            # encoded_input = self.sentence_tokenizer(
-            #     str(text), 
-            #     padding=True, 
-            #     truncation=True, 
-            #     max_length=512
-            # )
-            # print(f"encoded_input: {encoded_input}")
-            # Move inputs to the same device as the model
-            # encoded_input = {k: v.to(self.device) for k, v in encoded_input.items()}
+    #         # Tokenize the text
+    #         # encoded_input = self.sentence_tokenizer(
+    #         #     str(text), 
+    #         #     padding=True, 
+    #         #     truncation=True, 
+    #         #     max_length=512
+    #         # )
+    #         # print(f"encoded_input: {encoded_input}")
+    #         # Move inputs to the same device as the model
+    #         # encoded_input = {k: v.to(self.device) for k, v in encoded_input.items()}
             
-            with torch.no_grad():
-                # Get model outputs
-                outputs = self.sentence_model.encode(text)
-                # print(f"outputs: {outputs}")
+    #         with torch.no_grad():
+    #             # Get model outputs
+    #             outputs = self.sentence_model.encode(text)
+    #             # print(f"outputs: {outputs}")
                 
-                # Get the last hidden state
-                # last_hidden_state = outputs.last_hidden_state
+    #             # Get the last hidden state
+    #             # last_hidden_state = outputs.last_hidden_state
                 
-                # Get attention mask
-                # attention_mask = encoded_input['attention_mask']
+    #             # Get attention mask
+    #             # attention_mask = encoded_input['attention_mask']
                 
-                # # Mean pooling
-                # token_embeddings = last_hidden_state
-                # input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
-                # embeddings = torch.sum(token_embeddings * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1), min=1e-9)
+    #             # # Mean pooling
+    #             # token_embeddings = last_hidden_state
+    #             # input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
+    #             # embeddings = torch.sum(token_embeddings * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1), min=1e-9)
                 
-                # # Normalize embeddings
-                normalized_embeddings = F.normalize(outputs, p=2, dim=1)
+    #             # # Normalize embeddings
+    #             normalized_embeddings = F.normalize(outputs, p=2, dim=1)
                 
-                # # Convert to numpy
-                final_embeddings = normalized_embeddings.detach().cpu().numpy()
+    #             # # Convert to numpy
+    #             final_embeddings = normalized_embeddings.detach().cpu().numpy()
                 
                 
-                return final_embeddings
+    #             return final_embeddings
             
-        except Exception as e:
-            print(f"Error creating text embedding: {str(e)}")
-            return None
+    #     except Exception as e:
+    #         print(f"Error creating text embedding: {str(e)}")
+    #         return None
     
-    def image_embedding(self,image_obj):
-        try:
-            if isinstance(image_obj, Image.Image):
+    # def image_embedding(self,image_obj):
+    #     try:
+    #         if isinstance(image_obj, Image.Image):
              
-                img_tensor = self.img_transform(image_obj).unsqueeze(0).to(self.device)
+    #             img_tensor = self.img_transform(image_obj).unsqueeze(0).to(self.device)
               
-                with torch.no_grad():
-                    # Get model outputs
-                    outputs = self.img_model(img_tensor)
-                    # Remove the batch dimension
-                    outputs = outputs.squeeze()
+    #             with torch.no_grad():
+    #                 # Get model outputs
+    #                 outputs = self.img_model(img_tensor)
+    #                 # Remove the batch dimension
+    #                 outputs = outputs.squeeze()
                     
 
-                    normalized_embeddings = F.normalize(outputs.unsqueeze(0), p=2, dim=1)
+    #                 normalized_embeddings = F.normalize(outputs.unsqueeze(0), p=2, dim=1)
                     
               
-                    final_embeddings = normalized_embeddings.detach().cpu().numpy()
+    #                 final_embeddings = normalized_embeddings.detach().cpu().numpy()
                     
                         
-                    return final_embeddings
-            else:
-                print(f"Invalid image object type: {type(image_obj)}")
-                return None
-        except Exception as e:
-            print(f"Error creating image embedding: {str(e)}")
-            return None
+    #                 return final_embeddings
+    #         else:
+    #             print(f"Invalid image object type: {type(image_obj)}")
+    #             return None
+    #     except Exception as e:
+    #         print(f"Error creating image embedding: {str(e)}")
+    #         return None
 
     #i wrote this function to recursively check the dataset and seperated the dataset
-    def process_dataset(self,dataset_name,dataset,mul_field=None, is_conversation=False, is_check=False, is_regular=True,return_embedded_dataset=False):
+    def process_dataset(self,dataset_name,dataset,created_model_path=None,mul_field=None, is_conversation=False, is_check=False, is_regular=True,return_embedded_dataset=False,return_processed=False):
         dataset_keys = dataset.features.keys()
         
         # First level check - initial dataset inspection
@@ -652,13 +656,13 @@ class ChatTemplate:
             if any(re.search(self.CONVERSATION_PATTERN, key, re.IGNORECASE) for key in dataset_keys):
                 is_conversation = True
             is_check = True
-            return self.process_dataset(dataset_name=dataset_name,dataset=dataset,mul_field=mul_field, is_conversation=is_conversation, is_check=is_check,return_embedded_dataset=return_embedded_dataset)
+            return self.process_dataset(dataset_name=dataset_name,dataset=dataset,mul_field=mul_field, is_conversation=is_conversation, is_check=is_check,return_embedded_dataset=return_embedded_dataset,return_processed=return_processed)
         
         # Second level check - conversation confirm
         elif is_check and is_conversation:
             # print("Found conversations type dataset with 'conversations' column")
             #control what being returned as embed or not
-            return self.seperated_data(dataset_name=dataset_name,dataset=dataset,keys='conversations',mul_field=mul_field,return_embedded_dataset=return_embedded_dataset)
+            return self.seperated_data(dataset_name=dataset_name,created_model_path=created_model_path,dataset=dataset,keys='conversations',mul_field=mul_field,return_embedded_dataset=return_embedded_dataset,return_processed=return_processed)
         
         # Third level check - regular dataset processing
         elif is_check and not is_conversation:
@@ -670,11 +674,11 @@ class ChatTemplate:
                         data_info = dataset[matching_keys[0]]
                         # print(f"Found conversation type dataset with '{matching_keys[0]}' column")
                         if isinstance(data_info, list):
-                            return self.seperated_data(dataset_name=dataset_name,dataset=dataset,keys=matching_keys[0],mul_field=mul_field,return_embedded_dataset=return_embedded_dataset)
+                            return self.seperated_data(dataset_name=dataset_name,dataset=dataset,keys=matching_keys[0],mul_field=mul_field,return_embedded_dataset=return_embedded_dataset,return_processed=return_processed)
                         else:
                             print("Trying to format irregular dataset because of no list type")
-                            return self.process_dataset(dataset_name=dataset_name,dataset=dataset,mul_field=mul_field, is_conversation=is_conversation, is_check=is_check, is_regular=False,return_embedded_dataset=return_embedded_dataset)
-                return self.process_dataset(dataset_name=dataset_name,dataset=dataset,mul_field=mul_field, is_conversation=is_conversation, is_check=is_check, is_regular=False,return_embedded_dataset=return_embedded_dataset)
+                            return self.process_dataset(dataset_name=dataset_name,dataset=dataset,mul_field=mul_field, is_conversation=is_conversation, is_check=is_check, is_regular=False,return_embedded_dataset=return_embedded_dataset,return_processed=return_processed)
+                return self.process_dataset(dataset_name=dataset_name,dataset=dataset,mul_field=mul_field, is_conversation=is_conversation, is_check=is_check, is_regular=False,return_embedded_dataset=return_embedded_dataset,return_processed=return_processed)
             
             # Fourth level check - irregular dataset processing
             if not is_regular:
@@ -745,7 +749,7 @@ class ChatTemplate:
                 # Create dataset with both conversations and multimodal data
                 print(f"Creating dataset with fields: {list(dict_list.keys())}")
                 dataset_maker = Dataset.from_dict(dict_list)
-                return self.process_dataset(dataset_name=dataset_name,dataset=dataset_maker,is_conversation=False,is_check=False,mul_field=mul_field,return_embedded_dataset=return_embedded_dataset)
+                return self.process_dataset(dataset_name=dataset_name,dataset=dataset_maker,is_conversation=False,is_check=False,mul_field=mul_field,return_embedded_dataset=return_embedded_dataset,return_processed=return_processed)
         
         # If we reach here, return None to indicate no valid processing path was found
         print("Warning: No valid processing path found for the dataset")
@@ -813,8 +817,8 @@ class ChatTemplate:
         # Join all parts with double newlines for clear separation
         return "\n\n".join(formatted_parts)
     
-    def prepare_dataset(self, dataset_name, dataset, max_length=1000,return_embedded_dataset=False):
-        if not return_embedded_dataset:
+    def prepare_dataset(self, dataset_name, dataset,created_model_path=None, max_length=1000,return_embedded_dataset=False,return_processed=False):
+        if not return_embedded_dataset and not return_processed:
             try:
                 first_example = dataset
                 available_fields = list(first_example.features.keys())
@@ -837,7 +841,9 @@ class ChatTemplate:
                             is_conversation=False,
                             is_check=False,
                             mul_field=mul_field,
-                            return_embedded_dataset=return_embedded_dataset
+                            created_model_path=created_model_path,
+                            return_embedded_dataset=return_embedded_dataset,
+                            return_processed=return_processed
                         )
                     else:
                         formatted = self.process_dataset(
@@ -845,7 +851,9 @@ class ChatTemplate:
                             dataset=dataset,
                             is_conversation=False,
                             is_check=False,
-                            return_embedded_dataset=return_embedded_dataset
+                            created_model_path=created_model_path,
+                            return_embedded_dataset=return_embedded_dataset,
+                            return_processed=return_processed
                         )
                     
                     if formatted is None:
@@ -865,7 +873,7 @@ class ChatTemplate:
                 print(f"{Fore.RED}Error preparing dataset: {str(e)}{Style.RESET_ALL}")
                 raise
             
-        elif return_embedded_dataset:
+        elif return_embedded_dataset or return_processed:
             try:
                 first_example = dataset
                 available_fields = list(first_example.features.keys())
@@ -883,7 +891,8 @@ class ChatTemplate:
                         is_conversation=False,
                         is_check=False,
                         mul_field=mul_field,
-                        return_embedded_dataset=True
+                        return_embedded_dataset=return_embedded_dataset,
+                        return_processed=return_processed
                     )
                 else:
                     formatted = self.process_dataset(
@@ -891,7 +900,8 @@ class ChatTemplate:
                         dataset=first_example,
                         is_conversation=False,
                         is_check=False,
-                        return_embedded_dataset=True
+                        return_embedded_dataset=return_embedded_dataset,
+                        return_processed=return_processed
                     )
                 
                 if formatted is None:

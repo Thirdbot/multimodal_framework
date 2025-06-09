@@ -257,6 +257,9 @@ class CreateModel:
         # Save tokenizer
         self.tokenizer.save_pretrained(self.model_path)
         
+        AutoConfig.register("conversation-model", AutoConfig)
+        AutoModel.register(AutoConfig, AutoModelForCausalLM)
+        
         
         
     def save_vision_model(self):
@@ -328,19 +331,11 @@ class CreateModel:
         # Save Modelfile
         with open(os.path.join(self.model_path, "Modelfile"), "w") as f:
             f.write(modelfile_content)
+            
+        AutoConfig.register("vision-model",VisionConfig)
+        AutoModel.register(VisionConfig, VisionModel)
  
 
-
-created_model = CreateModel("kyutai/helium-1-2b","text-generation")
-# created_model.add_vision()
-# created_model.save_vision_model()
-
-demo_path = Path(__file__).parent.parent.absolute() / "custom_models" / "text-generation" / "kyutai-helium-1-2b"
-
-
-# Register at module level before any class definitions
-AutoConfig.register("multimodal", VisionConfig)
-AutoModel.register(VisionModel, VisionConfig)
 
 # Load model and processor from demo_path
 def load_saved_model(model_path):

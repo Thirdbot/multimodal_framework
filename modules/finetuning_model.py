@@ -36,10 +36,9 @@ init(autoreset=True)
 
 # Set environment variables
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
-os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True,max_split_size_mb:256"
+os.environ['OMP_NUM_THREADS'] = '1' 
+# os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True,max_split_size_mb:128"
 os.environ["CUDA_LAUNCH_BLOCKING"] = "0"
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-os.environ["PYTORCH_NO_CUDA_MEMORY_CACHING"] = "1"
 
 class FinetuneModel:
     """Class for handling model fine-tuning operations."""
@@ -47,9 +46,9 @@ class FinetuneModel:
     def __init__(self):
         """Initialize the FinetuneModel with default parameters."""
         # Training parameters
-        self.per_device_train_batch_size = 64
-        self.per_device_eval_batch_size = 64
-        self.gradient_accumulation_steps = 2
+        self.per_device_train_batch_size = 32
+        self.per_device_eval_batch_size = 32
+        self.gradient_accumulation_steps = 4
         self.learning_rate = 2e-4
         self.num_train_epochs = 1
         self.save_strategy = "best"
@@ -63,7 +62,9 @@ class FinetuneModel:
         self.chainpipe = Chainpipe()
         
         # Clear CUDA cache
-        torch.cuda.empty_cache()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.reset_peak_memory_stats()
         
         # Initialize state variables
         self.model_id = None
@@ -77,6 +78,13 @@ class FinetuneModel:
     def _setup_directories(self):
         """Set up required directories."""
         self.WORKSPACE_DIR = Path(__file__).parent.parent.absolute()
+        
+        self.CUTOM_MODEL_DIR = self.WORKSPACE_DIR / "custom_models"
+        self.VISION_MODEL_DIR = self.CUTOM_MODEL_DIR / "vision-model"
+        self.REGULAR_MODEL_DIR = self.CUTOM_MODEL_DIR / "conversation-model"
+        
+        
+        
         self.MODEL_DIR = self.WORKSPACE_DIR / "models"
         self.CHECKPOINT_DIR = self.WORKSPACE_DIR / "checkpoints"
         self.OFFLOAD_DIR = self.WORKSPACE_DIR / "offload"
@@ -400,7 +408,7 @@ class FinetuneModel:
             return None
     
     def map_tokenizer(self, dataset_name: str, tokenizer: AutoTokenizer, dataset: DatasetDict, 
-                     max_length: int = 384, return_embedded_dataset: bool = False) -> Optional[DatasetDict]:
+                     max_length: int = 384, return_embedded_dataset: bool = False,return_processed: bool = False) -> Optional[DatasetDict]:
         """Map tokenizer to dataset.
         
         Args:
@@ -418,7 +426,8 @@ class FinetuneModel:
                 dataset_name,
                 dataset,
                 max_length=max_length,
-                return_embedded_dataset=return_embedded_dataset
+                return_embedded_dataset=return_embedded_dataset,
+                return_processed=return_processed
             )
             print(f"{Fore.GREEN}Successfully prepared chat dataset{Style.RESET_ALL}")
             return tokenized_dataset
@@ -654,6 +663,9 @@ class Manager:
                     first_dataset = None
                     second_dataset = None
                     
+                    first_cols = None
+                    second_cols = None
+                    
                     for dataset_name in datasets:
                         try:
                             print(f"{Fore.CYAN}Loading dataset config: {dataset_name} {config.get(dataset_name, 'No config found')}{Style.RESET_ALL}")
@@ -663,64 +675,109 @@ class Manager:
                             
                             if first_dataset is None:
                                 print(f"{Fore.GREEN}Processing first dataset: {dataset_name}{Style.RESET_ALL}")
-                                first_dataset = self.finetune_model.map_tokenizer(dataset_name, tokenizer, dataset, return_embedded_dataset=True)
+                                #return processed True make it return text and modality path
+                                first_dataset = self.finetune_model.map_tokenizer(dataset_name, 
+                                                                                  tokenizer, dataset, 
+                                                                                  return_embedded_dataset=False,
+                                                                                  return_processed=True)
+                                first_cols = set(first_dataset.column_names)
                                 concat_dataset = first_dataset
+                                
+                                if not allow_mod_model:
+                                    if "image" in first_cols or "audio" in first_cols:
+                                        print(f"{Fore.RED}Due to allow_mod_model is False, skipping dataset {dataset_name} because it contains image or audio columns{Style.RESET_ALL}")
+                                        continue
+                                
+                                            
                             else:
+                                first_dataset = concat_dataset
                                 print(f"{Fore.GREEN}Processing additional dataset: {dataset_name}{Style.RESET_ALL}")
-                                second_dataset = self.finetune_model.map_tokenizer(dataset_name, tokenizer, dataset, return_embedded_dataset=True)
-                                if first_dataset is not None and second_dataset is not None:
-                                    print(f"{Fore.GREEN}Concatenating datasets...{Style.RESET_ALL}")
-                                    # concat_dataset = concatenate_datasets([first_dataset, second_dataset])
-                                    # Get column names from both datasets
-                                    first_cols = set(first_dataset.column_names)
-                                    second_cols = set(second_dataset.column_names)
-                                    print(f"{Fore.GREEN}First dataset columns: {first_cols}{Style.RESET_ALL}")
-                                    print(f"{Fore.GREEN}Second dataset columns: {second_cols}{Style.RESET_ALL}")
+                                
+                                #return processed True make it return text and modality path
+                                second_dataset = self.finetune_model.map_tokenizer(dataset_name, 
+                                                                                   tokenizer, 
+                                                                                   dataset, 
+                                                                                   return_embedded_dataset=False,
+                                                                                   return_processed=True)
+                                second_cols = set(second_dataset.column_names)
+                                
+                                
+                                print(f"{Fore.GREEN}Concatenating datasets...{Style.RESET_ALL}")
+                             
+                                print(f"{Fore.GREEN}First dataset columns: {first_cols}{Style.RESET_ALL}")
+                                print(f"{Fore.GREEN}Second dataset columns: {second_cols}{Style.RESET_ALL}")
+                                
+                                if not allow_mod_model:
+                                    if "image" in second_cols or "audio" in second_cols:
+                                        print(f"{Fore.RED}Due to allow_mod_model is False, skipping dataset {dataset_name} because it contains image or audio columns{Style.RESET_ALL}")
+                                        continue
+                                
+                                            
+                                    if first_dataset is not None and second_dataset is not None:
+                                        # For columns only in second dataset, add them to first dataset with None values
+                                        for col in second_cols - first_cols:
+                                            first_dataset = first_dataset.add_column(col, [None] * len(first_dataset))
+                                        
+                                        # For columns only in first dataset, add them to second dataset with None values  
+                                        for col in first_cols - second_cols:
+                                            second_dataset = second_dataset.add_column(col, [None] * len(second_dataset))
+                                        
+                                        # Now both datasets have same columns, concatenate them
+                                        concat_dataset = concatenate_datasets([first_dataset, second_dataset])
+                                        print(f"{Fore.GREEN}Successfully joined datasets with columns: {concat_dataset.column_names}{Style.RESET_ALL}")
                                     
-                                    if not allow_mod_model:
-                                        if "image" in first_cols or "audio" in first_cols or "image" in second_cols or "audio" in second_cols:
-                                            print(f"{Fore.RED}Due to allow_mod_model is False, skipping dataset {dataset_name} because it contains image or audio columns{Style.RESET_ALL}")
-                                            continue
-                                    else:
-                                        if "image" in first_cols or  "image" in second_cols:
-                                            if modelname.replace("/","-") not in self.finetune_model.CHECKPOINT_DIR:
-                                                print(f"{Fore.GREEN}Creating vision model...from {modelname}{Style.RESET_ALL}")
-                                                create_model = CreateModel(modelname, self.model_task)
-                                                create_model.add_vision()
-                                                create_model.save_vision_model()
-                                                model, processor = load_saved_model(modelname)
-                                                tokenizer = processor.tokenizer
-                                        else:
-                                            if modelname.replace("/","-") not in self.finetune_model.CHECKPOINT_DIR:
-                                                print(f"{Fore.GREEN}Creating regular model...from {modelname}{Style.RESET_ALL}")
-                                                create_model = CreateModel(modelname, self.model_task)
-                                                create_model.save_regular_model()
-                                                model, processor = load_saved_model(modelname)
-                                                tokenizer = processor.tokenizer
-                                    
-                                    # For columns only in second dataset, add them to first dataset with None values
-                                    for col in second_cols - first_cols:
-                                        first_dataset = first_dataset.add_column(col, [None] * len(first_dataset))
-                                    
-                                    # For columns only in first dataset, add them to second dataset with None values  
-                                    for col in first_cols - second_cols:
-                                        second_dataset = second_dataset.add_column(col, [None] * len(second_dataset))
-                                    
-                                    # Now both datasets have same columns, concatenate them
-                                    concat_dataset = concatenate_datasets([first_dataset, second_dataset])
-                                    
-                                    print(f"{Fore.GREEN}Successfully joined datasets with columns: {concat_dataset.column_names}{Style.RESET_ALL}")
-                                    
+
                             
-                            saved_dataset = self.finetune_model.map_tokenizer(dataset_name, tokenizer, concat_dataset, return_embedded_dataset=False)
                             
                         except Exception as e:
                             print(f"{Fore.RED}Error processing dataset {dataset_name}: {str(e)}{Style.RESET_ALL}")
                             print(f"{Fore.YELLOW}Stack trace:", exc_info=True)
                             continue
                     
-                    dataset = saved_dataset
-                
+                    # dataset = saved_dataset
+                    dataset = concat_dataset
+                    
+                    union_cols = first_cols.union(second_cols)
+                    
+                    if "conversations" in union_cols:
+                        #if model is not local and been createdd
+                        model_name_safe = modelname.replace("/","-")
+                        model_path = self.finetune_model.REGULAR_MODEL_DIR / model_name_safe
+                        #if it local created model
+                        if Path(modelname).exists():
+                            model_path = modelname
+                            
+                        if not (model_path).exists():
+                            print(f"{Fore.GREEN}Creating conversation model...from {modelname}{Style.RESET_ALL}")
+                            create_model = CreateModel(modelname, "conversation-model")
+                            create_model.save_regular_model()
+                        elif Path(self.finetune_model.CHECKPOINT_DIR / model_name_safe).exists():
+                            model, tokenizer = load_saved_model(self.finetune_model.CHECKPOINT_DIR / model_name_safe)
+                        elif model_path.exists():
+                            model, tokenizer = load_saved_model(model_path)
+                            
+                    if "image" in union_cols:
+                        model_name_safe = modelname.replace("/","-")
+                        model_path = self.finetune_model.VISION_MODEL_DIR / model_name_safe
+                        if Path(modelname).exists():
+                            model_path = modelname
+                            
+                        if not (model_path).exists():
+                            print(f"{Fore.GREEN}Creating vision model...from {modelname}{Style.RESET_ALL}")
+                            create_model = CreateModel(modelname, "vision-model")
+                            create_model.add_vision()
+                            create_model.save_vision_model()
+                        elif Path(self.finetune_model.CHECKPOINT_DIR / model_name_safe).exists():
+                            model, tokenizer = load_saved_model(self.finetune_model.CHECKPOINT_DIR / model_name_safe)
+                        elif model_path.exists():
+                            model, tokenizer = load_saved_model(model_path)
+                    
+                    saved_dataset = self.finetune_model.map_tokenizer(dataset_name, 
+                                                                              tokenizer, 
+                                                                              concat_dataset, 
+                                                                              return_embedded_dataset=False,
+                                                                              return_processed=False)
+                                            
                 if model is not None and dataset is not None:
                     self.finetune_model.runtuning(model, tokenizer, dataset, modelname)
             
