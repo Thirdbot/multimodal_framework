@@ -420,6 +420,7 @@ class FinetuneModel:
         Returns:
             Processed dataset
         """
+        self.chat_template = ChatTemplate(tokenizer=tokenizer)
         try:
             tokenized_dataset = self.chat_template.prepare_dataset(
                 dataset_name,
@@ -635,7 +636,7 @@ class Manager:
         with open(self.data_json_path, "r") as f:
             return json.load(f)
     
-    def run_finetune(self, list_model_data: List[Dict[str, Any]], config: Dict[str, Any],allow_mod_model: bool) -> Tuple[Optional[AutoModelForCausalLM], Optional[DatasetDict]]:
+    def run_finetune(self, list_model_data: List[Dict[str, Any]], config: Dict[str, Any]) -> Tuple[Optional[AutoModelForCausalLM], Optional[DatasetDict]]:
         """Run the fine-tuning process.
         
         Args:
@@ -649,6 +650,7 @@ class Manager:
             model = None
             combined_dataset = None
             dataset = None
+            saved_dataset = None
             
             for el in list_model_data:
                 if "model" in el:
@@ -662,8 +664,8 @@ class Manager:
                     first_dataset = None
                     second_dataset = None
                     
-                    first_cols = None
-                    second_cols = None
+                    first_cols = set()
+                    second_cols = set()
                     
                     for dataset_name in datasets:
                         try:
@@ -679,13 +681,13 @@ class Manager:
                                                                                   tokenizer, dataset, 
                                                                                   return_embedded_dataset=False,
                                                                                   return_processed=True)
+                                if first_dataset is None:
+                                    print(f"{Fore.RED}Failed to process first dataset: {dataset_name}{Style.RESET_ALL}")
+                                    continue
                                 first_cols = set(first_dataset.column_names)
                                 concat_dataset = first_dataset
                                 
-                                if not allow_mod_model:
-                                    if "image" in first_cols or "audio" in first_cols:
-                                        print(f"{Fore.RED}Due to allow_mod_model is False, skipping dataset {dataset_name} because it contains image or audio columns{Style.RESET_ALL}")
-                                        continue
+                                
                                 
                                             
                             else:
@@ -698,6 +700,9 @@ class Manager:
                                                                                    dataset, 
                                                                                    return_embedded_dataset=False,
                                                                                    return_processed=True)
+                                if second_dataset is None:
+                                    print(f"{Fore.RED}Failed to process second dataset: {dataset_name}{Style.RESET_ALL}")
+                                    continue
                                 second_cols = set(second_dataset.column_names)
                                 
                                 
@@ -706,31 +711,26 @@ class Manager:
                                 print(f"{Fore.GREEN}First dataset columns: {first_cols}{Style.RESET_ALL}")
                                 print(f"{Fore.GREEN}Second dataset columns: {second_cols}{Style.RESET_ALL}")
                                 
-                                if not allow_mod_model:
-                                    if "image" in second_cols or "audio" in second_cols:
-                                        print(f"{Fore.RED}Due to allow_mod_model is False, skipping dataset {dataset_name} because it contains image or audio columns{Style.RESET_ALL}")
-                                        continue
-                                
-                                            
-                                    if first_dataset is not None and second_dataset is not None:
-                                        # For columns only in second dataset, add them to first dataset with None values
-                                        for col in second_cols - first_cols:
-                                            first_dataset = first_dataset.add_column(col, [None] * len(first_dataset))
+                            
                                         
-                                        # For columns only in first dataset, add them to second dataset with None values  
-                                        for col in first_cols - second_cols:
-                                            second_dataset = second_dataset.add_column(col, [None] * len(second_dataset))
-                                        
-                                        # Now both datasets have same columns, concatenate them
-                                        concat_dataset = concatenate_datasets([first_dataset, second_dataset])
-                                        print(f"{Fore.GREEN}Successfully joined datasets with columns: {concat_dataset.column_names}{Style.RESET_ALL}")
+                                if first_dataset is not None and second_dataset is not None:
+                                    # For columns only in second dataset, add them to first dataset with None values
+                                    for col in second_cols - first_cols:
+                                        first_dataset = first_dataset.add_column(col, [None] * len(first_dataset))
                                     
+                                    # For columns only in first dataset, add them to second dataset with None values  
+                                    for col in first_cols - second_cols:
+                                        second_dataset = second_dataset.add_column(col, [None] * len(second_dataset))
+                                    
+                                    # Now both datasets have same columns, concatenate them
+                                    concat_dataset = concatenate_datasets([first_dataset, second_dataset])
+                                    print(f"{Fore.GREEN}Successfully joined datasets with columns: {concat_dataset.column_names}{Style.RESET_ALL}")
+                                
 
                             
                             
                         except Exception as e:
                             print(f"{Fore.RED}Error processing dataset {dataset_name}: {str(e)}{Style.RESET_ALL}")
-                            print(f"{Fore.YELLOW}Stack trace:", exc_info=True)
                             continue
                     
                     # dataset = saved_dataset
@@ -752,8 +752,10 @@ class Manager:
                             create_model.add_conversation()
                             create_model.save_regular_model()
                         elif Path(self.finetune_model.CHECKPOINT_DIR / model_name_safe).exists():
+                            print(f"{Fore.GREEN}Loading conversation model from checkpoint...{Style.RESET_ALL}")
                             model, tokenizer = load_saved_model(self.finetune_model.CHECKPOINT_DIR / model_name_safe)
                         elif model_path.exists():
+                            print(f"{Fore.GREEN}Loading conversation model from path...{Style.RESET_ALL}")
                             model, tokenizer = load_saved_model(model_path)
                             
                     if "image" in union_cols:
@@ -768,19 +770,20 @@ class Manager:
                             create_model.add_vision()
                             create_model.save_vision_model()
                         elif Path(self.finetune_model.CHECKPOINT_DIR / model_name_safe).exists():
+                            print(f"{Fore.GREEN}Loading conversation model from checkpoint...{Style.RESET_ALL}")
                             model, tokenizer = load_saved_model(self.finetune_model.CHECKPOINT_DIR / model_name_safe)
                         elif model_path.exists():
+                            print(f"{Fore.GREEN}Loading conversation model from path...{Style.RESET_ALL}")
                             model, tokenizer = load_saved_model(model_path)
                     
                     saved_dataset = self.finetune_model.map_tokenizer(dataset_name, 
                                                                               tokenizer, 
-                                                                              concat_dataset, 
+                                                                              dataset,
                                                                               return_embedded_dataset=False,
                                                                               return_processed=False)
                                             
-                if model is not None and dataset is not None:
-                    self.finetune_model.runtuning(model, tokenizer, dataset, modelname)
-            
+                    if model is not None and saved_dataset is not None:
+                        self.finetune_model.runtuning(model, tokenizer, saved_dataset, modelname)
             return model, dataset
             
         except Exception as e:
