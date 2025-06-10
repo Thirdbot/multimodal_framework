@@ -8,6 +8,7 @@ import torch
 from pathlib import Path
 import json
 from transformers.image_utils import load_image
+from transformers import BitsAndBytesConfig
 
 # Config classes
 class ConversationConfig(PretrainedConfig):
@@ -227,8 +228,23 @@ class CreateModel:
         self.model_path = Path(__file__).parent.parent.absolute() / "custom_models" / self.model_category / self.save_name
         self.model_path.mkdir(parents=True, exist_ok=True)
         
-        # Load the original model and its config
-        self.model = AutoModelForCausalLM.from_pretrained(self.model_name)
+        # Load the original model and its config with quantization
+        quantization_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=torch.bfloat16,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_use_double_quant=True,
+            llm_int8_threshold=6.0,
+            llm_int8_has_fp16_weight=False,
+        )
+        
+        self.model = AutoModelForCausalLM.from_pretrained(
+            self.model_name,
+            quantization_config=quantization_config,
+            device_map="auto",
+            torch_dtype=torch.bfloat16,
+            low_cpu_mem_usage=True
+        )
         self.original_config = AutoConfig.from_pretrained(self.model_name)
         
         # First load the tokenizer to get the correct vocab size
@@ -258,8 +274,23 @@ class CreateModel:
         
         
     def add_vision(self):
-        # Initialize models and processor
-        self.vision_model = CLIPVisionModel.from_pretrained("openai/clip-vit-large-patch14")
+        # Initialize models and processor with quantization
+        quantization_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=torch.bfloat16,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_use_double_quant=True,
+            llm_int8_threshold=6.0,
+            llm_int8_has_fp16_weight=False,
+        )
+        
+        self.vision_model = CLIPVisionModel.from_pretrained(
+            "openai/clip-vit-large-patch14",
+            quantization_config=quantization_config,
+            device_map="auto",
+            torch_dtype=torch.bfloat16,
+            low_cpu_mem_usage=True
+        )
         self.clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-large-patch14")
         self.vision_processor = VisionProcessor(self.clip_processor, self.tokenizer)
         
@@ -272,12 +303,28 @@ class CreateModel:
         lang_model_path = os.path.join(self.model_path, "lang_model")
         os.makedirs(lang_model_path, exist_ok=True)
         
-        # Save base model first
-        self.convomodel.save_pretrained(lang_model_path,safe_serialization=True)
+        # Save base model first with quantization
+        quantization_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=torch.bfloat16,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_use_double_quant=True,
+            llm_int8_threshold=6.0,
+            llm_int8_has_fp16_weight=False,
+        )
         
-        # Save conversation model
+        self.convomodel.save_pretrained(
+            lang_model_path,
+            quantization_config=quantization_config,
+            torch_dtype=torch.bfloat16,
+            safe_serialization=True
+        )
+        
+        # Save conversation model with quantization
         self.convomodel.save_pretrained(
             self.model_path,
+            quantization_config=quantization_config,
+            torch_dtype=torch.bfloat16,
             safe_serialization=True
         )
         
@@ -295,22 +342,46 @@ class CreateModel:
         os.makedirs(vision_model_path, exist_ok=True)
         os.makedirs(lang_model_path, exist_ok=True)
         
-        # Save base model first
-        self.model.save_pretrained(lang_model_path,safe_serialization=True)
+        # Save base model first with quantization
+        quantization_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=torch.bfloat16,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_use_double_quant=True,
+            llm_int8_threshold=6.0,
+            llm_int8_has_fp16_weight=False,
+        )
         
-        # Save vision model and processor
-        self.vision_model.save_pretrained(vision_model_path,safe_serialization=True)
-        self.clip_processor.save_pretrained(vision_model_path,safe_serialization=True)
+        # Save vision model with quantization
+        self.vision_model.save_pretrained(
+            vision_model_path,
+            quantization_config=quantization_config,
+            torch_dtype=torch.bfloat16,
+            safe_serialization=True
+        )
+        
+        # Save language model with quantization
+        self.model.save_pretrained(
+            lang_model_path,
+            quantization_config=quantization_config,
+            torch_dtype=torch.bfloat16,
+            safe_serialization=True
+        )
         
         # Save vision processor
-        self.vision_processor.save_pretrained(os.path.join(self.model_path, "vision_processor"),safe_serialization=True)
+        self.vision_processor.save_pretrained(
+            os.path.join(self.model_path, "vision_processor"),
+            safe_serialization=True
+        )
         
         # Save main model configuration
         self.vision_config.save_pretrained(self.model_path)
         
-        # Save vision model
+        # Save vision model with quantization
         self.vismodel.save_pretrained(
             self.model_path,
+            quantization_config=quantization_config,
+            torch_dtype=torch.bfloat16,
             safe_serialization=True
         )
         
@@ -388,18 +459,18 @@ def load_saved_model(model_path):
             model = VisionModel(config, vision_model, lang_model)
             
             # Load processor
-            image_processor = CLIPProcessor.from_pretrained(vision_model_path)
+            # image_processor = CLIPProcessor.from_pretrained(vision_model_path)
             tokenizer = AutoTokenizer.from_pretrained(demo_path)
-            processor = VisionProcessor(image_processor=image_processor, tokenizer=tokenizer)
-            return model, processor
+            # processor = VisionProcessor(image_processor=image_processor, tokenizer=tokenizer)
+            return model, tokenizer
         else:
             model = AutoModel.from_pretrained(
                 demo_path,
                 config=config,
                 trust_remote_code=True
             )
-            processor = AutoProcessor.from_pretrained(demo_path)
-            return model, processor
+            tokenizer = AutoTokenizer.from_pretrained(demo_path)
+            return model, tokenizer
         
     except Exception as e:
         print(f"Error loading model: {str(e)}")
