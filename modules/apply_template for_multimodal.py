@@ -4,7 +4,7 @@ import os
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 os.environ['OMP_NUM_THREADS'] = '1'  # Limit OpenMP threads
 
-from transformers import AutoModelForCausalLM,ProcessorMixin,PretrainedConfig,CLIPVisionModel,CLIPProcessor,AutoTokenizer
+from transformers import AutoModelForCausalLM,ProcessorMixin,PretrainedConfig,CLIPVisionModel,CLIPProcessor,AutoTokenizer, AutoConfig,AutoModel
 from transformers.image_utils import load_image
 from transformers.modeling_utils import PreTrainedModel
 import torch
@@ -122,20 +122,25 @@ class VisionAdapter(torch.nn.Module):
 
 
 class VisionConfig(PretrainedConfig):
-    model_type = "vision_language_model"
+    model_type = "vision-model"
+    architectures = ["VisionModel"]
     def __init__(self, lang_embed_dim=2048, clip_dim=1024, **kwargs):
         super().__init__(**kwargs)
         self.lang_embed_dim = lang_embed_dim
         self.clip_dim = clip_dim
+        # Register this config type when instantiated
+        AutoConfig.register("vision-model", VisionConfig)
 
 class VisionModel(PreTrainedModel):
     config_class = VisionConfig
     
-    def __init__(self,config,vision_model,lang_model):
-        super().__init__(config)
+    def __init__(self, config, vision_model, lang_model):
+        super().__init__(config)  # Only pass config to parent
         self.vision_model = vision_model
-        self.vision_adapter = VisionAdapter(config.lang_embed_dim,config.clip_dim)
+        self.vision_adapter = VisionAdapter(config.lang_embed_dim, config.clip_dim)
         self.lang_model = lang_model
+        # Register this model type when instantiated
+        AutoModel.register(VisionConfig, VisionModel)
         
     def __extend_attention_mask(self, atten_mask, atten_to_img=True, num_added_tokens=257):
         # Extending the attention mask to image embeddings

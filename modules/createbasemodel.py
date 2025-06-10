@@ -9,11 +9,129 @@ from pathlib import Path
 import json
 from transformers.image_utils import load_image
 
+# Config classes
+class ConversationConfig(PretrainedConfig):
+    model_type = "conversation-model"
+    architectures = ["ConversationModel"]
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
 
 
-       
-# #create template from model
+class VisionConfig(PretrainedConfig):
+    model_type = "vision-model"
+    architectures = ["VisionModel"]
+    
+    def __init__(self, lang_embed_dim=2048, clip_dim=1024, **kwargs):
+        super().__init__(**kwargs)
+        self.lang_embed_dim = lang_embed_dim
+        self.clip_dim = clip_dim
 
+# Model classes
+class ConversationModel(PreTrainedModel):
+    config_class = ConversationConfig
+    
+    def __init__(self, config, base_model):
+        super().__init__(config)
+        self.model = base_model
+    
+    def forward(self, *args, **kwargs):
+        return self.model(*args, **kwargs)
+    
+    def generate(self, *args, **kwargs):
+        return self.model.generate(*args, **kwargs)
+
+class VisionAdapter(torch.nn.Module):
+    def __init__(self, lang_embed_dim, clip_dim):
+        super().__init__()
+        self.activation = torch.nn.ReLU()
+        self.layer1 = torch.nn.Linear(clip_dim, 500)
+        self.layer2 = torch.nn.Linear(500, 500)
+        self.layer3 = torch.nn.Linear(500, lang_embed_dim)
+
+    def forward(self, x):
+        x = self.layer1(x)
+        x = self.activation(x)
+        x = self.layer2(x)
+        x = self.activation(x)
+        x = self.layer3(x)
+        output = self.activation(x)
+        return output
+
+class VisionModel(PreTrainedModel):
+    config_class = VisionConfig
+    
+    def __init__(self, config, vision_model, lang_model):
+        super().__init__(config)
+        self.vision_model = vision_model
+        self.vision_adapter = VisionAdapter(config.lang_embed_dim, config.clip_dim)
+        self.lang_model = lang_model
+
+    def forward(self, input_ids=None, attention_mask=None, pixel_values=None,
+                attend_to_img_tokens=True, labels=None, **kwargs):
+        input_ids = kwargs.get("input_ids", input_ids)
+        attention_mask = kwargs.get("attention_mask", attention_mask)
+        pixel_values = kwargs.get("pixel_values", pixel_values)
+        labels = kwargs.get("labels", labels)
+
+        embeddings, attention_mask = self.process_inputs(input_ids, attention_mask, pixel_values, attend_to_img_tokens)
+
+        outputs = self.lang_model(
+            inputs_embeds=embeddings,
+            attention_mask=attention_mask,
+            labels=labels
+        )
+        
+        return outputs
+    
+    def generate(self, input_ids=None, attention_mask=None, pixel_values=None,
+                 attend_to_img_tokens=True, **kwargs):
+        input_ids = kwargs.pop("input_ids", input_ids)
+        attention_mask = kwargs.pop("attention_mask", attention_mask)
+        pixel_values = kwargs.pop("pixel_values", pixel_values)
+
+        embeddings, attention_mask = self.process_inputs(input_ids, attention_mask, pixel_values, attend_to_img_tokens)
+
+        if "max_new_tokens" not in kwargs:
+            kwargs["max_new_tokens"] = 100
+        if "min_length" not in kwargs:
+            kwargs["min_length"] = 1
+        if "num_beams" not in kwargs:
+            kwargs["num_beams"] = 4
+        if "temperature" not in kwargs:
+            kwargs["temperature"] = 0.7
+        if "do_sample" not in kwargs:
+            kwargs["do_sample"] = True
+
+        return self.lang_model.generate(
+            inputs_embeds=embeddings,
+            attention_mask=attention_mask,
+            **kwargs
+        )
+        
+    def process_inputs(self, input_ids, attention_mask, pixel_values, attend_to_img_tokens=True):
+        # Processing inputs
+        embeddings = self.lang_model.model.embed_tokens(input_ids)
+
+        if pixel_values is not None:
+            image_embeddings = self.vision_model(pixel_values).last_hidden_state
+            adapted_embeddings = self.vision_adapter(image_embeddings)
+            embeddings = torch.cat((adapted_embeddings, embeddings), axis=1)
+            attention_mask = self.__extend_attention_mask(attention_mask, attend_to_img_tokens)
+
+        return embeddings, attention_mask
+        
+    def __extend_attention_mask(self, atten_mask, atten_to_img=True, num_added_tokens=257):
+        # Extending the attention mask to image embeddings
+        batch_size, seq_length = atten_mask.shape
+        extended_mask = torch.ones if atten_to_img else torch.zeros
+        mask = extended_mask((batch_size, seq_length + num_added_tokens),
+                             dtype=atten_mask.dtype,
+                             device=atten_mask.device)
+        mask[:, -seq_length:] = atten_mask
+        return mask
+
+# Processor class
 class VisionProcessor(ProcessorMixin):
     attributes = ['image_processor','tokenizer']
     
@@ -25,7 +143,6 @@ class VisionProcessor(ProcessorMixin):
         self.chat_template = self.tokenizer.chat_template
         self.current_processor = self
     
-    #create place for images in the input_ids
     def add_label(self,inputs):
         special_images_tokens = self.tokenizer.convert_tokens_to_ids("<image>")
         num_images_tokens = 257
@@ -78,108 +195,15 @@ class VisionProcessor(ProcessorMixin):
 
         return result
 
-class VisionAdapter(torch.nn.Module):
-    def __init__(self, lang_embed_dim, clip_dim):
-        super().__init__()
-        self.activation = torch.nn.ReLU()
-        self.layer1 = torch.nn.Linear(clip_dim, 500)
-        self.layer2 = torch.nn.Linear(500, 500)
-        self.layer3 = torch.nn.Linear(500, lang_embed_dim)
-
-    def forward(self, x):
-        x = self.layer1(x)
-        x = self.activation(x)
-        x = self.layer2(x)
-        x = self.activation(x)
-        x = self.layer3(x)
-        output = self.activation(x)
-        return output
-
-
-class VisionConfig(PretrainedConfig):
-    model_type = "multimodal"  # Changed from "vision_language_model" to "multimodal"
-    def __init__(self, lang_embed_dim=2048, clip_dim=1024, **kwargs):
-        super().__init__(**kwargs)
-        self.lang_embed_dim = lang_embed_dim
-        self.clip_dim = clip_dim
-
-class VisionModel(PreTrainedModel):
-    config_class = VisionConfig
+# Register this config type when instantiated
+AutoConfig.register("conversation-model", ConversationConfig)
+# Register the config at class level
+AutoConfig.register("vision-model", VisionConfig)
+# Register this model type when instantiated
+AutoModel.register(ConversationConfig, ConversationModel)
+# Register the model at class level
+AutoModel.register(VisionConfig, VisionModel)
     
-    def __init__(self,config,vision_model,lang_model):
-        super().__init__(config,vision_model,lang_model)
-        self.vision_model = vision_model
-        self.vision_adapter = VisionAdapter(config.lang_embed_dim,config.clip_dim)
-        self.lang_model = lang_model
-        
-    def __extend_attention_mask(self, atten_mask, atten_to_img=True, num_added_tokens=257):
-        # Extending the attention mask to image embeddings
-        batch_size, seq_length = atten_mask.shape
-        extended_mask = torch.ones if atten_to_img else torch.zeros
-        mask = extended_mask((batch_size, seq_length + num_added_tokens),
-                             dtype=atten_mask.dtype,
-                             device=atten_mask.device)
-        mask[:, -seq_length:] = atten_mask
-        return mask
-    def process_inputs(self, input_ids, attention_mask, pixel_values, attend_to_img_tokens=True):
-        # Processing inputs
-        embeddings = self.lang_model.model.embed_tokens(input_ids)
-
-        if pixel_values is not None:
-            image_embeddings = self.vision_model(pixel_values).last_hidden_state
-            adapted_embeddings = self.vision_adapter(image_embeddings)
-            embeddings = torch.cat((adapted_embeddings, embeddings), axis=1)
-            attention_mask = self.__extend_attention_mask(attention_mask, attend_to_img_tokens)
-
-        return embeddings, attention_mask
-
-    def forward(self, input_ids=None, attention_mask=None, pixel_values=None,
-                attend_to_img_tokens=True, labels=None, **kwargs):
-        input_ids = kwargs.get("input_ids", input_ids)
-        attention_mask = kwargs.get("attention_mask", attention_mask)
-        pixel_values = kwargs.get("pixel_values", pixel_values)
-        labels = kwargs.get("labels", labels)
-
-        embeddings, attention_mask = self.process_inputs(input_ids, attention_mask, pixel_values, attend_to_img_tokens)
-
-        outputs = self.lang_model(
-            inputs_embeds=embeddings,
-            attention_mask=attention_mask,
-            labels=labels
-        )
-        
-        return outputs
-
-    def generate(self, input_ids=None, attention_mask=None, pixel_values=None,
-                 attend_to_img_tokens=True, **kwargs):
-        input_ids = kwargs.pop("input_ids", input_ids)
-        attention_mask = kwargs.pop("attention_mask", attention_mask)
-        pixel_values = kwargs.pop("pixel_values", pixel_values)
-
-        embeddings, attention_mask = self.process_inputs(input_ids, attention_mask, pixel_values, attend_to_img_tokens)
-
-        if "max_new_tokens" not in kwargs:
-            kwargs["max_new_tokens"] = 100
-        if "min_length" not in kwargs:
-            kwargs["min_length"] = 1
-        if "num_beams" not in kwargs:
-            kwargs["num_beams"] = 4
-        if "temperature" not in kwargs:
-            kwargs["temperature"] = 0.7
-        if "do_sample" not in kwargs:
-            kwargs["do_sample"] = True
-
-        return self.lang_model.generate(
-            inputs_embeds=embeddings,
-            attention_mask=attention_mask,
-            **kwargs
-        )
-
-
-
-#goal is to make a tokenizer and a model and save it to the models directory
-
-#simple model backbone using llama (customize later)
 class CreateModel:
     def __init__(self, model_name, model_category):
         self.model_name = model_name
@@ -203,7 +227,10 @@ class CreateModel:
         self.model_path = Path(__file__).parent.parent.absolute() / "custom_models" / self.model_category / self.save_name
         self.model_path.mkdir(parents=True, exist_ok=True)
         
-        self.lang_model = AutoModelForCausalLM.from_pretrained(self.model_name)
+        # Load the original model and its config
+        self.model = AutoModelForCausalLM.from_pretrained(self.model_name)
+        self.original_config = AutoConfig.from_pretrained(self.model_name)
+        
         # First load the tokenizer to get the correct vocab size
         self.tokenizer = AutoTokenizer.from_pretrained(
             self.model_name,
@@ -211,39 +238,33 @@ class CreateModel:
         )
         
         self.tokenizer.chat_template = self.chat_template
-        
-        # Get the original config to maintain compatibility
-        self.original_config = AutoConfig.from_pretrained(self.model_name)
-        
-        # Create modified config based on original
-        self.BaseLlamaConfig = LlamaConfig(
-            vocab_size=len(self.tokenizer),  # Use actual vocab size
-            hidden_size=2048,
-            num_hidden_layers=16,
-            num_attention_heads=16,
-            intermediate_size=5504,
-            max_position_embeddings=self.original_config.max_position_embeddings,  # Keep original context length
-            torch_dtype=torch.float16,
-            use_cache=False,
-            pad_token_id=self.tokenizer.pad_token_id if self.tokenizer.pad_token_id is not None else 0,
-            bos_token_id=self.tokenizer.bos_token_id,
-            eos_token_id=self.tokenizer.eos_token_id,
-        )
-        
-        # Initialize model with memory optimizations
-        self.model = LlamaModel(
-            self.BaseLlamaConfig
-            )
-        
 
+    def add_conversation(self):
+        # Create conversation config based on original model's config
+        # self.config = ConversationConfig(
+        #     vocab_size=self.original_config.vocab_size,
+        #     hidden_size=self.original_config.hidden_size,
+        #     num_hidden_layers=self.original_config.num_hidden_layers,
+        #     num_attention_heads=self.original_config.num_attention_heads,
+        #     intermediate_size=self.original_config.intermediate_size,
+        #     max_position_embeddings=self.original_config.max_position_embeddings,
+        #     torch_dtype=self.original_config.torch_dtype,
+        #     use_cache=False,
+        #     pad_token_id=self.tokenizer.pad_token_id if self.tokenizer.pad_token_id is not None else 0,
+        #     bos_token_id=self.tokenizer.bos_token_id,
+        #     eos_token_id=self.tokenizer.eos_token_id
+        # )
+        self.convomodel = ConversationModel(self.original_config, self.model)
+        
+        
     def add_vision(self):
         # Initialize models and processor
         self.vision_model = CLIPVisionModel.from_pretrained("openai/clip-vit-large-patch14")
         self.clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-large-patch14")
         self.vision_processor = VisionProcessor(self.clip_processor, self.tokenizer)
         
-        self.config = VisionConfig()
-        self.model = VisionModel(self.config, self.vision_model, self.model)
+        self.vision_config = VisionConfig()
+        self.vismodel = VisionModel(self.vision_config, self.vision_model, self.model)
         
     def save_regular_model(self):
         """Save the model and all its components with optimizations."""
@@ -251,16 +272,20 @@ class CreateModel:
         lang_model_path = os.path.join(self.model_path, "lang_model")
         os.makedirs(lang_model_path, exist_ok=True)
         
-        # Save language model
-        self.lang_model.save_pretrained(lang_model_path)
+        # Save base model first
+        self.convomodel.save_pretrained(lang_model_path,safe_serialization=True)
+        
+        # Save conversation model
+        self.convomodel.save_pretrained(
+            self.model_path,
+            safe_serialization=True
+        )
         
         # Save tokenizer
         self.tokenizer.save_pretrained(self.model_path)
         
-        AutoConfig.register("conversation-model", AutoConfig)
-        AutoModel.register(AutoConfig, AutoModelForCausalLM)
-        
-        
+        # Save config
+        self.original_config.save_pretrained(self.model_path)
         
     def save_vision_model(self):
         """Save the model and all its components with optimizations."""
@@ -270,23 +295,22 @@ class CreateModel:
         os.makedirs(vision_model_path, exist_ok=True)
         os.makedirs(lang_model_path, exist_ok=True)
         
-        # Save vision model and processor
-        self.vision_model.save_pretrained(vision_model_path)
-        self.clip_processor.save_pretrained(vision_model_path)
+        # Save base model first
+        self.model.save_pretrained(lang_model_path,safe_serialization=True)
         
-        # Save language model
-        self.lang_model.save_pretrained(lang_model_path)
+        # Save vision model and processor
+        self.vision_model.save_pretrained(vision_model_path,safe_serialization=True)
+        self.clip_processor.save_pretrained(vision_model_path,safe_serialization=True)
         
         # Save vision processor
-        self.vision_processor.save_pretrained(os.path.join(self.model_path, "vision_processor"))
+        self.vision_processor.save_pretrained(os.path.join(self.model_path, "vision_processor"),safe_serialization=True)
         
         # Save main model configuration
-        self.config.save_pretrained(self.model_path)
+        self.vision_config.save_pretrained(self.model_path)
         
-        # Save main model
-        self.model.save_pretrained(
+        # Save vision model
+        self.vismodel.save_pretrained(
             self.model_path,
-            max_shard_size="500MB",
             safe_serialization=True
         )
         
@@ -323,17 +347,15 @@ class CreateModel:
         PARAMETER stop "Assistant:"
 
         # Set up model architecture
-        PARAMETER model_type "multimodal"
-        PARAMETER clip_dim {self.config.clip_dim}
-        PARAMETER lang_embed_dim {self.config.lang_embed_dim}
+        PARAMETER model_type "vision-model"
+        PARAMETER clip_dim {self.vision_config.clip_dim}
+        PARAMETER lang_embed_dim {self.vision_config.lang_embed_dim}
         """
         
         # Save Modelfile
         with open(os.path.join(self.model_path, "Modelfile"), "w") as f:
             f.write(modelfile_content)
             
-        AutoConfig.register("vision-model",VisionConfig)
-        AutoModel.register(VisionConfig, VisionModel)
  
 
 
@@ -342,34 +364,48 @@ def load_saved_model(model_path):
     """Load a saved model and its processor."""
     demo_path = model_path
     
-    # Load the config
-    config = AutoConfig.from_pretrained(demo_path)
-    print(f"Loaded config with model type: {config.model_type}")
-    print(f"Model architecture: {config.architectures}")
-    
-    # Load the model using AutoModel with the config
-    if config.model_type == "multimodal" and config.architectures[0] == "VisionModel":
-        vision_model_path = os.path.join(demo_path, "vision_model")
-        lang_model_path = os.path.join(demo_path, "lang_model")
+    try:
+        # Load the config
+        config = AutoConfig.from_pretrained(demo_path)
+        print(f"Loaded config with model type: {config.model_type}")
+        print(f"Model architecture: {config.architectures}")
         
-        vision_model = CLIPVisionModel.from_pretrained(vision_model_path)
-        lang_model = AutoModelForCausalLM.from_pretrained(lang_model_path)
-        
-        model = VisionModel(config, vision_model, lang_model)
-        
-        # Load the vision processor components
-        image_processor = CLIPProcessor.from_pretrained(vision_model_path)
-        tokenizer = AutoTokenizer.from_pretrained(demo_path)
-        processor = VisionProcessor(image_processor=image_processor, tokenizer=tokenizer)
-    else:
-        model = AutoModel.from_pretrained(
-            demo_path,
-            config=config,
-            trust_remote_code=True
+        # Check if this is a vision model
+        is_vision_model = (
+            hasattr(config, 'model_type') and config.model_type == "vision-model" or
+            hasattr(config, 'architectures') and config.architectures and "VisionModel" in config.architectures
         )
-        processor = AutoProcessor.from_pretrained(demo_path)
-    
-    return model, processor
+        
+        if is_vision_model:
+            vision_model_path = os.path.join(demo_path, "vision_model")
+            lang_model_path = os.path.join(demo_path, "lang_model")
+            
+            # Load components
+            vision_model = CLIPVisionModel.from_pretrained(vision_model_path)
+            lang_model = AutoModelForCausalLM.from_pretrained(lang_model_path)
+            
+            # Create model
+            model = VisionModel(config, vision_model, lang_model)
+            
+            # Load processor
+            image_processor = CLIPProcessor.from_pretrained(vision_model_path)
+            tokenizer = AutoTokenizer.from_pretrained(demo_path)
+            processor = VisionProcessor(image_processor=image_processor, tokenizer=tokenizer)
+            return model, processor
+        else:
+            model = AutoModel.from_pretrained(
+                demo_path,
+                config=config,
+                trust_remote_code=True
+            )
+            processor = AutoProcessor.from_pretrained(demo_path)
+            return model, processor
+        
+    except Exception as e:
+        print(f"Error loading model: {str(e)}")
+        raise
+     
+# #create template from model
 
 # Example usage:
 # model, processor = load_saved_model()
