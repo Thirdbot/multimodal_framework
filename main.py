@@ -50,7 +50,7 @@ class Main:
     def __init__(self):
         """Initialize the main application class."""
         self.HomePath = Path(__file__).parent.absolute()
-        self.allow_mod_model = True
+        self.allow_mod_model = False
         self._setup_directories()
         self._initialize_components()
         self._setup_model_params()
