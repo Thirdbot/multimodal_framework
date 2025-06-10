@@ -108,21 +108,16 @@ class ChatTemplate:
                 if not formatted_texts: 
                     return None
                 
-                # Tokenize the formatted texts
-                print("tokeninzing texts")
+                # Tokenize the formatted texts with proper batching
+                print("Tokenizing texts")
                 text_tokenized = self.tokenizer(
-                    self.tokenizer.apply_chat_template(formatted_texts, tokenize=False, add_generation_prompt=True),
+                    formatted_texts,
+                    padding=True,
+                    truncation=True,
+                    max_length=1000,
                     return_tensors="pt"
                 )
                 
-                
-                # Convert to Dataset format with required fields
-                # tokenized_dataset ={
-                #     'input_ids': text_tokenized['input_ids'],
-                #     'attention_mask': text_tokenized['attention_mask']
-                # }
-                # self.tokenizer.save_pretrained(f"{Home_dir}/tokenizer/text_tokenizer")
-                # return Dataset.from_dict(tokenized_dataset)
                 return text_tokenized
             
             # Check for multimodal content if needed

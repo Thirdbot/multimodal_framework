@@ -4,88 +4,34 @@ import os
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 os.environ['OMP_NUM_THREADS'] = '1'  # Limit OpenMP threads
 
-from transformers import AutoTokenizer, AutoModelForCausalLM, AutoProcessor
+from transformers import AutoTokenizer, AutoModelForCausalLM
 import torch
-from PIL import Image
-import requests
-from io import BytesIO
-from transformers import pipeline
+from pathlib import Path
 
-# Define a multimodal chat template
-chat_template = """{% for message in messages %}
-{% if message['role'] == 'system' %}
-{{ message['content'] }}
-{% elif message['role'] == 'user' %}
-Human: {% if message.get('images') %}
-[Images: {{ message['images']|length }}]
-{% endif %}
-{{ message['content'] }}
-{% elif message['role'] == 'assistant' %}
-Assistant: {{ message['content'] }}
-{% endif %}
-{% endfor %}
-Assistant:"""
-
-def load_image(image_path_or_url):
-    """Load image from path or URL."""
-    if image_path_or_url.startswith(('http://', 'https://')):
-        response = requests.get(image_path_or_url)
-        image = Image.open(BytesIO(response.content))
-    else:
-        image = Image.open(image_path_or_url)
-    return image
-
-def get_image_description(image):
-    """Get a text description of the image using a vision-language model."""
-    # Load a vision-language model for image captioning
-    image_to_text = pipeline("image-to-text", model="Salesforce/blip-image-captioning-base")
+def run_model():
+    # Get the workspace directory
+    workspace_dir = Path(__file__).parent.parent.absolute()
+    model_path = workspace_dir / "custom_models" / "conversation-model" / "kyutai-helium-1-2b"
+    # model_path = "kyutai/helium-1-2b"
     
-    # Generate description
-    description = image_to_text(image)[0]['generated_text']
-    return description
-
-def run_multimodal_demo():
-    # Load the text model
-    model_name = "kyutai/helium-1-2b"
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    # Load model and tokenizer from custom path without quantization
+    tokenizer = AutoTokenizer.from_pretrained(str(model_path))
     model = AutoModelForCausalLM.from_pretrained(
-        model_name,
-        torch_dtype=torch.float16,
-        device_map="auto"
+        str(model_path),
+        device_map="auto",
+        torch_dtype=torch.float16,  # Use float16 for memory efficiency
+        low_cpu_mem_usage=True
     )
     
-    # Example images
-    image_urls = [
-        "https://cdn.britannica.com/34/180334-138-4235A017/subordinate-meerkat-pack.jpg?w=800&h=450&c=crop",
-        "https://static.vecteezy.com/system/resources/thumbnails/002/098/203/small_2x/silver-tabby-cat-sitting-on-green-background-free-photo.jpg"
-    ]
-    
-    # Load and describe images
-    print("Loading and analyzing images...")
-    images = [load_image(url) for url in image_urls]
-    image_descriptions = [get_image_description(img) for img in images]
-    
-    # Create a conversation that includes image descriptions
+    # Create a conversation
     conversation = [
-        {"role": "system", "content": "You are a helpful AI assistant that can understand images through their descriptions."},
-        {
-            "role": "user", 
-            "content": f"I have some images to show you. Here are their descriptions:\n" + 
-                      "\n".join([f"Image {i+1}: {desc}" for i, desc in enumerate(image_descriptions)]) +
-                      "\nWhat can you tell me about these images?"
-        },
-        {
-            "role": "assistant", 
-            "content": "I can see these are images of meerkats in their natural habitat."
-        },
-        {
-            "role": "user", 
-            "content": f"Can you describe the first image in more detail?\nImage 1: {image_descriptions[0]}"
-        }
+        {"role": "system", "content": "You are a helpful AI assistant."},
+        {"role": "user", "content": "Hello! How are you today?"},
+        {"role": "assistant", "content": "I'm doing well, thank you for asking! How can I help you today?"},
+        {"role": "user", "content": "Can you tell me about yourself?"}
     ]
     
-    # Process the conversation
-    tokenizer.chat_template = chat_template
+    # Process the conversation using tokenizer's chat template
     inputs = tokenizer(
         tokenizer.apply_chat_template(conversation, tokenize=False, add_generation_prompt=True),
         return_tensors="pt"
@@ -99,7 +45,8 @@ def run_multimodal_demo():
             max_new_tokens=100,
             do_sample=True,
             temperature=0.7,
-            top_p=0.9
+            top_p=0.9,
+            pad_token_id=tokenizer.eos_token_id
         )
     
     # Decode and print response
@@ -108,8 +55,8 @@ def run_multimodal_demo():
     print(response)
 
 if __name__ == "__main__":
-    print("Starting multimodal demo...")
-    run_multimodal_demo()
+    print("Starting conversation demo...")
+    run_model()
 
 
 

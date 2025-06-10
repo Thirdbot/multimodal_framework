@@ -776,12 +776,13 @@ class Manager:
                             print(f"{Fore.GREEN}Loading conversation model from path...{Style.RESET_ALL}")
                             model, tokenizer = load_saved_model(model_path)
                     
+                    # tokenizer = processor.tokenizer
                     saved_dataset = self.finetune_model.map_tokenizer(dataset_name, 
                                                                               tokenizer, 
                                                                               dataset,
                                                                               return_embedded_dataset=False,
                                                                               return_processed=False)
-                                            
+
                     if model is not None and saved_dataset is not None:
                         self.finetune_model.runtuning(model, tokenizer, saved_dataset, modelname)
             return model, dataset
