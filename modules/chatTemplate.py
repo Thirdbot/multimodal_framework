@@ -88,7 +88,7 @@ class ChatTemplate:
         self.sentence_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2").to(self.device)
         self.sentence_model.eval()  # Ensure model is in eval mode from the start
     
-    def seperated_data(self,dataset_name,dataset,keys,mul_field=None,return_embedded_dataset=False,return_processed=False):
+    def seperated_data(self,dataset_name,dataset,keys,create_model_path=None,mul_field=None,return_embedded_dataset=False,return_processed=False):
         #cut dataset to 1000 temporary
         dataset = dataset[:10]  # Changed from [:1] to [:1000] to ensure enough samples for splitting
         
@@ -656,13 +656,13 @@ class ChatTemplate:
             if any(re.search(self.CONVERSATION_PATTERN, key, re.IGNORECASE) for key in dataset_keys):
                 is_conversation = True
             is_check = True
-            return self.process_dataset(dataset_name=dataset_name,dataset=dataset,mul_field=mul_field, is_conversation=is_conversation, is_check=is_check,return_embedded_dataset=return_embedded_dataset,return_processed=return_processed)
+            return self.process_dataset(dataset_name=dataset_name,dataset=dataset,created_model_path=created_model_path,mul_field=mul_field, is_conversation=is_conversation, is_check=is_check,return_embedded_dataset=return_embedded_dataset,return_processed=return_processed)
         
         # Second level check - conversation confirm
         elif is_check and is_conversation:
             # print("Found conversations type dataset with 'conversations' column")
             #control what being returned as embed or not
-            return self.seperated_data(dataset_name=dataset_name,created_model_path=created_model_path,dataset=dataset,keys='conversations',mul_field=mul_field,return_embedded_dataset=return_embedded_dataset,return_processed=return_processed)
+            return self.seperated_data(dataset_name=dataset_name,dataset=dataset,keys='conversations',create_model_path=created_model_path,mul_field=mul_field,return_embedded_dataset=return_embedded_dataset,return_processed=return_processed)
         
         # Third level check - regular dataset processing
         elif is_check and not is_conversation:
@@ -677,8 +677,8 @@ class ChatTemplate:
                             return self.seperated_data(dataset_name=dataset_name,dataset=dataset,keys=matching_keys[0],mul_field=mul_field,return_embedded_dataset=return_embedded_dataset,return_processed=return_processed)
                         else:
                             print("Trying to format irregular dataset because of no list type")
-                            return self.process_dataset(dataset_name=dataset_name,dataset=dataset,mul_field=mul_field, is_conversation=is_conversation, is_check=is_check, is_regular=False,return_embedded_dataset=return_embedded_dataset,return_processed=return_processed)
-                return self.process_dataset(dataset_name=dataset_name,dataset=dataset,mul_field=mul_field, is_conversation=is_conversation, is_check=is_check, is_regular=False,return_embedded_dataset=return_embedded_dataset,return_processed=return_processed)
+                            return self.process_dataset(dataset_name=dataset_name,dataset=dataset,created_model_path=created_model_path,mul_field=mul_field, is_conversation=is_conversation, is_check=is_check, is_regular=False,return_embedded_dataset=return_embedded_dataset,return_processed=return_processed)
+                return self.process_dataset(dataset_name=dataset_name,dataset=dataset,created_model_path=created_model_path,mul_field=mul_field, is_conversation=is_conversation, is_check=is_check, is_regular=False,return_embedded_dataset=return_embedded_dataset,return_processed=return_processed)
             
             # Fourth level check - irregular dataset processing
             if not is_regular:

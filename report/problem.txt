@@ -456,3 +456,48 @@ Dataset: Dataset({
     features: ['input_ids', 'attention_mask', 'pixel_values'],
     num_rows: 200
 })
+Model: kyutai/helium-1-2b
+Dataset: Dataset({
+    features: ['conversations', 'image'],
+    num_rows: 10
+})
+Model: kyutai/helium-1-2b
+Dataset: Dataset({
+    features: ['conversations', 'image'],
+    num_rows: 10
+})
+Model: kyutai/helium-1-2b
+Dataset: Dataset({
+    features: ['conversations', 'image'],
+    num_rows: 10
+})
+Model: kyutai/helium-1-2b
+Dataset: Dataset({
+    features: ['conversations', 'image'],
+    num_rows: 10
+})
+Model: kyutai/helium-1-2b
+Dataset: Dataset({
+    features: ['conversations', 'image'],
+    num_rows: 10
+})
+Model: kyutai/helium-1-2b
+Dataset: Dataset({
+    features: ['conversations', 'image'],
+    num_rows: 10
+})
+Model: kyutai/helium-1-2b
+Dataset: Dataset({
+    features: ['conversations', 'image'],
+    num_rows: 10
+})
+Model: kyutai/helium-1-2b
+Dataset: Dataset({
+    features: ['conversations', 'image'],
+    num_rows: 20
+})
+Model: kyutai/helium-1-2b
+Dataset: Dataset({
+    features: ['conversations', 'image'],
+    num_rows: 20
+})

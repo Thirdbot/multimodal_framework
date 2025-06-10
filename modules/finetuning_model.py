@@ -29,7 +29,7 @@ from huggingface_hub import HfApi
 from modules.defect import Report
 from modules.chatTemplate import ChatTemplate
 from modules.chainpipe import Chainpipe
-from modules.createbasemodel import load_saved_model, CreateModel
+from modules.createbasemodel import load_saved_model, CreateModel, VisionConfig, VisionModel
 
 # Initialize colorama
 init(autoreset=True)
@@ -210,7 +210,6 @@ class FinetuneModel:
         
         try:
             split_name = model_id.split("\\")
-            # local_path = Path(model_id)
             if "custom_models" in split_name:
                 model_task = split_name[-2]
                 self.model_task = model_task
@@ -750,6 +749,7 @@ class Manager:
                         if not (model_path).exists():
                             print(f"{Fore.GREEN}Creating conversation model...from {modelname}{Style.RESET_ALL}")
                             create_model = CreateModel(modelname, "conversation-model")
+                            create_model.add_conversation()
                             create_model.save_regular_model()
                         elif Path(self.finetune_model.CHECKPOINT_DIR / model_name_safe).exists():
                             model, tokenizer = load_saved_model(self.finetune_model.CHECKPOINT_DIR / model_name_safe)
