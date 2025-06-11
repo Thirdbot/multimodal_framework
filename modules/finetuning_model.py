@@ -46,11 +46,11 @@ class FinetuneModel:
     def __init__(self):
         """Initialize the FinetuneModel with default parameters."""
         # Training parameters
-        self.per_device_train_batch_size = 32
-        self.per_device_eval_batch_size = 32
-        self.gradient_accumulation_steps = 4
-        self.learning_rate = 2e-4
-        self.num_train_epochs = 1
+        self.per_device_train_batch_size = 4
+        self.per_device_eval_batch_size = 4
+        self.gradient_accumulation_steps = 8
+        self.learning_rate = 1e-4
+        self.num_train_epochs = 10
         self.save_strategy = "best"
         
         # Initialize paths and directories
@@ -209,10 +209,12 @@ class FinetuneModel:
         print(f"Load from last checkpoint: {self.resume_from_checkpoint}")
         
         try:
-            split_name = model_id.split("\\")
-            if "custom_models" in split_name:
-                model_task = split_name[-2]
-                self.model_task = model_task
+            # Check if model_id is a local path or Hugging Face model ID
+            if Path(model_id).exists():
+                split_name = model_id.split("\\")
+                if "custom_models" in split_name:
+                    model_task = split_name[-2]
+                    self.model_task = model_task
             else:
                 self.model_task = self.get_model_task(model_id)
             print(f"{Fore.CYAN}Model task detected: {self.model_task}{Style.RESET_ALL}")
@@ -294,76 +296,46 @@ class FinetuneModel:
         Returns:
             Tuple of (model, tokenizer)
         """     
-                
-        tokenizer = AutoTokenizer.from_pretrained(
-            model_id,
-            trust_remote_code=True,
-            padding_side="right",
-            truncation_side="right"
-        )
-        
-        self.chat_template = ChatTemplate(tokenizer=tokenizer)
-        
-        quantization_config = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_compute_dtype=torch.bfloat16,
-            bnb_4bit_quant_type="nf4",
-            bnb_4bit_use_double_quant=True,
-            llm_int8_threshold=6.0,
-            llm_int8_has_fp16_weight=False,
-        )
-        
-        config = AutoConfig.from_pretrained(
-            model_id,
-            trust_remote_code=True,
-            use_cache=False,
-            torch_dtype=torch.bfloat16,
-            low_cpu_mem_usage=True
-        )
-        
-        model = AutoModelForCausalLM.from_pretrained(
-            model_id,
-            config=config,
-            quantization_config=quantization_config,
-            device_map=self.device_map,
-            trust_remote_code=True,
-            torch_dtype=torch.bfloat16,
-            low_cpu_mem_usage=True,
-            offload_folder=str(self.OFFLOAD_DIR),
-            offload_state_dict=True,
-            max_memory={0: "20GB"}
-        )
-        
-        
-        model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
-        
-        target_modules = self.get_model_architecture(model_id)
-        
-        lora_config = LoraConfig(
-            r=8,
-            lora_alpha=16,
-            target_modules=target_modules,
-            lora_dropout=0.05,
-            bias="none",
-            task_type="CAUSAL_LM"
-        )
-        
-        model = get_peft_model(model, lora_config)
-        
-        model.train()
-        # Only enable gradients for float parameters
-        for name, param in model.named_parameters():
-            if param.dtype in [torch.float32, torch.float16, torch.bfloat16]:
-                param.requires_grad = True
-        
-        model.gradient_checkpointing_enable()
-        model.print_trainable_parameters()
-        
-        if tokenizer.pad_token is None:
-            tokenizer.pad_token = tokenizer.eos_token
-            model.config.pad_token_id = tokenizer.pad_token_id
-        
-        return model, tokenizer
+        try:
+            print(f"{Fore.CYAN}Downloading and loading model from Hugging Face: {model_id}{Style.RESET_ALL}")
+            
+            tokenizer = AutoTokenizer.from_pretrained(
+                model_id,
+                trust_remote_code=True,
+                padding_side="right",
+                truncation_side="right"
+            )
+            
+            self.chat_template = ChatTemplate(tokenizer=tokenizer)
+            
+            config = AutoConfig.from_pretrained(
+                model_id,
+                trust_remote_code=True,
+                use_cache=True
+            )
+            
+            model = AutoModelForCausalLM.from_pretrained(
+                model_id,
+                config=config,
+                device_map=self.device_map,
+                trust_remote_code=True,
+                torch_dtype=torch.float16,  # Using float16 instead of bfloat16 for better compatibility
+                low_cpu_mem_usage=True
+            )
+            
+            model.train()
+            for param in model.parameters():
+                if param.dtype in [torch.float32, torch.float16]:
+                    param.requires_grad = True
+            
+            model.gradient_checkpointing_enable()
+            
+            print(f"{Fore.GREEN}Successfully loaded model and tokenizer{Style.RESET_ALL}")
+            return model, tokenizer
+            
+        except Exception as e:
+            print(f"{Fore.RED}Error loading model from scratch: {str(e)}{Style.RESET_ALL}")
+            return None, None
     
     def load_dataset(self, dataset_name: str, config: Optional[Dict] = None, split: Optional[str] = None) -> Optional[DatasetDict]:
         """Load a dataset.
@@ -462,17 +434,17 @@ class FinetuneModel:
             weight_decay=0.01,
             save_strategy="steps",
             eval_strategy="steps",
-            eval_steps=20,
-            save_steps=20,
-            save_total_limit=3,
+            eval_steps=100,
+            save_steps=100,
+            save_total_limit=2,
             logging_dir=str(self.CHECKPOINT_DIR),
             logging_strategy="steps",
-            logging_steps=20,
+            logging_steps=10,
             logging_first_step=True,
             gradient_accumulation_steps=self.gradient_accumulation_steps,
-            fp16=False,
-            bf16=True,
-            optim="adamw_torch",
+            fp16=False,  # Disable fp16 since we're using bf16
+            bf16=True,  # Use bfloat16 instead of fp16
+            optim="adamw_torch_fused" if cuda_available else "adamw_torch",  # Use fused optimizer when possible
             lr_scheduler_type="cosine",
             warmup_ratio=0.1,
             remove_unused_columns=False,
@@ -482,7 +454,7 @@ class FinetuneModel:
             ddp_find_unused_parameters=False,
             ddp_bucket_cap_mb=200,
             dataloader_pin_memory=cuda_available,
-            dataloader_num_workers=2,
+            dataloader_num_workers=0,
             max_grad_norm=1.0,
             group_by_length=True,
             length_column_name="length",
@@ -526,45 +498,41 @@ class FinetuneModel:
             print(f"{Fore.YELLOW}Warning: Error computing metrics: {str(e)}{Style.RESET_ALL}")
             return {"accuracy": 0.0}
     
-    def Trainer(self, model: AutoModelForCausalLM, dataset, 
-               tokenizer: AutoTokenizer, modelname: str) -> Trainer:
-        """Create a trainer instance.
-        
-        Args:
-            model: The model to train
-            dataset: The dataset to use
-            tokenizer: The tokenizer to use
-            modelname: The model identifier
-            
-        Returns:
-            Trainer instance
-        """
-        data_collator = DataCollatorForLanguageModeling(
-            tokenizer=tokenizer,
-            mlm=False
-        )
-        
+    def Trainer(self, model: AutoModelForCausalLM, dataset, tokenizer: AutoTokenizer, modelname: str) -> Trainer:
         try:
-            if isinstance(dataset, DatasetDict):
-                train_dataset = dataset.get('train', dataset)
-                eval_dataset = dataset.get('test', dataset)
+            """Create a trainer instance."""
+            # Configure data collator for language modeling
+            data_collator = DataCollatorForLanguageModeling(
+                tokenizer=tokenizer,
+                mlm=False,  # We want causal language modeling, not masked
+                pad_to_multiple_of=8  # For better GPU utilization
+            )
+            
+            print(f"{Fore.CYAN}Setting up training datasets{Style.RESET_ALL}")
+            
+            if isinstance(dataset, DatasetDict) and 'train' in dataset and 'test' in dataset:
+                print(f"{Fore.GREEN}Using provided train/test splits{Style.RESET_ALL}")
+                train_dataset = dataset['train']
+                eval_dataset = dataset['test']
+                print(f"Train size: {len(train_dataset)}, Test size: {len(eval_dataset)}")
             else:
+                print(f"{Fore.YELLOW}Dataset not split, creating train/test split{Style.RESET_ALL}")
                 split_dataset = dataset.train_test_split(test_size=0.1, seed=42)
                 train_dataset = split_dataset['train']
                 eval_dataset = split_dataset['test']
-        except:
-            split_dataset = dataset.train_test_split(test_size=0.1, seed=42)
-            train_dataset = split_dataset['train']
-            eval_dataset = split_dataset['test']
+                print(f"Created split - Train size: {len(train_dataset)}, Test size: {len(eval_dataset)}")
 
-        return Trainer(
-            model=model,
-            args=self.train_args(modelname),
-            train_dataset=train_dataset,
-            eval_dataset=eval_dataset,
-            data_collator=data_collator,
-            compute_metrics=self.compute_metrics
-        )
+            return Trainer(
+                model=model,
+                args=self.train_args(modelname),
+                train_dataset=train_dataset,
+                eval_dataset=eval_dataset,
+                data_collator=data_collator,
+                compute_metrics=self.compute_metrics
+            )
+        except Exception as e:
+            print(f"{Fore.RED}Error creating trainer: {str(e)}{Style.RESET_ALL}")
+            return None
     
     def runtuning(self, model: AutoModelForCausalLM, tokenizer: AutoTokenizer, 
                  dataset: DatasetDict, modelname: str) -> None:
@@ -582,7 +550,7 @@ class FinetuneModel:
                 modelname = modelname[-1]
             trainer = self.Trainer(model=model, dataset=dataset, tokenizer=tokenizer, modelname=modelname)
             trainer.train()
-            
+            print("saving model")
             model_save_path = self.TASK_MODEL_DIR / modelname.replace('/', '_')
             model_save_path.mkdir(parents=True, exist_ok=True)
             
