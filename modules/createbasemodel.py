@@ -4,6 +4,7 @@ os.environ['KMP_DUPLICATE_LIB_OK']='True'
 #for create base model to be use for finetuning and customize architecture
 from transformers import LlamaModel, LlamaConfig, AutoTokenizer, AutoConfig,ProcessorMixin,PretrainedConfig,PreTrainedModel,CLIPVisionModel,CLIPProcessor,AutoModelForCausalLM,AutoModel
 from transformers import AutoProcessor
+from transformers.modeling_outputs import CausalLMOutputWithCrossAttentions
 import torch
 from pathlib import Path
 import json
@@ -35,12 +36,79 @@ class ConversationModel(PreTrainedModel):
     def __init__(self, config, base_model):
         super().__init__(config)
         self.model = base_model
+        self.config = config
+        # Enable gradient checkpointing for memory efficiency
+        self.supports_gradient_checkpointing = True
+        self._is_gradient_checkpointing = False
     
-    def forward(self, *args, **kwargs):
-        return self.model(*args, **kwargs)
+    @property
+    def is_gradient_checkpointing(self) -> bool:
+        """Whether gradient checkpointing is enabled."""
+        return self._is_gradient_checkpointing
+    
+    @is_gradient_checkpointing.setter
+    def is_gradient_checkpointing(self, value: bool):
+        """Set gradient checkpointing state."""
+        self._is_gradient_checkpointing = value
+    
+    def forward(self, input_ids=None, attention_mask=None, labels=None, **kwargs):
+        """Forward pass with proper loss calculation for language modeling."""
+        outputs = self.model(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            labels=labels,
+            **kwargs
+        )
+        
+        # If we have labels, ensure we return loss
+        if labels is not None and not hasattr(outputs, 'loss'):
+            # Get logits from the output
+            logits = outputs.last_hidden_state
+            
+            # Shift logits and labels for next token prediction
+            shift_logits = logits[..., :-1, :].contiguous()
+            shift_labels = labels[..., 1:].contiguous()
+            
+            # Calculate loss using CrossEntropyLoss
+            loss_fct = torch.nn.CrossEntropyLoss()
+            loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
+            
+            # Create a new output object with loss
+            outputs = CausalLMOutputWithCrossAttentions(
+                loss=loss,
+                logits=logits,
+                past_key_values=outputs.past_key_values if hasattr(outputs, 'past_key_values') else None,
+                hidden_states=outputs.hidden_states if hasattr(outputs, 'hidden_states') else None,
+                attentions=outputs.attentions if hasattr(outputs, 'attentions') else None,
+                cross_attentions=outputs.cross_attentions if hasattr(outputs, 'cross_attentions') else None,
+            )
+        
+        return outputs
     
     def generate(self, *args, **kwargs):
         return self.model.generate(*args, **kwargs)
+        
+    def gradient_checkpointing_enable(self, gradient_checkpointing_kwargs=None):
+        """Enable gradient checkpointing for the model."""
+        if hasattr(self.model, "gradient_checkpointing_enable"):
+            self.model.gradient_checkpointing_enable(gradient_checkpointing_kwargs=gradient_checkpointing_kwargs)
+        self.is_gradient_checkpointing = True
+        
+    def gradient_checkpointing_disable(self):
+        """Disable gradient checkpointing for the model."""
+        if hasattr(self.model, "gradient_checkpointing_disable"):
+            self.model.gradient_checkpointing_disable()
+        self.is_gradient_checkpointing = False
+        
+    def _set_gradient_checkpointing(self, module, value=False):
+        """Set gradient checkpointing for a specific module."""
+        if hasattr(module, "gradient_checkpointing"):
+            module.gradient_checkpointing = value
+            
+    def enable_input_require_grads(self):
+        """Enable input gradients - required for gradient checkpointing."""
+        if hasattr(self.model, "enable_input_require_grads"):
+            self.model.enable_input_require_grads()
 
 class VisionAdapter(torch.nn.Module):
     def __init__(self, lang_embed_dim, clip_dim):
@@ -201,9 +269,9 @@ AutoConfig.register("conversation-model", ConversationConfig)
 # Register the config at class level
 AutoConfig.register("vision-model", VisionConfig)
 # Register this model type when instantiated
-AutoModel.register(ConversationConfig, ConversationModel)
+AutoModelForCausalLM.register(ConversationConfig, ConversationModel)
 # Register the model at class level
-AutoModel.register(VisionConfig, VisionModel)
+AutoModelForCausalLM.register(VisionConfig, VisionModel)
     
 class CreateModel:
     def __init__(self, model_name, model_category):
@@ -256,22 +324,33 @@ class CreateModel:
         self.tokenizer.chat_template = self.chat_template
 
     def add_conversation(self):
-        # Create conversation config based on original model's config
-        # self.config = ConversationConfig(
-        #     vocab_size=self.original_config.vocab_size,
-        #     hidden_size=self.original_config.hidden_size,
-        #     num_hidden_layers=self.original_config.num_hidden_layers,
-        #     num_attention_heads=self.original_config.num_attention_heads,
-        #     intermediate_size=self.original_config.intermediate_size,
-        #     max_position_embeddings=self.original_config.max_position_embeddings,
-        #     torch_dtype=self.original_config.torch_dtype,
-        #     use_cache=False,
-        #     pad_token_id=self.tokenizer.pad_token_id if self.tokenizer.pad_token_id is not None else 0,
-        #     bos_token_id=self.tokenizer.bos_token_id,
-        #     eos_token_id=self.tokenizer.eos_token_id
-        # )
+        """Add conversation capability to the model."""
+        # Create conversation model using the base model
+        if not isinstance(self.model, AutoModelForCausalLM):
+            print(f"Converting model to AutoModelForCausalLM")
+            self.model = AutoModelForCausalLM.from_pretrained(
+                self.model_name,
+                device_map="auto",
+                torch_dtype=torch.bfloat16,
+                trust_remote_code=True
+            )
+            
+            # Enable gradient checkpointing on base model if available
+            if hasattr(self.model, "gradient_checkpointing_enable"):
+                self.model.gradient_checkpointing_enable()
+                print("Enabled gradient checkpointing on base model")
+        
+        # Create conversation model
         self.convomodel = ConversationModel(self.original_config, self.model)
         
+        # Ensure the model is in training mode
+        self.convomodel.train()
+        
+        # Enable gradient checkpointing on conversation model
+        self.convomodel.gradient_checkpointing_enable()
+        print("Enabled gradient checkpointing on conversation model")
+        
+        print(f"Successfully created conversation model")
         
     def add_vision(self):
         # Initialize models and processor with quantization
@@ -459,16 +538,23 @@ def load_saved_model(model_path):
             model = VisionModel(config, vision_model, lang_model)
             
             # Load processor
-            # image_processor = CLIPProcessor.from_pretrained(vision_model_path)
             tokenizer = AutoTokenizer.from_pretrained(demo_path)
-            # processor = VisionProcessor(image_processor=image_processor, tokenizer=tokenizer)
             return model, tokenizer
         else:
-            model = AutoModel.from_pretrained(
+            # For conversation models, use AutoModelForCausalLM
+            print("Loading conversation model...")
+            base_model = AutoModelForCausalLM.from_pretrained(
                 demo_path,
                 config=config,
-                trust_remote_code=True
+                trust_remote_code=True,
+                torch_dtype=torch.bfloat16,
+                device_map="auto"
             )
+            
+            # Create conversation model
+            model = ConversationModel(config, base_model)
+            model.train()  # Ensure model is in training mode
+            
             tokenizer = AutoTokenizer.from_pretrained(demo_path)
             return model, tokenizer
         
