@@ -118,10 +118,10 @@ class Main:
 
 def run_conversation():
     Home_dir = Path(__file__).parent.absolute()
-    model_path = Home_dir / "checkpoints" / "text-generation" / "model-1" / "checkpoint-1"
+    model_path = Home_dir / "models" / "text-generation" / "kyutai_helium-1-2b"
     """Run the conversation loop."""
     manager = ConversationManager(
-        model_name="kyutai/helium-1-2b",
+        model_name=model_path,
         max_length=100,
         temperature=0.9,
         top_p=0.95
