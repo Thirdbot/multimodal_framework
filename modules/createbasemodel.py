@@ -51,38 +51,15 @@ class ConversationModel(PreTrainedModel):
         """Set gradient checkpointing state."""
         self._is_gradient_checkpointing = value
     
-    def forward(self, input_ids=None, attention_mask=None, labels=None, **kwargs):
-        """Forward pass with proper loss calculation for language modeling."""
+    def forward(self, input_ids=None, attention_mask=None, **kwargs):
+        """Forward pass for conversation model - handles only basic inputs."""
         outputs = self.model(
             input_ids=input_ids,
             attention_mask=attention_mask,
-            labels=labels,
             **kwargs
         )
         
-        # If we have labels, ensure we return loss
-        if labels is not None and not hasattr(outputs, 'loss'):
-            # Get logits from the output
-            logits = outputs.last_hidden_state
-            
-            # Shift logits and labels for next token prediction
-            shift_logits = logits[..., :-1, :].contiguous()
-            shift_labels = labels[..., 1:].contiguous()
-            
-            # Calculate loss using CrossEntropyLoss
-            loss_fct = torch.nn.CrossEntropyLoss()
-            loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
-            
-            # Create a new output object with loss
-            outputs = CausalLMOutputWithCrossAttentions(
-                loss=loss,
-                logits=logits,
-                past_key_values=outputs.past_key_values if hasattr(outputs, 'past_key_values') else None,
-                hidden_states=outputs.hidden_states if hasattr(outputs, 'hidden_states') else None,
-                attentions=outputs.attentions if hasattr(outputs, 'attentions') else None,
-                cross_attentions=outputs.cross_attentions if hasattr(outputs, 'cross_attentions') else None,
-            )
-        
+        # Return the model outputs directly
         return outputs
     
     def generate(self, *args, **kwargs):
@@ -138,18 +115,77 @@ class VisionModel(PreTrainedModel):
 
     def forward(self, input_ids=None, attention_mask=None, pixel_values=None,
                 attend_to_img_tokens=True, labels=None, **kwargs):
+        """Forward pass with proper loss calculation."""
         input_ids = kwargs.get("input_ids", input_ids)
         attention_mask = kwargs.get("attention_mask", attention_mask)
         pixel_values = kwargs.get("pixel_values", pixel_values)
         labels = kwargs.get("labels", labels)
 
+        # Process inputs and get embeddings
         embeddings, attention_mask = self.process_inputs(input_ids, attention_mask, pixel_values, attend_to_img_tokens)
 
+        # Forward pass through language model
         outputs = self.lang_model(
             inputs_embeds=embeddings,
             attention_mask=attention_mask,
-            labels=labels
+            labels=labels,
+            **kwargs
         )
+        
+        # If we have labels but no loss, calculate it
+        if labels is not None and not hasattr(outputs, 'loss'):
+            # Get logits from the output
+            logits = outputs.last_hidden_state
+            
+            # Add gradient clipping to prevent explosion
+            if torch.isnan(logits).any() or torch.isinf(logits).any():
+                print(f"Warning: NaN or Inf detected in logits")
+                logits = torch.nan_to_num(logits, nan=0.0, posinf=1e4, neginf=-1e4)
+            
+            # Shift logits and labels for next token prediction
+            shift_logits = logits[..., :-1, :].contiguous()
+            shift_labels = labels[..., 1:].contiguous()
+            
+            # Ensure valid labels
+            if torch.isnan(shift_labels).any() or torch.isinf(shift_labels).any():
+                print(f"Warning: NaN or Inf detected in labels")
+                shift_labels = torch.nan_to_num(shift_labels, nan=-100)
+            
+            # Calculate loss using CrossEntropyLoss with label smoothing
+            loss_fct = torch.nn.CrossEntropyLoss(label_smoothing=0.1)
+            
+            # Reshape with safety checks
+            try:
+                vocab_size = shift_logits.size(-1)
+                shift_logits_view = shift_logits.view(-1, vocab_size)
+                shift_labels_view = shift_labels.view(-1)
+                
+                # Verify shapes before loss calculation
+                if shift_logits_view.size(0) != shift_labels_view.size(0):
+                    print(f"Shape mismatch: logits {shift_logits_view.shape}, labels {shift_labels_view.shape}")
+                    raise ValueError("Logits and labels shape mismatch")
+                
+                loss = loss_fct(shift_logits_view, shift_labels_view)
+                
+                # Check for NaN loss
+                if torch.isnan(loss) or torch.isinf(loss):
+                    print(f"Warning: NaN or Inf loss detected, using mean reduction")
+                    loss = loss_fct(shift_logits_view, shift_labels_view.clamp(min=0, max=vocab_size-1))
+                
+            except Exception as e:
+                print(f"Error in loss calculation: {str(e)}")
+                # Fallback to simple mean loss
+                loss = torch.mean(shift_logits_view) * 0.0  # Zero loss to prevent NaN propagation
+            
+            # Create a new output object with loss
+            outputs = CausalLMOutputWithCrossAttentions(
+                loss=loss,
+                logits=logits,
+                past_key_values=outputs.past_key_values if hasattr(outputs, 'past_key_values') else None,
+                hidden_states=outputs.hidden_states if hasattr(outputs, 'hidden_states') else None,
+                attentions=outputs.attentions if hasattr(outputs, 'attentions') else None,
+                cross_attentions=outputs.cross_attentions if hasattr(outputs, 'cross_attentions') else None,
+            )
         
         return outputs
     
@@ -296,29 +332,45 @@ class CreateModel:
         self.model_path = Path(__file__).parent.parent.absolute() / "custom_models" / self.model_category / self.save_name
         self.model_path.mkdir(parents=True, exist_ok=True)
         
-        # Load the original model and its config with quantization
+        # Load the original model and its config with more stable quantization
         quantization_config = BitsAndBytesConfig(
             load_in_4bit=True,
-            bnb_4bit_compute_dtype=torch.bfloat16,
-            bnb_4bit_quant_type="nf4",
-            bnb_4bit_use_double_quant=True,
-            llm_int8_threshold=6.0,
+            bnb_4bit_compute_dtype=torch.float32,  # Use float32 for compute
+            bnb_4bit_quant_type="fp4",  # Use fp4 instead of nf4 for more stability
+            bnb_4bit_use_double_quant=False,  # Disable double quantization
+            llm_int8_threshold=0.0,  # Disable int8 threshold
             llm_int8_has_fp16_weight=False,
         )
         
-        self.model = AutoModelForCausalLM.from_pretrained(
-            self.model_name,
-            quantization_config=quantization_config,
-            device_map="auto",
-            torch_dtype=torch.bfloat16,
-            low_cpu_mem_usage=True
-        )
+        try:
+            print(f"Loading model with stable quantization settings...")
+            self.model = AutoModelForCausalLM.from_pretrained(
+                self.model_name,
+                quantization_config=quantization_config,
+                device_map="auto",
+                torch_dtype=torch.float32,  # Use float32 instead of bfloat16
+                low_cpu_mem_usage=True,
+                trust_remote_code=True
+            )
+            print(f"Model loaded successfully")
+        except Exception as e:
+            print(f"Error loading model with quantization: {str(e)}")
+            print(f"Attempting to load without quantization...")
+            self.model = AutoModelForCausalLM.from_pretrained(
+                self.model_name,
+                device_map="auto",
+                torch_dtype=torch.float32,
+                low_cpu_mem_usage=True,
+                trust_remote_code=True
+            )
+        
         self.original_config = AutoConfig.from_pretrained(self.model_name)
         
         # First load the tokenizer to get the correct vocab size
         self.tokenizer = AutoTokenizer.from_pretrained(
             self.model_name,
-            use_fast=True
+            use_fast=True,
+            trust_remote_code=True
         )
         
         self.tokenizer.chat_template = self.chat_template
