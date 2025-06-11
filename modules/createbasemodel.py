@@ -551,8 +551,8 @@ class CreateModel:
             # Create necessary directories
             os.makedirs(self.model_path, exist_ok=True)
             
-            # Save the PEFT model with adapter config
-            self.model.save_pretrained(
+            # Save the model with safe serialization
+            self.convomodel.save_pretrained(
                 self.model_path,
                 safe_serialization=True
             )
@@ -562,23 +562,6 @@ class CreateModel:
             
             # Save config
             self.original_config.save_pretrained(self.model_path)
-            
-            # Save model info
-            model_info = {
-                "model_type": self.model.config.model_type,
-                "base_model_name": self.model_name,
-                "peft_type": "LORA",
-                "lora_config": {
-                    "r": 8,
-                    "alpha": 16,
-                    "dropout": 0.05,
-                    "bias": "none",
-                    "task_type": "CAUSAL_LM"
-                }
-            }
-            
-            with open(os.path.join(self.model_path, "model_info.json"), "w") as f:
-                json.dump(model_info, f, indent=2)
             
             print(f"Successfully saved model to {self.model_path}")
             
