@@ -7,7 +7,5 @@
     "lora_config": {
         "r": 8,
         "alpha": 16,
-        "dropout": 0.05
-    },
-    "last_checkpoint": null
-}
+        "dropout": 0.05,
+        "target_modules": 
