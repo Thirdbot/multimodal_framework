@@ -47,7 +47,7 @@ class FinetuneModel:
         """Initialize the FinetuneModel with default parameters."""
         # Training parameters
         self.per_device_train_batch_size = 4
-        self.per_device_eval_batch_size = 4
+        self.per_device_eval_batch_size = 1
         self.gradient_accumulation_steps = 8
         self.learning_rate = 1e-4
         self.num_train_epochs = 10
@@ -247,45 +247,54 @@ class FinetuneModel:
         print(f"{Fore.CYAN}Resuming from checkpoint: {self.last_checkpoint}{Style.RESET_ALL}")
         
         try:
+            # Configure quantization
+            bnb_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_compute_dtype=torch.float32,
+                bnb_4bit_quant_type="fp4",
+                bnb_4bit_use_double_quant=False
+            )
+            
+            # Load base model with quantization
             base_model = AutoModelForCausalLM.from_pretrained(
                 model_id,
                 device_map=self.device_map,
                 trust_remote_code=True,
-                torch_dtype=torch.bfloat16,
-                low_cpu_mem_usage=True,
-                offload_folder=str(self.OFFLOAD_DIR),
-                offload_state_dict=True,
-                max_memory={0: "40GB"},
-                use_cache=False
+                quantization_config=bnb_config,
+                torch_dtype=torch.float32
             )
             
+            # Prepare model for k-bit training
+            base_model = prepare_model_for_kbit_training(base_model)
+            
+            # Load tokenizer from checkpoint
             tokenizer = AutoTokenizer.from_pretrained(
                 str(self.last_checkpoint),
                 trust_remote_code=True,
                 padding_side="right",
                 truncation_side="right"
             )
-        except:
-            base_model, processor = load_saved_model(model_id)
-            tokenizer = processor.tokenizer
             
-        model = PeftModel.from_pretrained(
-            base_model,
-            str(self.last_checkpoint),
-            device_map=self.device_map,
-            torch_dtype=torch.bfloat16
-        )
-        
-        model.train()
-        for param in model.parameters():
-            param.requires_grad = True
-        
-        model.gradient_checkpointing_enable()
-        
-        
-        self.chat_template = ChatTemplate(tokenizer=tokenizer)
-        
-        return model, tokenizer
+            # Load the PEFT model configuration and weights
+            model = AutoPeftModelForCausalLM.from_pretrained(
+                str(self.last_checkpoint),
+                device_map=self.device_map,
+                torch_dtype=torch.float32,
+                is_trainable=True
+            )
+            
+            model.train()
+            model.gradient_checkpointing_enable()
+            
+            self.chat_template = ChatTemplate(tokenizer=tokenizer)
+            
+            print(f"{Fore.GREEN}Successfully loaded checkpoint with LoRA configuration{Style.RESET_ALL}")
+            return model, tokenizer
+            
+        except Exception as e:
+            print(f"{Fore.RED}Error loading from checkpoint: {str(e)}{Style.RESET_ALL}")
+            print(f"{Fore.YELLOW}Attempting to load from scratch...{Style.RESET_ALL}")
+            return self._load_from_scratch(model_id)
     
     def _load_from_scratch(self, model_id: str) -> Tuple[Optional[AutoModelForCausalLM], Optional[AutoTokenizer]]:
         """Load model and tokenizer from scratch.
@@ -314,23 +323,47 @@ class FinetuneModel:
                 use_cache=True
             )
             
+            # Get target modules for LoRA based on model architecture
+            target_modules = self.get_model_architecture(model_id)
+            
+            # Configure quantization
+            bnb_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_compute_dtype=torch.float32,
+                bnb_4bit_quant_type="fp4",
+                bnb_4bit_use_double_quant=False
+            )
+            
+            # Load base model with quantization
             model = AutoModelForCausalLM.from_pretrained(
                 model_id,
                 config=config,
                 device_map=self.device_map,
                 trust_remote_code=True,
-                torch_dtype=torch.float16,  # Using float16 instead of bfloat16 for better compatibility
-                low_cpu_mem_usage=True
+                quantization_config=bnb_config,
+                torch_dtype=torch.float32
             )
             
-            model.train()
-            for param in model.parameters():
-                if param.dtype in [torch.float32, torch.float16]:
-                    param.requires_grad = True
+            # Prepare model for k-bit training
+            model = prepare_model_for_kbit_training(model)
             
+            # Configure LoRA
+            lora_config = LoraConfig(
+                r=8,  # Rank
+                lora_alpha=16,  # Alpha scaling
+                target_modules=target_modules,
+                lora_dropout=0.05,
+                bias="none",
+                task_type="CAUSAL_LM"
+            )
+            
+            # Get PEFT model
+            model = get_peft_model(model, lora_config)
+            
+            model.train()
             model.gradient_checkpointing_enable()
             
-            print(f"{Fore.GREEN}Successfully loaded model and tokenizer{Style.RESET_ALL}")
+            print(f"{Fore.GREEN}Successfully loaded model and tokenizer with LoRA configuration{Style.RESET_ALL}")
             return model, tokenizer
             
         except Exception as e:
@@ -429,12 +462,9 @@ class FinetuneModel:
             output_dir=str(output_dir),
             learning_rate=self.learning_rate,
             per_device_train_batch_size=self.per_device_train_batch_size,
-            per_device_eval_batch_size=self.per_device_eval_batch_size,
             num_train_epochs=self.num_train_epochs,
             weight_decay=0.01,
             save_strategy="steps",
-            eval_strategy="steps",
-            eval_steps=100,
             save_steps=100,
             save_total_limit=2,
             logging_dir=str(self.CHECKPOINT_DIR),
@@ -444,7 +474,7 @@ class FinetuneModel:
             gradient_accumulation_steps=self.gradient_accumulation_steps,
             fp16=False,  # Disable fp16 since we're using bf16
             bf16=True,  # Use bfloat16 instead of fp16
-            optim="adamw_torch_fused" if cuda_available else "adamw_torch",  # Use fused optimizer when possible
+            optim="adamw_torch_fused" if cuda_available else "adamw_torch",
             lr_scheduler_type="cosine",
             warmup_ratio=0.1,
             remove_unused_columns=False,
@@ -460,14 +490,13 @@ class FinetuneModel:
             length_column_name="length",
             report_to="none",
             resume_from_checkpoint=self.last_checkpoint if self.resume_from_checkpoint else None,
-            load_best_model_at_end=True,
-            metric_for_best_model="eval_loss",
-            greater_is_better=False,
             save_safetensors=True,
-            save_only_model=True,
+            save_only_model=False,  # Changed to False to save optimizer state
             overwrite_output_dir=True,
             torch_compile=False,
-            use_mps_device=False
+            use_mps_device=False,
+            eval_strategy="no",  # Disable evaluation completely
+            do_eval=False  # Ensure evaluation is disabled
         )
     
     def compute_metrics(self, eval_pred: Tuple[np.ndarray, np.ndarray]) -> Dict[str, float]:
@@ -501,6 +530,17 @@ class FinetuneModel:
     def Trainer(self, model: AutoModelForCausalLM, dataset, tokenizer: AutoTokenizer, modelname: str) -> Trainer:
         try:
             """Create a trainer instance."""
+            # Print model parameters
+            trainable_params = 0
+            all_param = 0
+            for _, param in model.named_parameters():
+                all_param += param.numel()
+                if param.requires_grad:
+                    trainable_params += param.numel()
+            print(f"{Fore.CYAN}Trainable params: {trainable_params:,} ({100 * trainable_params / all_param:.2f}%){Style.RESET_ALL}")
+            print(f"{Fore.CYAN}All params: {all_param:,}{Style.RESET_ALL}")
+            print(f"{Fore.CYAN}Non-trainable params: {all_param - trainable_params:,}{Style.RESET_ALL}")
+            
             # Configure data collator for language modeling
             data_collator = DataCollatorForLanguageModeling(
                 tokenizer=tokenizer,
@@ -508,27 +548,22 @@ class FinetuneModel:
                 pad_to_multiple_of=8  # For better GPU utilization
             )
             
-            print(f"{Fore.CYAN}Setting up training datasets{Style.RESET_ALL}")
+            print(f"{Fore.CYAN}Setting up training dataset{Style.RESET_ALL}")
             
-            if isinstance(dataset, DatasetDict) and 'train' in dataset and 'test' in dataset:
-                print(f"{Fore.GREEN}Using provided train/test splits{Style.RESET_ALL}")
+            if isinstance(dataset, DatasetDict) and 'train' in dataset:
+                print(f"{Fore.GREEN}Using provided train split{Style.RESET_ALL}")
                 train_dataset = dataset['train']
-                eval_dataset = dataset['test']
-                print(f"Train size: {len(train_dataset)}, Test size: {len(eval_dataset)}")
+                print(f"Train size: {len(train_dataset)}")
             else:
-                print(f"{Fore.YELLOW}Dataset not split, creating train/test split{Style.RESET_ALL}")
-                split_dataset = dataset.train_test_split(test_size=0.1, seed=42)
-                train_dataset = split_dataset['train']
-                eval_dataset = split_dataset['test']
-                print(f"Created split - Train size: {len(train_dataset)}, Test size: {len(eval_dataset)}")
+                print(f"{Fore.YELLOW}Using entire dataset for training{Style.RESET_ALL}")
+                train_dataset = dataset
+                print(f"Train size: {len(train_dataset)}")
 
             return Trainer(
                 model=model,
                 args=self.train_args(modelname),
                 train_dataset=train_dataset,
-                eval_dataset=eval_dataset,
                 data_collator=data_collator,
-                compute_metrics=self.compute_metrics
             )
         except Exception as e:
             print(f"{Fore.RED}Error creating trainer: {str(e)}{Style.RESET_ALL}")
@@ -549,14 +584,22 @@ class FinetuneModel:
                 modelname = modelname.split("/")
                 modelname = modelname[-1]
             trainer = self.Trainer(model=model, dataset=dataset, tokenizer=tokenizer, modelname=modelname)
+            
+            # Save the initial LoRA config
+            model.save_pretrained(trainer.args.output_dir)
+            
+            # Start training
             trainer.train()
-            print("saving model")
+            
+            print("Saving model...")
             model_save_path = self.TASK_MODEL_DIR / modelname.replace('/', '_')
             model_save_path.mkdir(parents=True, exist_ok=True)
             
-            model.save_pretrained(str(model_save_path))
+            # Save the final model and adapter
+            model.save_pretrained(str(model_save_path), safe_serialization=True)
             tokenizer.save_pretrained(str(model_save_path))
             
+            # Save model info
             model_info = {
                 "model_id": modelname,
                 "model_task": self.model_task,
@@ -566,7 +609,8 @@ class FinetuneModel:
                 "lora_config": {
                     "r": 8,
                     "alpha": 16,
-                    "dropout": 0.05
+                    "dropout": 0.05,
+                    "target_modules": model.peft_config["default"].target_modules
                 },
                 "last_checkpoint": str(self.last_checkpoint) if self.last_checkpoint else None
             }

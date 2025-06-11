@@ -108,36 +108,19 @@ class ChatTemplate:
                 if not formatted_texts: 
                     return None
                 
-                # Split into train and test sets
-                train_size = int(0.9 * len(formatted_texts))
-                train_texts = formatted_texts[:train_size]
-                test_texts = formatted_texts[train_size:]
-                
-                # Tokenize the formatted texts with proper batching
-                print("Tokenizing training texts")
+                # Tokenize all texts for training
+                print("Tokenizing texts for training")
                 train_encodings = self.tokenizer(
-                    train_texts,
+                    formatted_texts,
                     padding=True,
                     truncation=True,
                     max_length=1000,
                     return_tensors="pt"
                 )
                 
-                print("Tokenizing test texts")
-                test_encodings = self.tokenizer(
-                    test_texts,
-                    padding=True,
-                    truncation=True,
-                    max_length=1000,
-                    return_tensors="pt"
-                )
-                
-                # Create labels for language modeling (shift input_ids right)
+                # Create labels for language modeling
                 train_labels = train_encodings['input_ids'].clone()
                 train_labels[train_labels == self.tokenizer.pad_token_id] = -100  # Ignore padding tokens
-                
-                test_labels = test_encodings['input_ids'].clone()
-                test_labels[test_labels == self.tokenizer.pad_token_id] = -100  # Ignore padding tokens
                 
                 # Create train dataset
                 train_dataset = Dataset.from_dict({
@@ -146,17 +129,9 @@ class ChatTemplate:
                     'labels': train_labels
                 })
                 
-                # Create test dataset
-                test_dataset = Dataset.from_dict({
-                    'input_ids': test_encodings['input_ids'],
-                    'attention_mask': test_encodings['attention_mask'],
-                    'labels': test_labels
-                })
-                
-                # Return DatasetDict with both splits
+                # Return DatasetDict with only train split
                 return DatasetDict({
-                    'train': train_dataset,
-                    'test': test_dataset
+                    'train': train_dataset
                 })
             
             # Check for multimodal content if needed
@@ -185,7 +160,6 @@ class ChatTemplate:
                     'input_ids': text_tokenized['input_ids'],
                     'attention_mask': text_tokenized['attention_mask'],
                 }
-                # self.tokenizer.save_pretrained(f"{Home_dir}/multimodal_tokenizer/text_tokenizer")
                 
                 for mul in mul_field:
                     set_data = dataset[mul]
@@ -202,10 +176,12 @@ class ChatTemplate:
                             # Stack all processed images into a single batch
                             image_batch = torch.cat(processed_images, dim=0)
                             multimodal_data['pixel_values'] = image_batch
-                            # self.image_processor.save_pretrained(f"{Home_dir}/multimodal_tokenizer/image_tokenizer")
-                        
                 
-                return Dataset.from_dict(multimodal_data)
+                # Create and return dataset with only training data
+                train_dataset = Dataset.from_dict(multimodal_data)
+                return DatasetDict({
+                    'train': train_dataset
+                })
         
         elif return_embedded_dataset or return_processed:
             print(f"Processing embedded dataset")

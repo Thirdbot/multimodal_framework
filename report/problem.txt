@@ -639,3 +639,32 @@ Dataset: DatasetDict({
         num_rows: 438
     })
 })
+Model: kyutai/helium-1-2b
+Dataset: DatasetDict({
+    train: Dataset({
+        features: ['input_ids', 'attention_mask', 'labels'],
+        num_rows: 3939
+    })
+    test: Dataset({
+        features: ['input_ids', 'attention_mask', 'labels'],
+        num_rows: 438
+    })
+})
+Model: kyutai/helium-1-2b
+Dataset: DatasetDict({
+    train: Dataset({
+        features: ['input_ids', 'attention_mask', 'labels'],
+        num_rows: 3939
+    })
+    test: Dataset({
+        features: ['input_ids', 'attention_mask', 'labels'],
+        num_rows: 438
+    })
+})
+Model: kyutai/helium-1-2b
+Dataset: DatasetDict({
+    train: Dataset({
+        features: ['input_ids', 'attention_mask', 'labels'],
+        num_rows: 4377
+    })
+})
