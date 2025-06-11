@@ -39,35 +39,13 @@ class ConversationModel(PreTrainedModel):
         self.model = base_model
         self.config = config
         
-        # Configure quantization
-        bnb_config = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_compute_dtype=torch.float32,
-            bnb_4bit_quant_type="fp4",
-            bnb_4bit_use_double_quant=False
-        )
-        
-        # Prepare model for k-bit training
-        self.model = prepare_model_for_kbit_training(self.model)
-        
-        # Configure LoRA
-        target_modules = self.get_target_modules()
-        lora_config = LoraConfig(
-            r=8,  # Rank
-            lora_alpha=16,  # Alpha scaling
-            target_modules=target_modules,
-            lora_dropout=0.05,
-            bias="none",
-            task_type="CAUSAL_LM"
-        )
-        
-        # Get PEFT model
-        self.model = get_peft_model(self.model, lora_config)
-        
-        # Enable training mode and gradient checkpointing
-        self.model.config.use_cache = False  # Ensure config is consistent
-        self.model.train()
-        self.model.gradient_checkpointing_enable()
+        # Copy PEFT attributes from base model
+        if hasattr(base_model, 'peft_config'):
+            self.peft_config = base_model.peft_config
+        if hasattr(base_model, 'active_adapter'):
+            self.active_adapter = base_model.active_adapter
+        if hasattr(base_model, 'base_model'):
+            self.base_model = base_model.base_model
         
         # Enable gradient checkpointing for memory efficiency
         self.supports_gradient_checkpointing = True
@@ -75,6 +53,9 @@ class ConversationModel(PreTrainedModel):
     
     def get_target_modules(self):
         """Detect the model architecture and return appropriate LoRA target modules."""
+        if hasattr(self.model, 'get_target_modules'):
+            return self.model.get_target_modules()
+            
         model_type = self.config.model_type.lower() if hasattr(self.config, 'model_type') else ""
         
         target_modules_map = {
@@ -143,6 +124,14 @@ class ConversationModel(PreTrainedModel):
         """Enable input gradients - required for gradient checkpointing."""
         if hasattr(self.model, "enable_input_require_grads"):
             self.model.enable_input_require_grads()
+            
+    def save_pretrained(self, save_directory, **kwargs):
+        """Save the model."""
+        # Save PEFT configuration if it exists
+        if hasattr(self.model, 'peft_config'):
+            self.model.save_pretrained(save_directory, **kwargs)
+        else:
+            super().save_pretrained(save_directory, **kwargs)
 
 class VisionAdapter(torch.nn.Module):
     def __init__(self, lang_embed_dim, clip_dim):

@@ -608,26 +608,31 @@ class FinetuneModel:
             model.save_pretrained(str(model_save_path), safe_serialization=True)
             tokenizer.save_pretrained(str(model_save_path))
             
-            # Save model info
-            model_info = {
-                "model_id": modelname,
-                "model_task": self.model_task,
-                "base_model": modelname,
-                "finetuned": True,
-                "quantization": "4bit",
-                "lora_config": {
-                    "r": 8,
-                    "alpha": 16,
-                    "dropout": 0.05,
-                    "target_modules": model.peft_config["default"].target_modules
-                },
-                "last_checkpoint": str(self.last_checkpoint) if self.last_checkpoint else None
-            }
-
-            model_info = dict(model_info)
+            # Get target modules and ensure they're serializable
+            target_modules = model.peft_config["default"].target_modules
+            if isinstance(target_modules, (set, list, tuple)):
+                target_modules = list(target_modules)
+            else:
+                target_modules = []
             
-            with open(model_save_path / "model_info.json", "w") as f:
-                json.dump(model_info, f, indent=4)
+            # # Save model info with serializable values
+            # model_info = {
+            #     "model_id": modelname,
+            #     "model_task": self.model_task,
+            #     "base_model": modelname,
+            #     "finetuned": True,
+            #     "quantization": "4bit",
+            #     "lora_config": {
+            #         "r": int(model.peft_config["default"].r),
+            #         "alpha": float(model.peft_config["default"].lora_alpha),
+            #         "dropout": float(model.peft_config["default"].lora_dropout),
+            #         "target_modules": target_modules
+            #     },
+            #     "last_checkpoint": str(self.last_checkpoint) if self.last_checkpoint else None
+            # }
+            
+            # with open(model_save_path / "model_info.json", "w", encoding="utf-8") as f:
+            #     json.dump(model_info, f, indent=2, ensure_ascii=False)
             
             print(f"{Fore.GREEN}Model saved to: {model_save_path}{Style.RESET_ALL}")
             
