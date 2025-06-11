@@ -50,7 +50,7 @@ class FinetuneModel:
         self.per_device_eval_batch_size = 1
         self.gradient_accumulation_steps = 4  # Reduced gradient accumulation
         self.learning_rate = 2e-5  # Reduced learning rate
-        self.num_train_epochs = 10
+        self.num_train_epochs = 0.01
         self.save_strategy = "best"
         
         # Initialize paths and directories
@@ -623,6 +623,8 @@ class FinetuneModel:
                 },
                 "last_checkpoint": str(self.last_checkpoint) if self.last_checkpoint else None
             }
+
+            model_info = dict(model_info)
             
             with open(model_save_path / "model_info.json", "w") as f:
                 json.dump(model_info, f, indent=4)
@@ -769,6 +771,7 @@ class Manager:
                         #if model is not local and been createdd
                         model_name_safe = modelname.replace("/","-")
                         model_path = self.finetune_model.REGULAR_MODEL_DIR / model_name_safe
+                        model_task = "text-generation"
                         #if it local created model
                         if Path(modelname).exists():
                             model_path = modelname
@@ -778,9 +781,10 @@ class Manager:
                             create_model = CreateModel(modelname, "conversation-model")
                             create_model.add_conversation()
                             create_model.save_regular_model()
-                        elif Path(self.finetune_model.CHECKPOINT_DIR / model_name_safe).exists():
+                        elif Path(self.finetune_model.CHECKPOINT_DIR /model_task/ model_name_safe).exists():
                             print(f"{Fore.GREEN}Loading conversation model from checkpoint...{Style.RESET_ALL}")
-                            model, tokenizer = load_saved_model(self.finetune_model.CHECKPOINT_DIR / model_name_safe)
+                          
+                            
                         elif model_path.exists():
                             print(f"{Fore.GREEN}Loading conversation model from path...{Style.RESET_ALL}")
                             model, tokenizer = load_saved_model(model_path)
@@ -796,9 +800,9 @@ class Manager:
                             create_model = CreateModel(modelname, "vision-model")
                             create_model.add_vision()
                             create_model.save_vision_model()
-                        elif Path(self.finetune_model.CHECKPOINT_DIR / model_name_safe).exists():
+                        elif Path(self.finetune_model.CHECKPOINT_DIR /model_task/ model_name_safe).exists():
                             print(f"{Fore.GREEN}Loading conversation model from checkpoint...{Style.RESET_ALL}")
-                            model, tokenizer = load_saved_model(self.finetune_model.CHECKPOINT_DIR / model_name_safe)
+                            
                         elif model_path.exists():
                             print(f"{Fore.GREEN}Loading conversation model from path...{Style.RESET_ALL}")
                             model, tokenizer = load_saved_model(model_path)
