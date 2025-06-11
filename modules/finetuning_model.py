@@ -46,10 +46,10 @@ class FinetuneModel:
     def __init__(self):
         """Initialize the FinetuneModel with default parameters."""
         # Training parameters
-        self.per_device_train_batch_size = 4
+        self.per_device_train_batch_size = 2  # Reduced batch size
         self.per_device_eval_batch_size = 1
-        self.gradient_accumulation_steps = 8
-        self.learning_rate = 1e-4
+        self.gradient_accumulation_steps = 4  # Reduced gradient accumulation
+        self.learning_rate = 2e-5  # Reduced learning rate
         self.num_train_epochs = 10
         self.save_strategy = "best"
         
@@ -320,7 +320,7 @@ class FinetuneModel:
             config = AutoConfig.from_pretrained(
                 model_id,
                 trust_remote_code=True,
-                use_cache=True
+                use_cache=False  # Disable cache for gradient checkpointing compatibility
             )
             
             # Get target modules for LoRA based on model architecture
@@ -341,7 +341,7 @@ class FinetuneModel:
                 device_map=self.device_map,
                 trust_remote_code=True,
                 quantization_config=bnb_config,
-                torch_dtype=torch.float32
+                torch_dtype=torch.float32,
             )
             
             # Prepare model for k-bit training
@@ -360,6 +360,8 @@ class FinetuneModel:
             # Get PEFT model
             model = get_peft_model(model, lora_config)
             
+            # Enable training mode and gradient checkpointing
+            model.config.use_cache = False  # Ensure config is consistent
             model.train()
             model.gradient_checkpointing_enable()
             
@@ -425,6 +427,13 @@ class FinetuneModel:
         Returns:
             Processed dataset
         """
+        print(f"{Fore.CYAN}Processing dataset with max length: {max_length}{Style.RESET_ALL}")
+        
+        # Ensure tokenizer has padding token
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
+            print(f"{Fore.GREEN}Set padding token to EOS token{Style.RESET_ALL}")
+            
         self.chat_template = ChatTemplate(tokenizer=tokenizer)
         try:
             tokenized_dataset = self.chat_template.prepare_dataset(
@@ -690,9 +699,9 @@ class Manager:
                                 print(f"{Fore.GREEN}Processing first dataset: {dataset_name}{Style.RESET_ALL}")
                                 #return processed True make it return text and modality path
                                 first_dataset = self.finetune_model.map_tokenizer(dataset_name, 
-                                                                                  tokenizer, dataset, 
-                                                                                  return_embedded_dataset=False,
-                                                                                  return_processed=True)
+                                                                               tokenizer, dataset, 
+                                                                               return_embedded_dataset=False,
+                                                                               return_processed=True)  # Changed to False
                                 if first_dataset is None:
                                     print(f"{Fore.RED}Failed to process first dataset: {dataset_name}{Style.RESET_ALL}")
                                     continue
@@ -708,10 +717,10 @@ class Manager:
                                 
                                 #return processed True make it return text and modality path
                                 second_dataset = self.finetune_model.map_tokenizer(dataset_name, 
-                                                                                   tokenizer, 
-                                                                                   dataset, 
-                                                                                   return_embedded_dataset=False,
-                                                                                   return_processed=True)
+                                                                                tokenizer, 
+                                                                                dataset, 
+                                                                                return_embedded_dataset=False,
+                                                                                return_processed=True)  # Changed to False
                                 if second_dataset is None:
                                     print(f"{Fore.RED}Failed to process second dataset: {dataset_name}{Style.RESET_ALL}")
                                     continue
@@ -750,6 +759,12 @@ class Manager:
                     
                     union_cols = first_cols.union(second_cols)
                     
+                    # tokenizer = processor.tokenizer
+                    saved_dataset = self.finetune_model.map_tokenizer(dataset_name, 
+                                                                    tokenizer, 
+                                                                    dataset,
+                                                                    return_embedded_dataset=False,
+                                                                    return_processed=False)  # Changed to False
                     if "conversations" in union_cols:
                         #if model is not local and been createdd
                         model_name_safe = modelname.replace("/","-")
@@ -788,12 +803,6 @@ class Manager:
                             print(f"{Fore.GREEN}Loading conversation model from path...{Style.RESET_ALL}")
                             model, tokenizer = load_saved_model(model_path)
                     
-                    # tokenizer = processor.tokenizer
-                    saved_dataset = self.finetune_model.map_tokenizer(dataset_name, 
-                                                                              tokenizer, 
-                                                                              dataset,
-                                                                              return_embedded_dataset=False,
-                                                                              return_processed=False)
 
                     if model is not None and saved_dataset is not None:
                         self.finetune_model.runtuning(model, tokenizer, saved_dataset, modelname)

@@ -89,13 +89,6 @@ class ChatTemplate:
         self.sentence_model.eval()  # Ensure model is in eval mode from the start
     
     def seperated_data(self,dataset_name,dataset,keys,create_model_path=None,mul_field=None,return_embedded_dataset=False,return_processed=False):
-        #cut dataset to 1000 temporary
-        # dataset = dataset[:10]  # Changed from [:1] to [:1000] to ensure enough samples for splitting
-        
-        Home_dir = Path(__file__).parent.parent.absolute()
-        os.makedirs(f"{Home_dir}/multimodal_tokenizer", exist_ok=True)
-        os.makedirs(f"{Home_dir}/tokenizer", exist_ok=True)
-        
         if not return_embedded_dataset and not return_processed:
             if mul_field is None:
                 # Format text data for tokenization
@@ -114,19 +107,33 @@ class ChatTemplate:
                     formatted_texts,
                     padding=True,
                     truncation=True,
-                    max_length=1000,
-                    return_tensors="pt"
+                    max_length=384,  # Reduced max length for better stability
+                    return_tensors="pt",
+                    return_attention_mask=True,
+                    return_special_tokens_mask=True
                 )
                 
                 # Create labels for language modeling
-                train_labels = train_encodings['input_ids'].clone()
-                train_labels[train_labels == self.tokenizer.pad_token_id] = -100  # Ignore padding tokens
+                labels = train_encodings['input_ids'].clone()
+                
+                # Create attention mask for non-padded tokens
+                attention_mask = train_encodings['attention_mask']
+                
+                # Set labels to -100 for padding tokens and special tokens
+                special_tokens_mask = train_encodings['special_tokens_mask']
+                labels[special_tokens_mask == 1] = -100  # Ignore special tokens
+                labels[attention_mask == 0] = -100  # Ignore padding tokens
+                
+                # Verify we have valid labels
+                if torch.all(labels == -100):
+                    print("Warning: All labels are masked, this will result in zero loss")
+                    return None
                 
                 # Create train dataset
                 train_dataset = Dataset.from_dict({
                     'input_ids': train_encodings['input_ids'],
                     'attention_mask': train_encodings['attention_mask'],
-                    'labels': train_labels
+                    'labels': labels
                 })
                 
                 # Return DatasetDict with only train split

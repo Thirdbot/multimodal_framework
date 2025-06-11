@@ -10,6 +10,7 @@ from pathlib import Path
 import json
 from transformers.image_utils import load_image
 from transformers import BitsAndBytesConfig
+from peft import AutoPeftModelForCausalLM, LoraConfig, get_peft_model, prepare_model_for_kbit_training
 
 # Config classes
 class ConversationConfig(PretrainedConfig):
@@ -37,9 +38,66 @@ class ConversationModel(PreTrainedModel):
         super().__init__(config)
         self.model = base_model
         self.config = config
+        
+        # Configure quantization
+        bnb_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=torch.float32,
+            bnb_4bit_quant_type="fp4",
+            bnb_4bit_use_double_quant=False
+        )
+        
+        # Prepare model for k-bit training
+        self.model = prepare_model_for_kbit_training(self.model)
+        
+        # Configure LoRA
+        target_modules = self.get_target_modules()
+        lora_config = LoraConfig(
+            r=8,  # Rank
+            lora_alpha=16,  # Alpha scaling
+            target_modules=target_modules,
+            lora_dropout=0.05,
+            bias="none",
+            task_type="CAUSAL_LM"
+        )
+        
+        # Get PEFT model
+        self.model = get_peft_model(self.model, lora_config)
+        
+        # Enable training mode and gradient checkpointing
+        self.model.config.use_cache = False  # Ensure config is consistent
+        self.model.train()
+        self.model.gradient_checkpointing_enable()
+        
         # Enable gradient checkpointing for memory efficiency
         self.supports_gradient_checkpointing = True
         self._is_gradient_checkpointing = False
+    
+    def get_target_modules(self):
+        """Detect the model architecture and return appropriate LoRA target modules."""
+        model_type = self.config.model_type.lower() if hasattr(self.config, 'model_type') else ""
+        
+        target_modules_map = {
+            "gpt2": ["c_attn", "c_proj"],
+            "llama": ["q_proj", "k_proj", "v_proj", "o_proj"],
+            "mistral": ["q_proj", "k_proj", "v_proj", "o_proj"],
+            "opt": ["q_proj", "k_proj", "v_proj", "out_proj"],
+            "bloom": ["query_key_value", "dense"],
+            "t5": ["q", "k", "v", "o"],
+            "bert": ["query", "key", "value", "output.dense"],
+            "roberta": ["query", "key", "value", "output.dense"],
+            "gpt_neox": ["query_key_value", "dense"],
+            "falcon": ["query_key_value", "dense"],
+            "mpt": ["Wqkv", "out_proj"],
+            "baichuan": ["W_pack", "o_proj"],
+            "chatglm": ["query_key_value", "dense"],
+            "qwen": ["c_attn", "c_proj"],
+            "phi": ["Wqkv", "out_proj"],
+            "gemma": ["q_proj", "k_proj", "v_proj", "o_proj"],
+            "stablelm": ["q_proj", "k_proj", "v_proj", "o_proj"]
+        }
+        
+        return target_modules_map.get(model_type, ["q_proj", "k_proj", "v_proj", "o_proj"])
     
     @property
     def is_gradient_checkpointing(self) -> bool:
@@ -51,15 +109,14 @@ class ConversationModel(PreTrainedModel):
         """Set gradient checkpointing state."""
         self._is_gradient_checkpointing = value
     
-    def forward(self, input_ids=None, attention_mask=None, **kwargs):
-        """Forward pass for conversation model - handles only basic inputs."""
+    def forward(self, input_ids=None, attention_mask=None, labels=None, **kwargs):
+        """Forward pass for conversation model."""
         outputs = self.model(
             input_ids=input_ids,
             attention_mask=attention_mask,
+            labels=labels,
             **kwargs
         )
-        
-        # Return the model outputs directly
         return outputs
     
     def generate(self, *args, **kwargs):
@@ -377,33 +434,93 @@ class CreateModel:
 
     def add_conversation(self):
         """Add conversation capability to the model."""
-        # Create conversation model using the base model
-        if not isinstance(self.model, AutoModelForCausalLM):
-            print(f"Converting model to AutoModelForCausalLM")
-            self.model = AutoModelForCausalLM.from_pretrained(
-                self.model_name,
-                device_map="auto",
-                torch_dtype=torch.bfloat16,
-                trust_remote_code=True
+        try:
+            # Configure quantization
+            bnb_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_compute_dtype=torch.float32,
+                bnb_4bit_quant_type="fp4",
+                bnb_4bit_use_double_quant=False
             )
             
-            # Enable gradient checkpointing on base model if available
-            if hasattr(self.model, "gradient_checkpointing_enable"):
-                self.model.gradient_checkpointing_enable()
-                print("Enabled gradient checkpointing on base model")
-        
-        # Create conversation model
-        self.convomodel = ConversationModel(self.original_config, self.model)
-        
-        # Ensure the model is in training mode
-        self.convomodel.train()
-        
-        # Enable gradient checkpointing on conversation model
-        self.convomodel.gradient_checkpointing_enable()
-        print("Enabled gradient checkpointing on conversation model")
-        
-        print(f"Successfully created conversation model")
-        
+            # Load base model with quantization
+            if not isinstance(self.model, AutoModelForCausalLM):
+                print(f"Converting model to AutoModelForCausalLM")
+                self.model = AutoModelForCausalLM.from_pretrained(
+                    self.model_name,
+                    device_map="auto",
+                    trust_remote_code=True,
+                    quantization_config=bnb_config,
+                    torch_dtype=torch.float32
+                )
+            
+            # Prepare model for k-bit training
+            self.model = prepare_model_for_kbit_training(self.model)
+            
+            # Get target modules based on model architecture
+            model_type = self.model.config.model_type.lower() if hasattr(self.model.config, 'model_type') else ""
+            target_modules_map = {
+                "gpt2": ["c_attn", "c_proj"],
+                "llama": ["q_proj", "k_proj", "v_proj", "o_proj"],
+                "mistral": ["q_proj", "k_proj", "v_proj", "o_proj"],
+                "opt": ["q_proj", "k_proj", "v_proj", "out_proj"],
+                "bloom": ["query_key_value", "dense"],
+                "t5": ["q", "k", "v", "o"],
+                "bert": ["query", "key", "value", "output.dense"],
+                "roberta": ["query", "key", "value", "output.dense"],
+                "gpt_neox": ["query_key_value", "dense"],
+                "falcon": ["query_key_value", "dense"],
+                "mpt": ["Wqkv", "out_proj"],
+                "baichuan": ["W_pack", "o_proj"],
+                "chatglm": ["query_key_value", "dense"],
+                "qwen": ["c_attn", "c_proj"],
+                "phi": ["Wqkv", "out_proj"],
+                "gemma": ["q_proj", "k_proj", "v_proj", "o_proj"],
+                "stablelm": ["q_proj", "k_proj", "v_proj", "o_proj"]
+            }
+            target_modules = target_modules_map.get(model_type, ["q_proj", "k_proj", "v_proj", "o_proj"])
+            print(f"Using target modules for {model_type}: {target_modules}")
+            
+            # Configure LoRA
+            lora_config = LoraConfig(
+                r=8,  # Rank
+                lora_alpha=16,  # Alpha scaling
+                target_modules=target_modules,
+                lora_dropout=0.05,
+                bias="none",
+                task_type="CAUSAL_LM"
+            )
+            
+            # Get PEFT model
+            self.model = get_peft_model(self.model, lora_config)
+            
+            # Create conversation model
+            self.convomodel = ConversationModel(self.original_config, self.model)
+            
+            # Disable caching for gradient checkpointing
+            self.model.config.use_cache = False
+            self.convomodel.config.use_cache = False
+            
+            # Enable training mode and gradient checkpointing
+            self.convomodel.train()
+            self.convomodel.gradient_checkpointing_enable()
+            
+            print(f"Successfully created conversation model with LoRA configuration")
+            
+            # Print trainable parameters
+            trainable_params = 0
+            all_param = 0
+            for _, param in self.convomodel.named_parameters():
+                all_param += param.numel()
+                if param.requires_grad:
+                    trainable_params += param.numel()
+            print(f"Trainable params: {trainable_params:,} ({100 * trainable_params / all_param:.2f}%)")
+            print(f"All params: {all_param:,}")
+            
+        except Exception as e:
+            print(f"Error creating conversation model: {str(e)}")
+            raise
+    
     def add_vision(self):
         # Initialize models and processor with quantization
         quantization_config = BitsAndBytesConfig(
@@ -430,40 +547,44 @@ class CreateModel:
         
     def save_regular_model(self):
         """Save the model and all its components with optimizations."""
-        # Create necessary directories
-        lang_model_path = os.path.join(self.model_path, "lang_model")
-        os.makedirs(lang_model_path, exist_ok=True)
-        
-        # Save base model first with quantization
-        quantization_config = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_compute_dtype=torch.bfloat16,
-            bnb_4bit_quant_type="nf4",
-            bnb_4bit_use_double_quant=True,
-            llm_int8_threshold=6.0,
-            llm_int8_has_fp16_weight=False,
-        )
-        
-        self.convomodel.save_pretrained(
-            lang_model_path,
-            quantization_config=quantization_config,
-            torch_dtype=torch.bfloat16,
-            safe_serialization=True
-        )
-        
-        # Save conversation model with quantization
-        self.convomodel.save_pretrained(
-            self.model_path,
-            quantization_config=quantization_config,
-            torch_dtype=torch.bfloat16,
-            safe_serialization=True
-        )
-        
-        # Save tokenizer
-        self.tokenizer.save_pretrained(self.model_path)
-        
-        # Save config
-        self.original_config.save_pretrained(self.model_path)
+        try:
+            # Create necessary directories
+            os.makedirs(self.model_path, exist_ok=True)
+            
+            # Save the PEFT model with adapter config
+            self.model.save_pretrained(
+                self.model_path,
+                safe_serialization=True
+            )
+            
+            # Save tokenizer
+            self.tokenizer.save_pretrained(self.model_path)
+            
+            # Save config
+            self.original_config.save_pretrained(self.model_path)
+            
+            # Save model info
+            model_info = {
+                "model_type": self.model.config.model_type,
+                "base_model_name": self.model_name,
+                "peft_type": "LORA",
+                "lora_config": {
+                    "r": 8,
+                    "alpha": 16,
+                    "dropout": 0.05,
+                    "bias": "none",
+                    "task_type": "CAUSAL_LM"
+                }
+            }
+            
+            with open(os.path.join(self.model_path, "model_info.json"), "w") as f:
+                json.dump(model_info, f, indent=2)
+            
+            print(f"Successfully saved model to {self.model_path}")
+            
+        except Exception as e:
+            print(f"Error saving model: {str(e)}")
+            raise
         
     def save_vision_model(self):
         """Save the model and all its components with optimizations."""
@@ -605,6 +726,7 @@ def load_saved_model(model_path):
             
             # Create conversation model
             model = ConversationModel(config, base_model)
+            model.config.use_cache = False
             model.train()  # Ensure model is in training mode
             
             tokenizer = AutoTokenizer.from_pretrained(demo_path)
