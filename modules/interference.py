@@ -147,29 +147,23 @@ class ConversationManager:
         self.model = AutoModelForCausalLM.from_pretrained(
             str(model_path),
             device_map=self.device_map,
-            torch_dtype=torch.float16,  # Use float16 for better memory efficiency
-            low_cpu_mem_usage=True,
-            offload_folder=str(self.OFFLOAD_DIR),
+            torch_dtype=torch.float16,
             trust_remote_code=True,
-            use_cache=True  # Enable KV cache
+            use_cache=True
         )
         
         # Optimize model for inference
-        self.model.eval()  # Set to evaluation mode
+        self.model.eval()
         
         # Enable gradient checkpointing for memory efficiency
         if hasattr(self.model, "gradient_checkpointing_enable"):
             self.model.gradient_checkpointing_enable()
         
-        # Enable model optimizations
-        if hasattr(self.model, "enable_input_require_grads"):
-            self.model.enable_input_require_grads()
-        
         self.tokenizer = AutoTokenizer.from_pretrained(
             str(model_path),
             trust_remote_code=True,
             padding_side="right",
-            use_fast=True  # Use fast tokenizer
+            use_fast=True
         )
         
         if self.tokenizer.pad_token is None:
