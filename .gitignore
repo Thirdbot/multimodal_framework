@@ -10,3 +10,5 @@ repositories/
 custom_models
 
 checkpoints/
+
+models/
