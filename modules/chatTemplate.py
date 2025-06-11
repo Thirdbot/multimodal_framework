@@ -3,7 +3,7 @@ import os
 from typing import List, Dict, Optional, Union
 from datasets import load_dataset
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from datasets import Dataset
+from datasets import Dataset, DatasetDict
 from colorama import Fore, Style, init
 import zipfile
 import torch
@@ -90,7 +90,7 @@ class ChatTemplate:
     
     def seperated_data(self,dataset_name,dataset,keys,create_model_path=None,mul_field=None,return_embedded_dataset=False,return_processed=False):
         #cut dataset to 1000 temporary
-        dataset = dataset[:10]  # Changed from [:1] to [:1000] to ensure enough samples for splitting
+        # dataset = dataset[:10]  # Changed from [:1] to [:1000] to ensure enough samples for splitting
         
         Home_dir = Path(__file__).parent.parent.absolute()
         os.makedirs(f"{Home_dir}/multimodal_tokenizer", exist_ok=True)
@@ -108,17 +108,56 @@ class ChatTemplate:
                 if not formatted_texts: 
                     return None
                 
+                # Split into train and test sets
+                train_size = int(0.9 * len(formatted_texts))
+                train_texts = formatted_texts[:train_size]
+                test_texts = formatted_texts[train_size:]
+                
                 # Tokenize the formatted texts with proper batching
-                print("Tokenizing texts")
-                text_tokenized = self.tokenizer(
-                    formatted_texts,
+                print("Tokenizing training texts")
+                train_encodings = self.tokenizer(
+                    train_texts,
                     padding=True,
                     truncation=True,
                     max_length=1000,
                     return_tensors="pt"
                 )
                 
-                return text_tokenized
+                print("Tokenizing test texts")
+                test_encodings = self.tokenizer(
+                    test_texts,
+                    padding=True,
+                    truncation=True,
+                    max_length=1000,
+                    return_tensors="pt"
+                )
+                
+                # Create labels for language modeling (shift input_ids right)
+                train_labels = train_encodings['input_ids'].clone()
+                train_labels[train_labels == self.tokenizer.pad_token_id] = -100  # Ignore padding tokens
+                
+                test_labels = test_encodings['input_ids'].clone()
+                test_labels[test_labels == self.tokenizer.pad_token_id] = -100  # Ignore padding tokens
+                
+                # Create train dataset
+                train_dataset = Dataset.from_dict({
+                    'input_ids': train_encodings['input_ids'],
+                    'attention_mask': train_encodings['attention_mask'],
+                    'labels': train_labels
+                })
+                
+                # Create test dataset
+                test_dataset = Dataset.from_dict({
+                    'input_ids': test_encodings['input_ids'],
+                    'attention_mask': test_encodings['attention_mask'],
+                    'labels': test_labels
+                })
+                
+                # Return DatasetDict with both splits
+                return DatasetDict({
+                    'train': train_dataset,
+                    'test': test_dataset
+                })
             
             # Check for multimodal content if needed
             if mul_field is not None:
