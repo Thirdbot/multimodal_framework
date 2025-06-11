@@ -531,3 +531,111 @@ Dataset: {'input_ids': tensor([[   1, 1811, 2670,  ...,  241,  330,  291],
         [1, 1, 1,  ..., 1, 1, 1],
         [1, 1, 1,  ..., 1, 1, 1],
         [1, 1, 1,  ..., 1, 1, 1]])}
+Model: kyutai/helium-1-2b
+Dataset: {'input_ids': tensor([[   1, 1811, 2670,  ...,  241,  330,  291],
+        [   1, 1811, 2670,  ...,    3,    3,    3],
+        [   1, 1811, 2670,  ...,  290,  284,  330],
+        ...,
+        [   1, 1811, 2670,  ...,  267,  330,  290],
+        [   1, 1811, 2670,  ...,  330,  290,  288],
+        [   1, 1811, 2670,  ...,  290,  275,  330]]), 'attention_mask': tensor([[1, 1, 1,  ..., 1, 1, 1],
+        [1, 1, 1,  ..., 0, 0, 0],
+        [1, 1, 1,  ..., 1, 1, 1],
+        ...,
+        [1, 1, 1,  ..., 1, 1, 1],
+        [1, 1, 1,  ..., 1, 1, 1],
+        [1, 1, 1,  ..., 1, 1, 1]])}
+Model: kyutai/helium-1-2b
+Dataset: {'input_ids': tensor([[   1, 1811, 2670,  ...,  241,  330,  291],
+        [   1, 1811, 2670,  ...,    3,    3,    3],
+        [   1, 1811, 2670,  ...,  290,  284,  330],
+        ...,
+        [   1, 1811, 2670,  ...,  267,  330,  290],
+        [   1, 1811, 2670,  ...,  330,  290,  288],
+        [   1, 1811, 2670,  ...,  290,  275,  330]]), 'attention_mask': tensor([[1, 1, 1,  ..., 1, 1, 1],
+        [1, 1, 1,  ..., 0, 0, 0],
+        [1, 1, 1,  ..., 1, 1, 1],
+        ...,
+        [1, 1, 1,  ..., 1, 1, 1],
+        [1, 1, 1,  ..., 1, 1, 1],
+        [1, 1, 1,  ..., 1, 1, 1]])}
+Model: kyutai/helium-1-2b
+Dataset: {'input_ids': tensor([[   1, 1811, 2670,  ...,  241,  330,  291],
+        [   1, 1811, 2670,  ...,    3,    3,    3],
+        [   1, 1811, 2670,  ...,  290,  284,  330],
+        ...,
+        [   1, 1811, 2670,  ...,  267,  330,  290],
+        [   1, 1811, 2670,  ...,  330,  290,  288],
+        [   1, 1811, 2670,  ...,  290,  275,  330]]), 'attention_mask': tensor([[1, 1, 1,  ..., 1, 1, 1],
+        [1, 1, 1,  ..., 0, 0, 0],
+        [1, 1, 1,  ..., 1, 1, 1],
+        ...,
+        [1, 1, 1,  ..., 1, 1, 1],
+        [1, 1, 1,  ..., 1, 1, 1],
+        [1, 1, 1,  ..., 1, 1, 1]])}
+Model: kyutai/helium-1-2b
+Dataset: DatasetDict({
+    train: Dataset({
+        features: ['input_ids', 'attention_mask'],
+        num_rows: 9
+    })
+    test: Dataset({
+        features: ['input_ids', 'attention_mask'],
+        num_rows: 1
+    })
+})
+Model: kyutai/helium-1-2b
+Dataset: DatasetDict({
+    train: Dataset({
+        features: ['input_ids', 'attention_mask', 'labels'],
+        num_rows: 9
+    })
+    test: Dataset({
+        features: ['input_ids', 'attention_mask', 'labels'],
+        num_rows: 1
+    })
+})
+Model: kyutai/helium-1-2b
+Dataset: DatasetDict({
+    train: Dataset({
+        features: ['input_ids', 'attention_mask', 'labels'],
+        num_rows: 3939
+    })
+    test: Dataset({
+        features: ['input_ids', 'attention_mask', 'labels'],
+        num_rows: 438
+    })
+})
+Model: kyutai/helium-1-2b
+Dataset: DatasetDict({
+    train: Dataset({
+        features: ['input_ids', 'attention_mask', 'labels'],
+        num_rows: 3939
+    })
+    test: Dataset({
+        features: ['input_ids', 'attention_mask', 'labels'],
+        num_rows: 438
+    })
+})
+Model: kyutai/helium-1-2b
+Dataset: DatasetDict({
+    train: Dataset({
+        features: ['input_ids', 'attention_mask', 'labels'],
+        num_rows: 3939
+    })
+    test: Dataset({
+        features: ['input_ids', 'attention_mask', 'labels'],
+        num_rows: 438
+    })
+})
+Model: kyutai/helium-1-2b
+Dataset: DatasetDict({
+    train: Dataset({
+        features: ['input_ids', 'attention_mask', 'labels'],
+        num_rows: 3939
+    })
+    test: Dataset({
+        features: ['input_ids', 'attention_mask', 'labels'],
+        num_rows: 438
+    })
+})
