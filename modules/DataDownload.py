@@ -5,8 +5,8 @@ from datasets import load_dataset, get_dataset_config_names
 from huggingface_hub import hf_hub_download, HfApi
 from pathlib import Path
 from colorama import Fore, Style, init
-from modules.DatasetHandler import APIFetch, Convert
-from modules.DatasetHandler import Manager
+from modules.ApiDump import APIFetch, Convert
+from modules.ApiDump import Manager
 from transformers import AutoModelForCausalLM
 import os
 import requests
@@ -341,7 +341,7 @@ class DataLoader():
             return failed_models  # Always return failed_models
 
 if __name__ == "__main__":
-    from DatasetHandler import APIFetch,Convert
+    from modules.ApiDump import APIFetch,Convert
     loader = DataLoader()
     
    
