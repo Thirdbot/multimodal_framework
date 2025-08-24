@@ -3,7 +3,7 @@
 import os
 import json
 from pathlib import Path
-from modules.ApiDump import Manager as DatasetHandler
+from modules.ApiDump import ApiCardSetup as DatasetHandler
 from modules.DataDownload import DataLoader
 from pandas import pd
 
