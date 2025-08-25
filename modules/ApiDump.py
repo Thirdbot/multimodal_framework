@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Optional,Iterable
 # from pydantic import BaseModel, Field
 # from datasets import load_dataset, get_dataset_config_names
-from colorama import Fore, Style, init
+# from colorama import Fore, Style, init
 # from requests.adapters import HTTPAdapter
 # from urllib3.util.retry import Retry
 # import time
@@ -18,12 +18,13 @@ from colorama import Fore, Style, init
 # from huggingface_hub.utils import HfHubHTTPError
 import json
 # # Initialize colorama
-init(autoreset=True)
+# init(autoreset=True)
 
 # os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 
 
 class ApiCardSetup:
+    '''Setting Api calling Card as models and datasets be required'''
     def __init__(self):
         self.hf_api = HfApi()
         self.model_data_logs = dict()
@@ -34,56 +35,43 @@ class ApiCardSetup:
         
             No Return (only update file)
         '''
-        
-        # if os.path.exists(file_path):
-        #     os.remove(file_path)
-        #     print(f"{Fore.RED}File {file_path} has been deleted.{Style.RESET_ALL}")
-        #     Path(file_path).touch(exist_ok=True)
-        #     print(f"{Fore.GREEN}File {file_path} has been created.{Style.RESET_ALL}")
-        # else:
-        #     Path(file_path).touch(exist_ok=True)
-        #     print(f"{Fore.GREEN}File {file_path} has been created.{Style.RESET_ALL}")
-        # task = "text-generation"
-
-        # acess_token = os.environ.get("hf_token")
-
-        # list_models = self.hf_api.list_models(tags="text-generation",limit=1,gated=False,language='thai')
-        # list_datasets = self.hf_api.list_datasets(dataset_name='tlcv2.0_oa',limit=1,gated=False)
-
+       
+       #empty List of model_name and datasets_name
         model_name_list:list = list()
         dataset_name_list:list = list()
-
+        
+        #format Path -> String
         str_literal_path = self.path.as_posix()
         
+        #DataCard Form
         previous = {'model':dict(dict())}
         
+        #Get Model Name in Card
         if list_models is not None:
             for model in list_models:
                 model_name_list.append(model.id)
+        #Get Dataset Name in Card
         if list_datasets is not None:
             for dataset in list_datasets:
                 dataset_name_list.append(dataset.id)
-        
+        #Load Existed Card
         if os.path.exists(str_literal_path):
             with open(str_literal_path,'r') as f:
                 previous = json.load(f)
-        else:
-            pass
-            # self.path.touch(exist_ok=True)
-        # previous = json.load(previous)  # type: ignore
-        print(previous)
+        
+        #Put Info in Card as it getting Non Duplicate in Model and Dataset Using Dict Type
         for model in model_name_list:
             
-            previous['model'][model]
+            previous['model'][model] = dict()
             model_layer = previous
             for data in dataset_name_list:
                 model_layer['model'][model][data] = ""
-        print(previous)
         with open (str_literal_path,'w') as f:
-            # y = json.dumps(dict(previous))
-            # print(y)
+
             json.dump(previous,f, ensure_ascii=False, indent=4)
         
+        #Return Newest Card
+        return previous
 
                     
                 

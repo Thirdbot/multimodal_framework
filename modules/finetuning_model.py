@@ -22,7 +22,7 @@ from peft import (
     AutoPeftModelForCausalLM,
     prepare_model_for_kbit_training
 )
-from trl import SFTTrainer
+# from trl import SFTTrainer
 import evaluate
 from huggingface_hub import HfApi
 
@@ -653,16 +653,16 @@ class Manager:
         self.data_json_path = model_data_json_path
         self.finetune_model = FinetuneModel()
     
-    def generate_model_data(self) -> List[Dict[str, Any]]:
-        """Generate model data from JSON file.
+    # def generate_model_data(self) -> List[Dict[str, Any]]:
+    #     """Generate model data from JSON file.
         
-        Returns:
-            List of model data dictionaries
-        """
-        if self.data_json_path is None:
-            raise ValueError("data_json_path is required")
-        with open(self.data_json_path, "r") as f:
-            return json.load(f)
+    #     Returns:
+    #         List of model data dictionaries
+    #     """
+    #     if self.data_json_path is None:
+    #         raise ValueError("data_json_path is required")
+    #     with open(self.data_json_path, "r") as f:
+    #         return json.load(f)
     
     def run_finetune(self, list_model_data: List[Dict[str, Any]], config: Dict[str, Any]) -> Tuple[Optional[AutoModelForCausalLM], Optional[DatasetDict]]:
         """Run the fine-tuning process.
