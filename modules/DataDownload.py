@@ -5,8 +5,7 @@ from datasets import load_dataset, get_dataset_config_names
 from huggingface_hub import hf_hub_download, HfApi
 from pathlib import Path
 from colorama import Fore, Style, init
-from modules.ApiDump import APIFetch, Convert
-from modules.ApiDump import Manager
+from modules.ApiDump import ApiCardSetup
 from transformers import AutoModelForCausalLM
 import os
 import requests
@@ -21,8 +20,8 @@ init(autoreset=True)
 
 ''' Download locally as seperated folder for training and inference'''
 class FlexibleDatasetLoader:
-    def __init__(self, split='train', trust_remote_code=True):
-        self.trust_remote_code = trust_remote_code
+    def __init__(self, split='train'):
+
         self.config = None
         self.split = split
         self.saved_config = {}  # Changed to dict to store configs per dataset
@@ -43,7 +42,7 @@ class FlexibleDatasetLoader:
                 # Create dataset directory with name and config
                 short_name = name.split('/')[-1]  # Get just the last part of the name
                 dataset_dir = self.DATASETS_DIR / f"{short_name}"
-                dataset_dir.mkdir(parents=True, exist_ok=True)
+                dataset_dir.mkdir(parents=True, exist_ok=False)
                 
                 # Get the dataset info to find the actual files
                 dataset_info = self.api.dataset_info(name)
@@ -52,20 +51,21 @@ class FlexibleDatasetLoader:
                     name,
                     config,
                     split=self.split,
-                    trust_remote_code=self.trust_remote_code,
                     # cache_dir=dataset_dir
                 )
                 print(f"{Fore.GREEN}Successfully loaded dataset {name}{Style.RESET_ALL}")
                 self.config = config
                 self.saved_config[name] = config
                
+               
+               ### i forgot what it does so dont delete this.
                     
                 # Download each file from the dataset
                 for file_info in dataset_info.siblings:
                     try:
                         # Create the target directory if it doesn't exist
                         target_dir = dataset_dir / os.path.dirname(file_info.rfilename)
-                        target_dir.mkdir(parents=True, exist_ok=True)
+                        target_dir.mkdir(parents=True, exist_ok=False)
                         
                         # # Use a shorter cache path
                         # cache_dir = self.REPO_DIR / "cache" / short_name
@@ -97,7 +97,7 @@ class FlexibleDatasetLoader:
                 return self.load(name, None)
                     
         else:
-            configs = get_dataset_config_names(name, trust_remote_code=self.trust_remote_code)
+            configs = get_dataset_config_names(name)
             if isinstance(configs, list):
                 saved_config = {}
                 user_input = None
@@ -131,7 +131,7 @@ class ModelLoader:
         self.file_paths = {}
         self.api = HfApi()
         
-        # Set up local repository paths
+        # Set up local repository paths for both model and datasets
         self.WORKSPACE_DIR = Path(__file__).parent.parent.absolute()
         self.REPO_DIR = self.WORKSPACE_DIR / "repositories"
         self.REPO_DIR.mkdir(parents=True, exist_ok=True)
@@ -192,8 +192,8 @@ class DataLoader():
         # self.load(self.datamodel)
     
     def run(self,params):
-        datamodel = self.datamodel_load(params)
-        return self.load(datamodel)
+        # datamodel = self.datamodel_load(params)
+        return self.load(params)
         
     # def datainstall_load(self):
     #     if self.installed_filepath.exists():
@@ -203,151 +203,43 @@ class DataLoader():
     #         else:
     #             return pd.DataFrame(columns=['model','datasets'])
 
-    def datamodel_load(self,params):
-        if self.datamodel_filepath.exists():
-            if self.datamodel_filepath.stat().st_size > 0:
-                df = pd.read_json(self.datamodel_filepath)
-                return df
-            else:
-                print(f"{Fore.YELLOW}No data model found. Creating new one...{Style.RESET_ALL}")
-                manager = Manager()
-                return manager.handle_data(self.datamodel_filepath,params)
+    # def datamodel_load(self,params):
+    #     if self.datamodel_filepath.exists():
+    #         if self.datamodel_filepath.stat().st_size > 0:
+    #             df = pd.read_json(self.datamodel_filepath)
+    #             return df
+    #         else:
+    #             print(f"{Fore.YELLOW}No data model found. Creating new one...{Style.RESET_ALL}")
+    #             manager = ApiCardSetup()
+    #             return manager.set(params)
 
 
-    def load(self,install, depth=0):
-        installed = []
-        failed_models = []  # Initialize failed_models at the start
-        datadict = {'model':str,'datasets':[]}
-        base_df = pd.DataFrame(install)
-        # compare_df = pd.DataFrame(self.datainstall_load())
+    def load(self,to_install):
+        # base_df = pd.DataFrame(install)
+        # print(base_df['datasets'])
         
-        # if depth > 3:
-        #     print(f"{Fore.RED}Maximum retry depth reached.{Style.RESET_ALL}")
-        #     return failed_models
-        # if base_df.equals(compare_df):
-        #     print(f"{Fore.GREEN}Data already installed{Style.RESET_ALL}")
-        #     for i, row in compare_df.iterrows():
-        #         try:
-        # for i,row in base_df:
-        #     try:
-        #         model = row['model']
-        #         datasets = row['datasets']
-        #         print(f"{Fore.CYAN}Processing model: {model} with datasets: {datasets}{Style.RESET_ALL}")
-
-        #         if isinstance(datasets,list):
-        #             for dataset in datasets:
-        #                 self.config = self.dataset.load(dataset,self.config)
-        #         else:
-        #             self.config = self.dataset.load(datasets,self.config)
-        #     except Exception as e:
-        #         print(f"{Fore.RED}Error processing model as installed {model}: {str(e)}{Style.RESET_ALL}")
-        #         failed_models.append(row)
-        #     return failed_models
-        # else:
+        for model,datasets in to_install['model'].items():
+            print('model:'+model)
+            print('dataset:',datasets)
             
-        #     base_df['datasets'] = base_df['datasets'].apply(lambda x: sorted(x))
-        #     compare_df['datasets'] = compare_df['datasets'].apply(lambda x: sorted(x))
-            
-        #     # Group by model and combine datasets, explicitly removing duplicates
-        #     def combine_datasets(x):
-        #         # Flatten the list of lists and remove duplicates
-        #         all_datasets = [item for sublist in x for item in sublist]
-        #         # Remove empty or None datasets
-        #         all_datasets = [ds for ds in all_datasets if ds and isinstance(ds, str) and ds.strip()]
-        #         # Convert to lowercase for case-insensitive comparison
-        #         all_datasets = [ds for ds in all_datasets]
-        #         unique_datasets = sorted(list(set(all_datasets)))
-        #         print(f"{Fore.CYAN}Combining datasets for model. Original: {all_datasets}, After removing duplicates: {unique_datasets}{Style.RESET_ALL}")
-        #         return unique_datasets
-            
-        #     # Remove rows with empty model names
-        #     base_df = base_df[base_df['model'].notna() & (base_df['model'] != '')]
-        #     compare_df = compare_df[compare_df['model'].notna() & (compare_df['model'] != '')]
-            
-        #     base_df = base_df.groupby('model')['datasets'].agg(combine_datasets).reset_index()
-        #     compare_df = compare_df.groupby('model')['datasets'].agg(combine_datasets).reset_index()
-            
-        #     # Find models that are in base_df but not in compare_df (new models)
-        #     new_models = base_df[~base_df['model'].isin(compare_df['model'])]
-            
-        #     # Find existing models with different datasets
-        #     existing_models = base_df[base_df['model'].isin(compare_df['model'])]
-        #     updated_models = pd.DataFrame()
-            
-        #     for _, row in existing_models.iterrows():
-        #         model = row['model']
-        #         new_datasets = set(row['datasets'])
-        #         old_datasets = set(compare_df[compare_df['model'] == model]['datasets'].iloc[0])
-                
-        #         if new_datasets != old_datasets:
-        #             # Only include models that have different datasets
-        #             updated_models = pd.concat([updated_models, pd.DataFrame([row])], ignore_index=True)
-            
-        #     # Combine new models and updated models
-        #     diff_model = pd.concat([new_models, updated_models], ignore_index=True)
-            
-        #     if diff_model.empty:
-        #         print(f"{Fore.YELLOW}No new models to install{Style.RESET_ALL}")
-        #         try:
-        #             for i, row in compare_df.iterrows():
-        #                 model = row['model']
-        #                 datasets = row['datasets']
-        #                 print(f"{Fore.CYAN}Processing model: {model} with datasets: {datasets}{Style.RESET_ALL}")
-
-        #                 if isinstance(datasets,list):
-        #                     for dataset in datasets:
-        #                         self.config = self.dataset.load(dataset,self.config)
-        #                 else:
-        #                     self.config = self.dataset.load(datasets,self.config)
-        #         except Exception as e:
-        #             print(f"{Fore.RED}Error processing model {model}: {str(e)}{Style.RESET_ALL}")
-        #             failed_models.append(row)
-        for i, row in base_df.iterrows():
             try:
-                model = row['model']
                 download_model = self.model.load_model(model)
-                datasets = row['datasets']
+                
                 print(f"{Fore.CYAN}Processing model: {model} with datasets: {datasets}{Style.RESET_ALL}")
 
-                if isinstance(datasets,list):
-                    for dataset in datasets:
-                            self.dataset.load(dataset,self.config)
-                else:
-                    self.dataset.load(datasets,self.config)
+                if isinstance(datasets,dict):
+                    try:
+                        for dataset,info in datasets.items():
+                                self.dataset.load(dataset,self.config)
+                    except Exception as e:
+                        print(f"{Fore.RED}Error processing dataset {dataset}: {str(e)}{Style.RESET_ALL}")
+                # else:
+                #     self.dataset.load(datasets,self.config)
                     
                 
-                datadict = {
-                    'model': model,
-                    'datasets': datasets
-                
-                }
-                installed.append(datadict)
-                print(installed)
 
             except Exception as e:
                 print(f"{Fore.RED}Error processing model {model}: {str(e)}{Style.RESET_ALL}")
-                failed_models.append(row)
-                    
-            # if installed:
-            #     prev_df = pd.DataFrame(self.datainstall_load())
-            #     new_installs_df = pd.DataFrame(installed)
-            #     # Combine previous and new installations
-            #     result_df = pd.concat([prev_df, new_installs_df], ignore_index=True)
-            #     # Group by model and combine datasets
-            #     result_df = result_df.groupby('model')['datasets'].agg(lambda x: sorted(list(set([item for sublist in x for item in sublist])))).reset_index()
-            #     with open(self.installed_filepath, 'w') as f:
-            #         json.dump(result_df.to_dict(orient='records'), f, indent=4)
-            #     print(f"{Fore.GREEN}Successfully updated installed.json{Style.RESET_ALL}")
-
-            if failed_models:
-                print(f"{Fore.YELLOW}Retrying {len(failed_models)} failed installs...{Style.RESET_ALL}")
-                self.load(failed_models, depth=depth + 1)
-            
-            return failed_models  # Always return failed_models
-
-if __name__ == "__main__":
-    from modules.ApiDump import APIFetch,Convert
-    loader = DataLoader()
     
    
             
