@@ -241,8 +241,8 @@ import os
 from huggingface_hub import HfApi
 # from datasets import load_dataset,get_dataset_split_names
 from modules.ApiDump import ApiCardSetup
-
-
+from modules.DataDownload import DataLoader
+from modules.finetuning_model import FinetuneModel
 
 acess_token = os.environ.get("hf_token")
 
@@ -250,13 +250,20 @@ api = HfApi()
 
 setcard = ApiCardSetup()
 
-list_models = api.list_models(tags="text-generation",limit=1,gated=False)
+list_models = api.list_models(tags="text-generation",limit=1,gated=False,language='thai')
 # list_datasets = api.list_datasets(tags='text-generation',limit=3,gated=False)
-list_datasets = api.list_datasets(dataset_name='wikineural',limit=3,gated=False)
+list_datasets = api.list_datasets(dataset_name='FreedomIntelligence/medical-o1-reasoning-SFT',limit=1,gated=False)
+
+#set new list to download
+list_download = setcard.set(list_models,list_datasets)
+
+downloading = DataLoader()
+
+#download from datacard
+downloading.run(list_download)
 
 
-setcard.set(list_models,list_datasets)
-
-
+#finetune model
+finetune = FinetuneModel()
 
 
