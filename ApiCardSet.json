@@ -1,16 +1,7 @@
 {
     "model": {
-        "deepseek-ai/DeepSeek-V3.1-Base": {
-            "omarkamali/wikipedia-monthly": "",
-            "Locutusque/Mind-Corpus": "",
-            "shibing624/medical": "",
-            "Babelscape/wikineural": "",
-            "sounakray1997/CoNLLU_WikiNEuRal": "",
-            "tner/wikineural": ""
-        },
-        "deepseek-ai/DeepSeek-V3.1": {
-            "omarkamali/wikipedia-monthly": "",
-            "Locutusque/Mind-Corpus": ""
+        "iapp/chinda-qwen3-4b": {
+            "FreedomIntelligence/medical-o1-reasoning-SFT": ""
         }
     }
 }
