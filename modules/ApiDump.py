@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 from typing import Optional,Iterable
 import json
-from variable import Variable
+from modules.variable import Variable
 
 class ApiCardSetup:
     '''Setting Api calling Card as models and datasets be required'''
