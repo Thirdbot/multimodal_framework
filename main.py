@@ -244,7 +244,7 @@ from modules.ApiDump import ApiCardSetup
 from modules.DataDownload import DataLoader
 # from modules.finetuning_model import FinetuneModel
 from modules.finetuning_model import Manager as FinetuneManager
-from variable import Variable
+from modules.variable import Variable
 
 acess_token = os.environ.get("hf_token")
 
@@ -272,8 +272,8 @@ downloading.run(list_download)
 
 
 # #finetune model
-# finetune = FinetuneManager()
+finetune = FinetuneManager()
 
-# finetune.run_finetune(list_download)
+finetune.run_finetune(list_download)
 
 
