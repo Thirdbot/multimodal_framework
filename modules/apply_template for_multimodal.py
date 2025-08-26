@@ -9,7 +9,7 @@ from transformers.image_utils import load_image
 from transformers.modeling_utils import PreTrainedModel
 import torch
 import torch.nn as nn
-from PIL import Image
+# from PIL import Image
 from pathlib import Path
 import requests
 from io import BytesIO

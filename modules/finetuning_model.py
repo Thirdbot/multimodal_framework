@@ -28,7 +28,7 @@ from huggingface_hub import HfApi
 
 from modules.defect import Report
 from modules.chatTemplate import ChatTemplate
-from modules.chainpipe import Chainpipe
+# from modules.chainpipe import Chainpipe
 from modules.createbasemodel import load_saved_model, CreateModel, VisionConfig, VisionModel
 
 # Initialize colorama
@@ -59,7 +59,7 @@ class FinetuneModel:
         # Initialize components
         self.device_map = "cuda:0" if torch.cuda.is_available() else "cpu"
         self.metric = evaluate.load("accuracy")
-        self.chainpipe = Chainpipe()
+        # self.chainpipe = Chainpipe()
         
         # Clear CUDA cache
         if torch.cuda.is_available():
@@ -652,6 +652,8 @@ class Manager:
         """
         self.data_json_path = model_data_json_path
         self.finetune_model = FinetuneModel()
+        self.WORKSPACE_DIR = Path(__file__).parent.parent.absolute()
+
     
     # def generate_model_data(self) -> List[Dict[str, Any]]:
     #     """Generate model data from JSON file.
@@ -664,7 +666,7 @@ class Manager:
     #     with open(self.data_json_path, "r") as f:
     #         return json.load(f)
     
-    def run_finetune(self, list_model_data: List[Dict[str, Any]], config: Dict[str, Any]) -> Tuple[Optional[AutoModelForCausalLM], Optional[DatasetDict]]:
+    def run_finetune(self, list_model_data: List[Dict[str, Any]], config: Dict[str, Any]=None) -> Tuple[Optional[AutoModelForCausalLM], Optional[DatasetDict]]:
         """Run the fine-tuning process.
         
         Args:
@@ -674,20 +676,31 @@ class Manager:
         Returns:
             Tuple of (model, dataset)
         """
+        
+        datamodel_fold = self.WORKSPACE_DIR / "DataModel_config"
+        datamodel_file = datamodel_fold / "saved_config.json"
+        
+        datamodel_file = datamodel_file.as_posix()
+        
+        
+        try:
+            with open(datamodel_file, 'r') as f:
+                config = json.load(f)
+        except:
+            print(f"error config file not found {datamodel_file}")
+            
         try:
             model = None
-            combined_dataset = None
+            # combined_dataset = None
             dataset = None
             saved_dataset = None
+            print(list_model_data)
             
-            for el in list_model_data:
-                if "model" in el:
-                    modelname = el["model"]
+            #load model and dataset prepare for tuning
+            for modelname,dict_dataset in list_model_data['model'].items():
                     
                     model, tokenizer = self.finetune_model.load_model(modelname, self.finetune_model.resume_from_checkpoint)
                 
-                if "datasets" in el:
-                    datasets = el["datasets"]
                     saved_dataset = None
                     first_dataset = None
                     second_dataset = None
@@ -695,7 +708,7 @@ class Manager:
                     first_cols = set()
                     second_cols = set()
                     
-                    for dataset_name in datasets:
+                    for dataset_name,info in dict_dataset.items():
                         try:
                             print(f"{Fore.CYAN}Loading dataset config: {dataset_name} {config.get(dataset_name, 'No config found')}{Style.RESET_ALL}")
                             
@@ -819,5 +832,4 @@ class Manager:
             
         except Exception as e:
             print(f"{Fore.RED}Error running finetune: {str(e)}{Style.RESET_ALL}")
-            print(f"{Fore.YELLOW}Stack trace:", exc_info=True)
             return None, None
