@@ -26,7 +26,6 @@ from peft import (
 import evaluate
 from huggingface_hub import HfApi
 
-from modules.defect import Report
 from modules.chatTemplate import ChatTemplate
 # from modules.chainpipe import Chainpipe
 from modules.createbasemodel import load_saved_model, CreateModel, VisionConfig, VisionModel
@@ -648,8 +647,7 @@ class FinetuneModel:
             
         except Exception as e:
             print(f"{Fore.RED}Error running tuning: {str(e)}{Style.RESET_ALL}")
-            report = Report()
-            report.store_problem(model=modelname, dataset=dataset)
+            
 
 class Manager:
     """Manager class for handling fine-tuning operations."""
