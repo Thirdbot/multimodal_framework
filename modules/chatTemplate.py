@@ -18,6 +18,7 @@ from PIL import Image
 from pathlib import Path
 # Initialize colorama
 init(autoreset=True)
+from sentence_transformers import SentenceTransformer
 
 from tqdm import tqdm
 

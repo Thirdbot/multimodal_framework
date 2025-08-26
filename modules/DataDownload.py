@@ -1,5 +1,6 @@
 import json
 from datasets import load_dataset, get_dataset_config_names
+from transformers import AutoModel,AutoTokenizer
 from huggingface_hub import hf_hub_download, HfApi
 from pathlib import Path
 from colorama import Fore, Style, init
@@ -8,7 +9,7 @@ init(autoreset=True)
 
 import shutil
 
-from variable import Variable
+from modules.variable import Variable
 
 ''' Download locally as seperated folder for training and inference'''
 class FlexibleDatasetLoader:
@@ -130,8 +131,8 @@ class ModelLoader:
         self.variable = Variable()
         
         # Set up local repository paths for both model and datasets
-        self.REPO_DIR = self.variable.REPO_DIR
-        self.REPO_DIR.mkdir(parents=True, exist_ok=True)
+        self.SAVEDMODEL_DIR = self.variable.LocalModel_DIR
+        self.SAVEDMODEL_DIR.mkdir(parents=True, exist_ok=True)
         
     def load_model(self, name):
         try:
@@ -141,21 +142,12 @@ class ModelLoader:
                 # For custom models, use the relative path from the workspace
                 print(f"{Fore.GREEN}Using custom model from: {local_path}{Style.RESET_ALL}")
             else:
-                model_info = self.api.model_info(name)
-                
-                # Download each file from the model
-                for file_info in model_info.siblings:
-                    try:
-                        file_path = hf_hub_download(
-                            repo_id=name,
-                            filename=file_info.rfilename,
-                            repo_type="model",
-                            cache_dir=self.REPO_DIR
-                        )
-                        print(f"{Fore.GREEN}Downloaded {file_info.rfilename} to: {file_path}{Style.RESET_ALL}")
-                    except Exception as e:
-                        print(f"{Fore.YELLOW}Warning: Could not download {file_info.rfilename}: {str(e)}{Style.RESET_ALL}")
-                        continue
+                #load the model then save in local
+                model = AutoModel.from_pretrained(name)
+                tokenizer = AutoTokenizer.from_pretrained(name)
+                model_dir = self.SAVEDMODEL_DIR / name
+                model.save_pretrained(model_dir)
+                tokenizer.save_pretrained(model_dir)
                     
         except Exception as e:
             print(f"{Fore.RED}Error downloading model {name}: {str(e)}{Style.RESET_ALL}")
