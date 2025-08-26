@@ -21,12 +21,12 @@ init(autoreset=True)
 
 from tqdm import tqdm
 
-from joblib import Parallel, delayed
+# from joblib import Parallel, delayed
 
-from sentence_transformers import SentenceTransformer
+# from sentence_transformers import SentenceTransformer
 from transformers import AutoImageProcessor, AutoModel
 from transformers.image_utils import load_image
-from matplotlib.image import imread
+# from matplotlib.image import imread
 # from pydub import AudioSegment
 
 import torch.nn.functional as F
