@@ -89,6 +89,14 @@ class FinetuneModel:
         self.CHECKPOINT_DIR = self.WORKSPACE_DIR / "checkpoints"
         self.OFFLOAD_DIR = self.WORKSPACE_DIR / "offload"
         
+        
+        
+        self.MODEL_LOCAL_DIR = self.WORKSPACE_DIR / "repositories"
+        
+        
+        
+        
+        
         for directory in [self.MODEL_DIR, self.CHECKPOINT_DIR, self.OFFLOAD_DIR]:
             directory.mkdir(parents=True, exist_ok=True)
     
@@ -304,7 +312,8 @@ class FinetuneModel:
             
         Returns:
             Tuple of (model, tokenizer)
-        """     
+        """ 
+        
         try:
             print(f"{Fore.CYAN}Downloading and loading model from Hugging Face: {model_id}{Style.RESET_ALL}")
             
@@ -312,7 +321,8 @@ class FinetuneModel:
                 model_id,
                 trust_remote_code=True,
                 padding_side="right",
-                truncation_side="right"
+                truncation_side="right",
+                
             )
             
             self.chat_template = ChatTemplate(tokenizer=tokenizer)

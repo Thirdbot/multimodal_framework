@@ -244,10 +244,17 @@ from modules.ApiDump import ApiCardSetup
 from modules.DataDownload import DataLoader
 # from modules.finetuning_model import FinetuneModel
 from modules.finetuning_model import Manager as FinetuneManager
+from variable import Variable
 
 acess_token = os.environ.get("hf_token")
 
 api = HfApi()
+variable = Variable()
+DMConfig_DIR = variable.DMConfig_DIR
+
+DMConfig_DIR.mkdir(parents=True, exist_ok=True)
+SavedConfigsfile= variable.SAVED_CONFIG_Path
+SavedConfigsfile.touch(exist_ok=True)
 
 setcard = ApiCardSetup()
 
@@ -264,9 +271,9 @@ downloading = DataLoader()
 downloading.run(list_download)
 
 
-#finetune model
-finetune = FinetuneManager()
+# #finetune model
+# finetune = FinetuneManager()
 
-finetune.run_finetune(list_download)
+# finetune.run_finetune(list_download)
 
 
