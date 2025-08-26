@@ -2,7 +2,8 @@
 .Llama/
 __pycache__
 # checkpoints
-DataModel_config/
+# DataModel_config/
+configs
 
 conversation_history/
 repositories/
