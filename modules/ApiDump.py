@@ -1,35 +1,20 @@
-# from datasets import load_dataset
-# import os
+
 from huggingface_hub import HfApi,ModelInfo,DatasetInfo
-# from transformers import AutoModel
-# from datasets import load_dataset,get_dataset_split_names
 import os
-# import requests
-# import json
 from pathlib import Path
 from typing import Optional,Iterable
-# from pydantic import BaseModel, Field
-# from datasets import load_dataset, get_dataset_config_names
-# from colorama import Fore, Style, init
-# from requests.adapters import HTTPAdapter
-# from urllib3.util.retry import Retry
-# import time
-# from huggingface_hub import HfApi, HfFolder
-# from huggingface_hub.utils import HfHubHTTPError
 import json
-# # Initialize colorama
-# init(autoreset=True)
-
-# os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
-
+from variable import Variable
 
 class ApiCardSetup:
     '''Setting Api calling Card as models and datasets be required'''
     def __init__(self):
-        self.hf_api = HfApi()
-        self.model_data_logs = dict()
-        self.path = Path(__file__).parent.parent.absolute() / 'ApiCardSet.json'
-
+        self.variable = Variable()
+        self.hf_api = self.variable.hf_api
+        self.model_data_logs = self.variable.model_data_logs
+        self.api_card_path = self.variable.Card_Path
+        
+        
     def set(self,list_models:Optional[Iterable[ModelInfo]],list_datasets:Optional[Iterable[DatasetInfo]]):
         '''request hf api and convert to history json by getting list_models object and list_datasets object.
         
@@ -41,7 +26,7 @@ class ApiCardSetup:
         dataset_name_list:list = list()
         
         #format Path -> String
-        str_literal_path = self.path.as_posix()
+        str_literal_path = self.api_card_path.as_posix()
         
         #DataCard Form
         previous = {'model':dict(dict())}
