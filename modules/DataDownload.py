@@ -1,19 +1,20 @@
 #use this to download the data from the data_model.json and successully save to installed.json and sent model to finetuned for use again in main.py
-import pandas as pd 
+# import pandas as pd 
 import json
 from datasets import load_dataset, get_dataset_config_names
 from huggingface_hub import hf_hub_download, HfApi
 from pathlib import Path
 from colorama import Fore, Style, init
-from modules.ApiDump import ApiCardSetup
-from transformers import AutoModelForCausalLM
+# from modules.ApiDump import ApiCardSetup
+# from transformers import AutoModelForCausalLM
 import os
-import requests
-from urllib.parse import urlparse
+# import requests
+# from urllib.parse import urlparse
 
 # Initialize colorama
 init(autoreset=True)
 
+import shutil
 # os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 
 
@@ -35,17 +36,21 @@ class FlexibleDatasetLoader:
         self.DATASETS_DIR = self.REPO_DIR / "datasets"
         self.DATAMODEL_DIR = self.WORKSPACE_DIR / "DataModel_config"
         self.SAVED_CONFIG_FILE = self.DATAMODEL_DIR / "saved_config.json"
-        
+    
+    
+    #load dataset
     def load(self, name, config):
-        if config is not None:
+        #load datasets with congig
+        print('name:',name)
+        print('config:',config)
+        if config:
             try:
                 # Create dataset directory with name and config
                 short_name = name.split('/')[-1]  # Get just the last part of the name
                 dataset_dir = self.DATASETS_DIR / f"{short_name}"
-                dataset_dir.mkdir(parents=True, exist_ok=False)
+                dataset_dir.mkdir(parents=True, exist_ok=True)
                 
-                # Get the dataset info to find the actual files
-                dataset_info = self.api.dataset_info(name)
+                
                 
                 self.dataset = load_dataset(
                     name,
@@ -54,70 +59,80 @@ class FlexibleDatasetLoader:
                     # cache_dir=dataset_dir
                 )
                 print(f"{Fore.GREEN}Successfully loaded dataset {name}{Style.RESET_ALL}")
-                self.config = config
                 self.saved_config[name] = config
                
                
                ### i forgot what it does so dont delete this.
-                    
-                # Download each file from the dataset
-                for file_info in dataset_info.siblings:
-                    try:
-                        # Create the target directory if it doesn't exist
-                        target_dir = dataset_dir / os.path.dirname(file_info.rfilename)
-                        target_dir.mkdir(parents=True, exist_ok=False)
-                        
-                        # # Use a shorter cache path
-                        # cache_dir = self.REPO_DIR / "cache" / short_name
-                        # cache_dir.mkdir(parents=True, exist_ok=True)
-                        
-                        # Download directly to dataset directory
-                        file_path = hf_hub_download(
-                            repo_id=name,
-                            filename=file_info.rfilename,
-                            repo_type="dataset",
-                            local_dir=str(target_dir),
-                            # cache_dir=str(cache_dir),
-                            # force_download=True
-                        )
-                        # Copy the file to the target directory if it's not already there
-                        target_path = target_dir / os.path.basename(file_info.rfilename)
-                        if not target_path.exists():
-                            import shutil
-                            shutil.copy2(file_path, target_path)
-                        self.file_paths[file_info.rfilename] = str(target_path)
-                        print(f"{Fore.GREEN}Downloaded {file_info.rfilename} to: {target_path}{Style.RESET_ALL}")
-                    except Exception as e:
-                        print(f"{Fore.YELLOW}Warning: Could not download {file_info.rfilename}: {str(e)}{Style.RESET_ALL}")
-                        continue
                 
             except Exception as e:
-                if name in self.saved_config:
-                    return self.load(name, self.saved_config[name])
+                print(f"{e}")
+                #config error or entering wrong config then goes recursive to else statement
                 return self.load(name, None)
                     
         else:
+            #if there is no config or config None then find config
             configs = get_dataset_config_names(name)
+            #always return configs
             if isinstance(configs, list):
+                #instance of saved_config
                 saved_config = {}
                 user_input = None
                 print(f"{Fore.CYAN}Available configs for {name}: {configs}{Style.RESET_ALL}")
+                
                 try:
                     with open(self.SAVED_CONFIG_FILE, 'r') as f:
+                        #load dict format of json format
                         saved_config = json.load(f)
                 except:
-                    self.SAVED_CONFIG_FILE.touch(exist_ok=True)
+                    #create new files
+                    self.SAVED_CONFIG_FILE.touch(exist_ok=False)
+                
+                #find name table 
                 if name in saved_config:
                     user_input = saved_config[name]
                 else:
                     user_input = input(f"{Fore.YELLOW}Enter the config you want to use: {Style.RESET_ALL}")
-                    self.config = user_input
-                    self.saved_config[name] = user_input
-                    saved_config.update(self.saved_config)
+                    #new config
+                    # self.saved_config[name] = user_input
+                    self.config[name] = user_input
+                    saved_config.update({name,user_input})
                     with open(self.SAVED_CONFIG_FILE, 'w') as f:
                         json.dump(saved_config, f, indent=4)
+                #return config as it will be recursive again last times
                 return self.load(name, user_input)
-
+            
+        # Get the dataset info to find the actual files
+        dataset_info = self.api.dataset_info(name)
+        # Download each file from the dataset
+        for file_info in dataset_info.siblings:
+            try:
+                # Create the target directory if it doesn't exist
+                target_dir = dataset_dir / os.path.dirname(file_info.rfilename)
+                # target_dir.mkdir(parents=True, exist_ok=False)
+                
+                # # Use a shorter cache path
+                # cache_dir = self.REPO_DIR / "cache" / short_name
+                # cache_dir.mkdir(parents=True, exist_ok=True)
+                
+                # Download directly to dataset directory
+                file_path = hf_hub_download(
+                    repo_id=name,
+                    filename=file_info.rfilename,
+                    repo_type="dataset",
+                    local_dir=str(target_dir),
+                    cache_dir=str(target_dir),
+                    # force_download=True
+                )
+                # Copy the file to the target directory if it's not already there
+                target_path = target_dir / os.path.basename(file_info.rfilename)
+                if not target_path.exists():
+                    shutil.copy2(file_path, target_path)
+                self.file_paths[file_info.rfilename] = str(target_path)
+                print(f"{Fore.GREEN}Downloaded {file_info.rfilename} to: {target_path}{Style.RESET_ALL}")
+            except Exception as e:
+                print(f"{Fore.YELLOW}Warning: Could not download {file_info.rfilename}: {str(e)}{Style.RESET_ALL}")
+                continue
+            
     def get(self):
         return self.dataset
 
@@ -195,49 +210,27 @@ class DataLoader():
         # datamodel = self.datamodel_load(params)
         return self.load(params)
         
-    # def datainstall_load(self):
-    #     if self.installed_filepath.exists():
-    #         if self.installed_filepath.stat().st_size > 0:
-    #             installed = pd.read_json(self.installed_filepath)
-    #             return installed
-    #         else:
-    #             return pd.DataFrame(columns=['model','datasets'])
-
-    # def datamodel_load(self,params):
-    #     if self.datamodel_filepath.exists():
-    #         if self.datamodel_filepath.stat().st_size > 0:
-    #             df = pd.read_json(self.datamodel_filepath)
-    #             return df
-    #         else:
-    #             print(f"{Fore.YELLOW}No data model found. Creating new one...{Style.RESET_ALL}")
-    #             manager = ApiCardSetup()
-    #             return manager.set(params)
-
-
     def load(self,to_install):
-        # base_df = pd.DataFrame(install)
-        # print(base_df['datasets'])
         
         for model,datasets in to_install['model'].items():
             print('model:'+model)
             print('dataset:',datasets)
             
             try:
-                download_model = self.model.load_model(model)
+                #load model to repository
+                self.model.load_model(model)
                 
                 print(f"{Fore.CYAN}Processing model: {model} with datasets: {datasets}{Style.RESET_ALL}")
 
                 if isinstance(datasets,dict):
                     try:
                         for dataset,info in datasets.items():
+                                #load datasets to repository
                                 self.dataset.load(dataset,self.config)
                     except Exception as e:
                         print(f"{Fore.RED}Error processing dataset {dataset}: {str(e)}{Style.RESET_ALL}")
-                # else:
-                #     self.dataset.load(datasets,self.config)
                     
                 
-
             except Exception as e:
                 print(f"{Fore.RED}Error processing model {model}: {str(e)}{Style.RESET_ALL}")
     
