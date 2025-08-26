@@ -30,6 +30,8 @@ from modules.chatTemplate import ChatTemplate
 # from modules.chainpipe import Chainpipe
 from modules.createbasemodel import load_saved_model, CreateModel, VisionConfig, VisionModel
 
+from modules.variable import Variable
+
 # Initialize colorama
 init(autoreset=True)
 
@@ -45,6 +47,7 @@ class FinetuneModel:
     def __init__(self):
         """Initialize the FinetuneModel with default parameters."""
         # Training parameters
+        self.variable = Variable()
         self.per_device_train_batch_size = 2  # Reduced batch size
         self.per_device_eval_batch_size = 1
         self.gradient_accumulation_steps = 4  # Reduced gradient accumulation
@@ -75,22 +78,20 @@ class FinetuneModel:
         
     
     def _setup_directories(self):
-        """Set up required directories."""
-        self.WORKSPACE_DIR = Path(__file__).parent.parent.absolute()
-        
-        self.CUTOM_MODEL_DIR = self.WORKSPACE_DIR / "custom_models"
-        self.VISION_MODEL_DIR = self.CUTOM_MODEL_DIR / "vision-model"
-        self.REGULAR_MODEL_DIR = self.CUTOM_MODEL_DIR / "conversation-model"
+        """Set up required directories."""        
+        self.CUTOM_MODEL_DIR = self.variable.CUTOM_MODEL_DIR
+        self.VISION_MODEL_DIR = self.variable.VISION_MODEL_DIR
+        self.REGULAR_MODEL_DIR = self.variable.REGULAR_MODEL_DIR
         
         
         
-        self.MODEL_DIR = self.WORKSPACE_DIR / "models"
-        self.CHECKPOINT_DIR = self.WORKSPACE_DIR / "checkpoints"
-        self.OFFLOAD_DIR = self.WORKSPACE_DIR / "offload"
+        self.MODEL_DIR = self.variable.MODEL_DIR
+        self.CHECKPOINT_DIR = self.variable.CHECKPOINT_DIR
+        self.OFFLOAD_DIR = self.variable.OFFLOAD_DIR
         
         
         
-        self.MODEL_LOCAL_DIR = self.WORKSPACE_DIR / "repositories"
+        self.MODEL_LOCAL_DIR = self.variable.REPO_DIR
         
         
         
@@ -109,7 +110,7 @@ class FinetuneModel:
             List of target modules for LoRA configuration
         """
         try:
-            config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
+            config = AutoConfig.from_pretrained(model_id)
             model_type = config.model_type.lower()
             
             target_modules_map = {
@@ -217,16 +218,16 @@ class FinetuneModel:
         
         try:
             # Check if model_id is a local path or Hugging Face model ID
-            if Path(model_id).exists():
-                split_name = model_id.split("\\")
-                if "custom_models" in split_name:
-                    model_task = split_name[-2]
-                    self.model_task = model_task
-            else:
-                self.model_task = self.get_model_task(model_id)
+            # if Path(model_id).exists():
+            #     split_name = model_id.split("\\")
+            #     if "custom_models" in split_name:
+            #         model_task = split_name[-2]
+            #         self.model_task = model_task
+            # else:
+            self.model_task = self.get_model_task(model_id)
             print(f"{Fore.CYAN}Model task detected: {self.model_task}{Style.RESET_ALL}")
             
-            self.TASK_MODEL_DIR = self.MODEL_DIR / self.model_task
+            self.TASK_MODEL_DIR = self.MODEL_DIR.joinpath(self.model_task)
             self.TASK_MODEL_DIR.mkdir(parents=True, exist_ok=True)
             
             if resume_from_checkpoint:
@@ -312,12 +313,15 @@ class FinetuneModel:
         Returns:
             Tuple of (model, tokenizer)
         """ 
+        # model_name = model_id.replace('/', '--') if '/' in model_id else model_id
         
+        # model_path = self.variable.LocalModel_DIR / ('models--'+ model_name)
+        model_path = self.variable.LocalModel_DIR / model_id
         try:
-            print(f"{Fore.CYAN}Downloading and loading model from Hugging Face: {model_id}{Style.RESET_ALL}")
+            print(f"{Fore.CYAN}Downloading and loading model: {model_path}{Style.RESET_ALL}")
             
             tokenizer = AutoTokenizer.from_pretrained(
-                model_id,
+                model_path,
                 trust_remote_code=True,
                 padding_side="right",
                 truncation_side="right",
@@ -345,7 +349,7 @@ class FinetuneModel:
             
             # Load base model with quantization
             model = AutoModelForCausalLM.from_pretrained(
-                model_id,
+                model_path,
                 config=config,
                 device_map=self.device_map,
                 trust_remote_code=True,
@@ -378,7 +382,7 @@ class FinetuneModel:
             return model, tokenizer
             
         except Exception as e:
-            print(f"{Fore.RED}Error loading model from scratch: {str(e)}{Style.RESET_ALL}")
+            print(f"{Fore.RED}Error loading model from scratch: {str(e)}{Style.RESET_ALL} from {model_path}")
             return None, None
     
     def load_dataset(self, dataset_name: str, config: Optional[Dict] = None, split: Optional[str] = None) -> Optional[DatasetDict]:
@@ -652,15 +656,14 @@ class FinetuneModel:
 class Manager:
     """Manager class for handling fine-tuning operations."""
     
-    def __init__(self, model_data_json_path: Optional[str] = None):
+    def __init__(self):
         """Initialize the Manager.
         
         Args:
             model_data_json_path: Path to the model data JSON file
         """
-        self.data_json_path = model_data_json_path
+        self.variable = Variable()
         self.finetune_model = FinetuneModel()
-        self.WORKSPACE_DIR = Path(__file__).parent.parent.absolute()
 
     
     # def generate_model_data(self) -> List[Dict[str, Any]]:
@@ -674,7 +677,7 @@ class Manager:
     #     with open(self.data_json_path, "r") as f:
     #         return json.load(f)
     
-    def run_finetune(self, list_model_data: List[Dict[str, Any]], config: Dict[str, Any]=None) -> Tuple[Optional[AutoModelForCausalLM], Optional[DatasetDict]]:
+    def run_finetune(self, list_model_data: List[Dict[str, Any]]) -> Tuple[Optional[AutoModelForCausalLM], Optional[DatasetDict]]:
         """Run the fine-tuning process.
         
         Args:
@@ -685,8 +688,7 @@ class Manager:
             Tuple of (model, dataset)
         """
         
-        datamodel_fold = self.WORKSPACE_DIR / "DataModel_config"
-        datamodel_file = datamodel_fold / "saved_config.json"
+        datamodel_file = self.variable.SAVED_CONFIG_Path
         
         datamodel_file = datamodel_file.as_posix()
         
@@ -715,6 +717,7 @@ class Manager:
                     
                     first_cols = set()
                     second_cols = set()
+                    concat_dataset = set()
                     
                     for dataset_name,info in dict_dataset.items():
                         try:
