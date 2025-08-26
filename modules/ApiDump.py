@@ -1,8 +1,8 @@
 # from datasets import load_dataset
 # import os
 from huggingface_hub import HfApi,ModelInfo,DatasetInfo
-from transformers import AutoModel
-from datasets import load_dataset,get_dataset_split_names
+# from transformers import AutoModel
+# from datasets import load_dataset,get_dataset_split_names
 import os
 # import requests
 # import json

@@ -242,7 +242,8 @@ from huggingface_hub import HfApi
 # from datasets import load_dataset,get_dataset_split_names
 from modules.ApiDump import ApiCardSetup
 from modules.DataDownload import DataLoader
-from modules.finetuning_model import FinetuneModel
+# from modules.finetuning_model import FinetuneModel
+from modules.finetuning_model import Manager as FinetuneManager
 
 acess_token = os.environ.get("hf_token")
 
@@ -264,6 +265,8 @@ downloading.run(list_download)
 
 
 #finetune model
-finetune = FinetuneModel()
+finetune = FinetuneManager()
+
+finetune.run_finetune(list_download)
 
 
