@@ -41,8 +41,11 @@ class ApiCardSetup:
                 dataset_name_list.append(dataset.id)
         #Load Existed Card
         if os.path.exists(str_literal_path):
-            with open(str_literal_path,'r') as f:
-                previous = json.load(f)
+            try:
+                with open(str_literal_path,'r') as f:
+                    previous = json.load(f)
+            except:
+                pass
         
         #Put Info in Card as it getting Non Duplicate in Model and Dataset Using Dict Type
         for model in model_name_list:
