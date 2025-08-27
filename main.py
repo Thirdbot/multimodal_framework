@@ -243,7 +243,7 @@ from huggingface_hub import HfApi
 from modules.ApiDump import ApiCardSetup
 from modules.DataDownload import DataLoader
 # from modules.finetuning_model import FinetuneModel
-from modules.finetuning_model import Manager as FinetuneManager
+from modules.DataModelPrepare import Manager
 from modules.variable import Variable
 
 acess_token = os.environ.get("hf_token")
@@ -258,9 +258,9 @@ SavedConfigsfile.touch(exist_ok=True)
 
 setcard = ApiCardSetup()
 
-list_models = api.list_models(tags="text-generation",limit=1,gated=False,language='thai')
+list_models = api.list_models(model_name='Qwen/Qwen1.5-0.5B-Chat',limit=1,gated=False)
 # list_datasets = api.list_datasets(tags='text-generation',limit=3,gated=False)
-list_datasets = api.list_datasets(dataset_name='FreedomIntelligence/medical-o1-reasoning-SFT',limit=1,gated=False)
+list_datasets = api.list_datasets(dataset_name='TIGER-Lab/VisualWebInstruct',limit=1,gated=False)
 
 #set new list to download
 list_download = setcard.set(list_models,list_datasets)
@@ -272,8 +272,8 @@ downloading.run(list_download)
 
 
 # #finetune model
-finetune = FinetuneManager()
+finetune = Manager()
 
-finetune.run_finetune(list_download)
+finetune.dataset_prepare(list_download)
 
 

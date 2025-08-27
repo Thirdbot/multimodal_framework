@@ -143,8 +143,8 @@ class ModelLoader:
                 print(f"{Fore.GREEN}Using custom model from: {local_path}{Style.RESET_ALL}")
             else:
                 #load the model then save in local
-                model = AutoModel.from_pretrained(name)
-                tokenizer = AutoTokenizer.from_pretrained(name)
+                model = AutoModel.from_pretrained(name,trust_remote_code=True)
+                tokenizer = AutoTokenizer.from_pretrained(name,trust_remote_code=True)
                 model_dir = self.SAVEDMODEL_DIR / name
                 model.save_pretrained(model_dir)
                 tokenizer.save_pretrained(model_dir)
