@@ -1,14 +1,13 @@
 .env
 .Llama/
 __pycache__
-# checkpoints
-# DataModel_config/
+
 configs
 
 conversation_history/
 repositories/
 # models/
-custom_models
+model-trained/
 
 checkpoints/
 
