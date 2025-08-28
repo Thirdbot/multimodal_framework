@@ -439,19 +439,8 @@ class FinetuneModel:
             return None
     
     def map_tokenizer(self, dataset_name: str, tokenizer: AutoTokenizer, dataset: DatasetDict, 
-                     max_length: int = 384, return_embedded_dataset: bool = False,return_processed: bool = False) -> Optional[DatasetDict]:
-        """Map tokenizer to dataset.
-        
-        Args:
-            dataset_name: The dataset identifier
-            tokenizer: The tokenizer to use
-            dataset: The dataset to process
-            max_length: Maximum sequence length
-            return_embedded_dataset: Whether to return embedded dataset
-            
-        Returns:
-            Processed dataset
-        """
+                     max_length: int = 384, Tokenizing: bool = False) -> Optional[DatasetDict]:
+
         print(f"{Fore.CYAN}Processing dataset with max length: {max_length}{Style.RESET_ALL}")
         
         # Ensure tokenizer has padding token
@@ -465,8 +454,7 @@ class FinetuneModel:
                 dataset_name,
                 dataset,
                 max_length=max_length,
-                return_embedded_dataset=return_embedded_dataset,
-                return_processed=return_processed
+                Tokenizing=Tokenizing
             )
             print(f"{Fore.GREEN}Successfully prepared chat dataset{Style.RESET_ALL}")
             return tokenized_dataset
@@ -678,17 +666,6 @@ class Manager:
         self.finetune_model = FinetuneModel()
 
     
-    # def generate_model_data(self) -> List[Dict[str, Any]]:
-    #     """Generate model data from JSON file.
-        
-    #     Returns:
-    #         List of model data dictionaries
-    #     """
-    #     if self.data_json_path is None:
-    #         raise ValueError("data_json_path is required")
-    #     with open(self.data_json_path, "r") as f:
-    #         return json.load(f)
-    
     def dataset_prepare(self, list_model_data: List[Dict[str, Any]]) -> Tuple[Optional[AutoModelForCausalLM], Optional[DatasetDict]]:
         """Run the fine-tuning process.
         
@@ -751,13 +728,10 @@ class Manager:
                                 #return processed True make it return text
                                 first_dataset = self.finetune_model.map_tokenizer(dataset_name, 
                                                                                tokenizer, dataset, 
-                                                                               return_embedded_dataset=False,
-                                                                               return_processed=False)  # Changed to False
-                                first_dataset = dataset
+                                                                               Tokenizing=False)
                                 if first_dataset is None:
                                     print(f"{Fore.RED}Failed to process first dataset: {dataset_name}{Style.RESET_ALL}")
                                     continue
-                                pd.DataFrame(first_dataset).to_csv(Path(__file__).parent.parent.absolute() / "first_dataset.csv")
                                 first_cols = set(first_dataset.column_names)
                                 concat_dataset = first_dataset
                                 
@@ -772,14 +746,12 @@ class Manager:
                                 second_dataset = self.finetune_model.map_tokenizer(dataset_name, 
                                                                                 tokenizer, 
                                                                                 dataset, 
-                                                                                return_embedded_dataset=False,
-                                                                                return_processed=False)  # Changed to False
-                                
+                                                                                Tokenizing=False)
+
                                 second_dataset = dataset
                                 if second_dataset is None:
                                     print(f"{Fore.RED}Failed to process second dataset: {dataset_name}{Style.RESET_ALL}")
                                     continue
-                                pd.DataFrame(second_dataset).to_csv(Path(__file__).parent.parent.absolute() / "second_dataset.csv")
 
                                 second_cols = set(second_dataset.column_names)
                                 
@@ -813,7 +785,7 @@ class Manager:
                     
                     dataset = concat_dataset
                     
-                    pd.DataFrame(dataset).to_csv(Path(__file__).parent.parent.absolute() / "text_dataset.csv")
+                    pd.DataFrame(dataset).to_csv(Path(__file__).parent.parent.absolute() / "concat_dataset.csv")
                     
                     # union_cols = first_cols.union(second_cols)
 
@@ -823,10 +795,13 @@ class Manager:
                     saved_dataset = self.finetune_model.map_tokenizer(dataset_name, 
                                                                     tokenizer, 
                                                                     dataset,
-                                                                    return_embedded_dataset=False,
-                                                                    return_processed=False)  # Changed to False
-                    
+                                                                    Tokenizing=True)
+
                     pd.DataFrame(saved_dataset).to_csv(Path(__file__).parent.parent.absolute() / "embedded_dataset.csv")
+                    
+                    
+                    
+                    
                     # saved_dataset = dataset
                     
                     # #create model as design
