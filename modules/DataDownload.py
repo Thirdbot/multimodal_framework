@@ -1,5 +1,5 @@
 import json
-from datasets import load_dataset, get_dataset_config_names
+from datasets import load_dataset, get_dataset_config_names,get_dataset_config_info
 from transformers import AutoModel,AutoTokenizer
 from huggingface_hub import hf_hub_download, HfApi
 from pathlib import Path
@@ -33,6 +33,12 @@ class FlexibleDatasetLoader:
         #load datasets with congig
         print('name:',name)
         print('config:',config)
+        
+        info = get_dataset_config_info(name)
+        info_split = info.splits.keys()
+        if self.split not in info_split:
+            self.split = "test"
+   
         if config:
             try:
                 # Create dataset directory with name and config
@@ -89,35 +95,36 @@ class FlexibleDatasetLoader:
                 return self.load(name, user_input)
             
         # Get the dataset info to find the actual files
-        dataset_info = self.api.dataset_info(name)
-        # Download each file from the dataset
-        for file_info in dataset_info.siblings:
-            try:
-                # Create the target directory if it doesn't exist
-                target_dir = dataset_dir / os.path.dirname(file_info.rfilename)
-                # target_dir.mkdir(parents=True, exist_ok=False)
+        # dataset_info = self.api.dataset_info(name)
+        # # Download each file from the dataset
+        # for file_info in dataset_info.siblings:
+        #     try:
+        #         # Create the target directory if it doesn't exist
+        #         target_dir = dataset_dir / os.path.dirname(file_info.rfilename)
+        #         # target_dir.mkdir(parents=True, exist_ok=False)
                 
-                # # Use a shorter cache path
-                # cache_dir = self.REPO_DIR / "cache" / short_name
-                # cache_dir.mkdir(parents=True, exist_ok=True)
+        #         # # Use a shorter cache path
+        #         # cache_dir = self.REPO_DIR / "cache" / short_name
+        #         # cache_dir.mkdir(parents=True, exist_ok=True)
                 
-                # Download directly to dataset directory
-                file_path = hf_hub_download(
-                    repo_id=name,
-                    filename=file_info.rfilename,
-                    repo_type="dataset",
-                    local_dir=str(target_dir),
-                    cache_dir=str(target_dir),
-                    # force_download=True
-                )
-                # Copy the file to the target directory if it's not already there
-                target_path = target_dir / os.path.basename(file_info.rfilename)
-                if not target_path.exists():
-                    shutil.copy2(file_path, target_path)
-                print(f"{Fore.GREEN}Downloaded {file_info.rfilename} to: {target_path}{Style.RESET_ALL}")
-            except Exception as e:
-                print(f"{Fore.YELLOW}Warning: Could not download {file_info.rfilename}: {str(e)}{Style.RESET_ALL}")
-                continue
+        #         # Download directly to dataset directory
+        #         file_path = hf_hub_download(
+        #             repo_id=name,
+        #             filename=file_info.rfilename,
+        #             repo_type="dataset",
+        #             local_dir=str(target_dir),
+        #             cache_dir=str(target_dir),
+                    
+        #             # force_download=True
+        #         )
+        #         # Copy the file to the target directory if it's not already there
+        #         target_path = target_dir / os.path.basename(file_info.rfilename)
+        #         if not target_path.exists():
+        #             shutil.copy2(file_path, target_path)
+        #         print(f"{Fore.GREEN}Downloaded {file_info.rfilename} to: {target_path}{Style.RESET_ALL}")
+        #     except Exception as e:
+        #         print(f"{Fore.YELLOW}Warning: Could not download {file_info.rfilename}: {str(e)}{Style.RESET_ALL}")
+        #         continue
             
     def get(self):
         return self.dataset
