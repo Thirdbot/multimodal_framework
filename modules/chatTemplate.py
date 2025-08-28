@@ -90,10 +90,12 @@ class ChatTemplate:
         self.sentence_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2").to(self.device)
         self.sentence_model.eval()  # Ensure model is in eval mode from the start
     
-    def seperated_data(self,dataset_name,dataset,keys,create_model_path=None,mul_field=None,Tokenizing=False):
+    def seperated_data(self,dataset_name,dataset,keys,create_model_path=None,mul_field=[],Tokenizing=False):
+        dataset_keys = dataset.features.keys()
         if Tokenizing:
             
-            if mul_field is None:
+            if len(mul_field) == 0:
+                print("no multimodality to tokenize")
                 # Format text data for tokenization
                 formatted_texts = []
                 for conversation in dataset[keys]:
@@ -145,7 +147,7 @@ class ChatTemplate:
                 })
             
             # Check for multimodal content if needed
-            if mul_field is not None:
+            else:
                 # Format and tokenize text data
                 formatted_texts = []
                 for conversation in dataset[keys]:
@@ -171,30 +173,30 @@ class ChatTemplate:
                     'attention_mask': text_tokenized['attention_mask'],
                 }
                 
+                processed_images = []
                 for mul in mul_field:
                     set_data = dataset[mul]
                     image_pattern, audio_pattern, video_pattern = [r'^image(?:s)?$', r'^audio(?:s)?$', r'^video(?:s)?$']
-                    if re.search(mul, image_pattern):
-                        non_image_images = False
+
+                    print(f"processing {mul} columns")
+                    if mul in dataset_keys:
                         # Ensure images are in the correct format
-                        processed_images = []
                         for img in set_data:
                             if isinstance(img, Image.Image):
                                 # Process image using the image processor
+                                print("data inside is image format")
                                 processed = self.image_processor(img, return_tensors="pt")
                                 processed_images.append(processed['pixel_values'])
-                            else:
-                                # assume that non-image data is handled by the dataset dependencies
-                                non_image_images = True
-                                break
-                            
-                        if non_image_images:
+
+                        if len(processed_images) == 0:
+                            print("data inside is not image format")
                             processed_images = self.process_dataset_dependencies(dataset_name, dataset, keys, mul_field)
 
-                        if processed_images:
-                            # Stack all processed images into a single batch
-                            image_batch = torch.cat(processed_images, dim=0)
-                            multimodal_data['pixel_values'] = image_batch
+                if processed_images:
+                    print("Stacking processed images")
+                    # Stack all processed images into a single batch
+                    image_batch = torch.cat(processed_images, dim=0)
+                    multimodal_data['pixel_values'] = image_batch
                 
                 # Create and return dataset with only training data
                 train_dataset = Dataset.from_dict(multimodal_data)
@@ -207,107 +209,50 @@ class ChatTemplate:
             return dataset
 
 
-    def process_dataset_dependencies(self,dataset_name,dataset,keys,mul_field=None,Tokenizing=False):
+    def process_dataset_dependencies(self, dataset_name, dataset, keys, mul_field=None, Tokenizing=False):
         print(f"Processing embedded dataset")
         total_items = len(dataset[keys])
-        
-        # Reduce batch size for better parallelization
-        batch_size = 1000  # Smaller batch size
+
+        batch_size = 100  # Smaller batch size
         batch_list = []
-        
-        # Process in batches
+
         for index in range(0, total_items, batch_size):
             end_idx = min(index + batch_size, total_items)
             print(f"Processing batch: {end_idx}/{total_items}", end="\r")
-            
-            # Create batch dictionary with all required fields
-            batch = {
-                keys: dataset[keys][index:end_idx]
-            }
-            
-            # Add multimodal fields if present
-            if mul_field is not None:
+            batch = {keys: dataset[keys][index:end_idx]}
+            if mul_field and len(mul_field) > 0:
                 for mul in mul_field:
                     batch[mul] = dataset[mul][index:end_idx]
-            
             batch_list.append(batch)
-            
         print("\n")
-        
-        if mul_field is None:
-            # Process batches in parallel using all available CPU cores
-            n_jobs = max(mp.cpu_count(), 4)  # Limit to 4 processes to avoid memory issues
-            # print(f"Using {n_jobs} CPU cores for parallel processing")
-            
-            # # Debug multiprocessing
-            # print(f"Number of batches to process: {len(batch_list)}")
-            # print(f"First batch size: {len(batch_list[0][keys]) if batch_list else 0}")
-            
-            # Use multiprocessing with proper backend
-            with mp.Pool(processes=n_jobs) as pool:
-                batch_output = list(tqdm(
-                    pool.starmap(
-                        self.mul_process,
-                        [(dataset_name, batch, keys, None,Tokenizing) for batch in batch_list]
-                    ),
-                    total=len(batch_list),
-                    desc="Processing batches in parallel"
-                ))
-            
-            # Flatten the results
+
+        if not mul_field or len(mul_field) == 0:
             embedded_messages = []
-            for batch_result in batch_output:
+            for batch in batch_list:
+                batch_result = self.mul_process(dataset_name, batch, keys, None, Tokenizing)
                 if batch_result is not None:
-                    messages, _ = batch_result  # Unpack the tuple
+                    messages, _ = batch_result
                     if messages:
                         embedded_messages.extend(messages)
-            
             print(f"\nCompleted processing {len(embedded_messages)} items")
-            # return Dataset.from_dict({
-            #     'conversations': embedded_messages
-            # })
             return embedded_messages
-        
-        elif mul_field is not None:
-            # Process batches in parallel using all available CPU cores
-            n_jobs = max(mp.cpu_count(), 4)  # Limit to 4 processes to avoid memory issues
-            # print(f"Using {n_jobs} CPU cores for parallel processing")
-            
-            # Debug multiprocessing
-            # print(f"Number of batches to process: {len(batch_list)}")
-            # print(f"First batch size: {len(batch_list[0][keys]) if batch_list else 0}")
-            
-            # Use multiprocessing with proper backend
-            with mp.Pool(processes=n_jobs) as pool:
-                results = list(tqdm(
-                    pool.starmap(
-                        self.mul_process,
-                        [(dataset_name, batch, keys, mul_field, Tokenizing) for batch in batch_list]
-                    ),
-                    total=len(batch_list),
-                    desc="Processing multimodal batches in parallel"
-                ))
-            
-            # Process results
+
+        else:
             embedded_messages = []
             embedded_images = []
-            for batch_messages, batch_images in results:
+            for batch in batch_list:
+                batch_messages, batch_images = self.mul_process(dataset_name, batch, keys, mul_field, Tokenizing)
                 if batch_messages:
                     embedded_messages.extend(batch_messages)
                 if batch_images:
                     embedded_images.extend(batch_images)
-            
             print(f"\nCompleted processing {len(embedded_messages)} items")
-            
-            # Create a list of dictionaries, each containing both text and image data
             combined_data = []
             for msg, img in zip(embedded_messages, embedded_images):
                 combined_data.append({
-                    'conversations':msg,
+                    'conversations': msg,
                     'image': img
                 })
-            
-            # return Dataset.from_list(combined_data)
             return combined_data
 
     def mul_process(self,dataset_name,dataset,keys,mul_field=None,Tokenizing=False):
@@ -357,8 +302,8 @@ class ChatTemplate:
                     batch_data.append(processed_content)
             
             return batch_data, None  # Return tuple with batch_data and None for images
-        
-        elif mul_field is not None:
+
+        elif len(mul_field) > 0:
             # Create new lists to store embedded data
             embedded_messages = []
             embedded_images = []
@@ -509,6 +454,9 @@ class ChatTemplate:
         
         HomePath = Path(__file__).parent.parent.absolute()
         local_dataset_path = HomePath / "repositories" / "datasets" / short_name
+
+        print(f"file locate at: {local_dataset_path}")
+        return 
         file_in_path = [path for path in Path(local_dataset_path).iterdir() if path.is_file()]
         zip_file_in_path = [path for path in Path(local_dataset_path).iterdir() if path.is_file() and path.suffix == ".zip"]
         folder_in_path = [path for path in Path(local_dataset_path).iterdir() if path.is_dir()]
@@ -941,4 +889,3 @@ class ChatTemplate:
             except Exception as e:
                 print(f"{Fore.RED}Error preparing dataset: {str(e)}{Style.RESET_ALL}")
                 raise
-    
