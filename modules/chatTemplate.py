@@ -173,30 +173,32 @@ class ChatTemplate:
                     'attention_mask': text_tokenized['attention_mask'],
                 }
                 
-                processed_images = []
+                processed_images,valid_image_idx = [],[]
+
                 for mul in mul_field:
                     set_data = dataset[mul]
-                    image_pattern, audio_pattern, video_pattern = [r'^image(?:s)?$', r'^audio(?:s)?$', r'^video(?:s)?$']
-
                     print(f"processing {mul} columns")
                     if mul in dataset_keys:
                         # Ensure images are in the correct format
-                        for img in set_data:
-                            if isinstance(img, Image.Image):
-                                # Process image using the image processor
-                                print("data inside is image format")
+                        for idx, img in enumerate(set_data):
+                            try:
                                 processed = self.image_processor(img, return_tensors="pt")
                                 processed_images.append(processed['pixel_values'])
+                                valid_image_idx.append(idx)
+                            except Exception as e:
+                                continue
 
                         if len(processed_images) == 0:
-                            print("data inside is not image format")
                             processed_images = self.process_dataset_dependencies(dataset_name, dataset, keys, mul_field)
 
                 if processed_images:
                     print("Stacking processed images")
                     # Stack all processed images into a single batch
-                    image_batch = torch.cat(processed_images, dim=0)
-                    multimodal_data['pixel_values'] = image_batch
+                    # image_batch = torch.stack(torch.tensor(processed_images), dim=0)
+                    multimodal_data['input_ids'] = text_tokenized['input_ids'][valid_image_idx]
+                    multimodal_data['attention_mask'] = text_tokenized['attention_mask'][valid_image_idx]
+                    multimodal_data['pixel_values'] = processed_images
+                    multimodal_data['pixel_values'] = processed_images
                 
                 # Create and return dataset with only training data
                 train_dataset = Dataset.from_dict(multimodal_data)
@@ -234,7 +236,7 @@ class ChatTemplate:
                     messages, _ = batch_result
                     if messages:
                         embedded_messages.extend(messages)
-            print(f"\nCompleted processing {len(embedded_messages)} items")
+            print(f"\nCompleted message processing {len(embedded_messages)} items")
             return embedded_messages
 
         else:
@@ -246,7 +248,7 @@ class ChatTemplate:
                     embedded_messages.extend(batch_messages)
                 if batch_images:
                     embedded_images.extend(batch_images)
-            print(f"\nCompleted processing {len(embedded_messages)} items")
+            print(f"\nCompleted mul processing {len(embedded_messages)} items")
             combined_data = []
             for msg, img in zip(embedded_messages, embedded_images):
                 combined_data.append({
@@ -454,9 +456,7 @@ class ChatTemplate:
         
         HomePath = Path(__file__).parent.parent.absolute()
         local_dataset_path = HomePath / "repositories" / "datasets" / short_name
-
-        print(f"file locate at: {local_dataset_path}")
-        return 
+ 
         file_in_path = [path for path in Path(local_dataset_path).iterdir() if path.is_file()]
         zip_file_in_path = [path for path in Path(local_dataset_path).iterdir() if path.is_file() and path.suffix == ".zip"]
         folder_in_path = [path for path in Path(local_dataset_path).iterdir() if path.is_dir()]
@@ -494,8 +494,10 @@ class ChatTemplate:
                     image_path = str(os.path.join(zip,file_path))
                     if Tokenizing:
                         image_obj = load_image(image_path)
-                        processed = self.image_processor(image_obj, return_tensors="pt")
-                        return processed['pixel_values']
+                        # processed = self.image_processor(image_obj, return_tensors="pt")
+                        
+                        # return processed['pixel_values']
+                        return np.array(image_obj)
                     else:
                         return image_path
 
