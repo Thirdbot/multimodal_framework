@@ -358,7 +358,7 @@ AutoModelForCausalLM.register(VisionConfig, VisionModel)
 class CreateModel:
     def __init__(self, model_name, model_category):
         self.model_name = model_name
-        self.save_name = self.model_name.replace("/","-")
+        self.save_name = self.model_name.replace("/","_")
         self.model_category = model_category
         
         self.chat_template = """{% for message in messages %}
