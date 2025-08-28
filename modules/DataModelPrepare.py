@@ -98,8 +98,6 @@ class FinetuneModel:
         
         
         
-        
-        
         for directory in [self.MODEL_DIR, self.CHECKPOINT_DIR, self.OFFLOAD_DIR]:
             directory.mkdir(parents=True, exist_ok=True)
     
@@ -664,6 +662,8 @@ class Manager:
         """
         self.variable = Variable()
         self.finetune_model = FinetuneModel()
+        
+        self.repository = self.variable.REPO_DIR
 
     
     def dataset_prepare(self, list_model_data: List[Dict[str, Any]]) -> Tuple[Optional[AutoModelForCausalLM], Optional[DatasetDict]]:
@@ -787,7 +787,7 @@ class Manager:
                     
                     pd.DataFrame(dataset).to_csv(Path(__file__).parent.parent.absolute() / "concat_dataset.csv")
                     
-                    # union_cols = first_cols.union(second_cols)
+                    union_cols = first_cols.union(second_cols)
 
 
                     #after formatted to right format it use to embedding
@@ -799,51 +799,48 @@ class Manager:
 
                     pd.DataFrame(saved_dataset).to_csv(Path(__file__).parent.parent.absolute() / "embedded_dataset.csv")
                     
-                    
-                    
-                    
-                    # saved_dataset = dataset
-                    
-                    # #create model as design
-                    # if "conversations" in union_cols:
-                    #     #if model is not local and been createdd
-                    #     model_name_safe = modelname.replace("/","-")
-                    #     model_path = self.finetune_model.REGULAR_MODEL_DIR / model_name_safe
-                    #     model_task = "text-generation"
-                    #     #if it local created model
-                    #     if Path(modelname).exists():
-                    #         model_path = modelname
+                    model_local_path = self.repository / modelname
+                    #create model as design
+                    if "conversations" in union_cols:
+                        #if model is not local and been createdd
+                        model_name_safe = modelname.replace("/","_")
+                        model_path = self.finetune_model.REGULAR_MODEL_DIR / model_name_safe
+                        model_task = "text-generation"
+                        #if it local created model
+                        if Path(modelname).exists():
+                            model_path = modelname
                             
-                    #     if not (model_path).exists():
-                    #         print(f"{Fore.GREEN}Creating conversation model...from {modelname}{Style.RESET_ALL}")
-                    #         create_model = CreateModel(modelname, "conversation-model")
-                    #         create_model.add_conversation()
-                    #         create_model.save_regular_model()
-                    #     elif Path(self.finetune_model.CHECKPOINT_DIR /model_task/ model_name_safe).exists():
-                    #         print(f"{Fore.GREEN}Loading conversation model from checkpoint...{Style.RESET_ALL}")
+                        if not (model_path).exists():
+                            print(f"{Fore.GREEN}Creating conversation model...from {modelname}{Style.RESET_ALL}")
+                            create_model = CreateModel(modelname, "conversation-model")
+                            create_model.add_conversation()
+                            create_model.save_regular_model()
+                        elif Path(self.finetune_model.CHECKPOINT_DIR /model_task/ model_name_safe).exists():
+                            print(f"{Fore.GREEN}Loading conversation model from checkpoint...{Style.RESET_ALL}")
                           
                             
-                    #     elif model_path.exists():
-                    #         print(f"{Fore.GREEN}Loading conversation model from path...{Style.RESET_ALL}")
-                    #         model, tokenizer = load_saved_model(model_path)
+                        elif model_path.exists():
+                            print(f"{Fore.GREEN}Loading conversation model from path...{Style.RESET_ALL}")
+                            model, tokenizer = load_saved_model(model_path)
+
+                    #temporal fix this
+                    if "image" in union_cols or "images" in union_cols:
+                        model_name_safe = modelname.replace("/","_")
+                        model_path = self.finetune_model.VISION_MODEL_DIR / model_name_safe
+                        if Path(modelname).exists():
+                            model_path = modelname
                             
-                    # if "image" in union_cols:
-                    #     model_name_safe = modelname.replace("/","-")
-                    #     model_path = self.finetune_model.VISION_MODEL_DIR / model_name_safe
-                    #     if Path(modelname).exists():
-                    #         model_path = modelname
+                        if not (model_path).exists():
+                            print(f"{Fore.GREEN}Creating vision model...from {modelname}{Style.RESET_ALL}")
+                            create_model = CreateModel(modelname, "vision-model")
+                            create_model.add_vision()
+                            create_model.save_vision_model()
+                        elif Path(self.finetune_model.CHECKPOINT_DIR /model_task/ model_name_safe).exists():
+                            print(f"{Fore.GREEN}Loading conversation model from checkpoint...{Style.RESET_ALL}")
                             
-                    #     if not (model_path).exists():
-                    #         print(f"{Fore.GREEN}Creating vision model...from {modelname}{Style.RESET_ALL}")
-                    #         create_model = CreateModel(modelname, "vision-model")
-                    #         create_model.add_vision()
-                    #         create_model.save_vision_model()
-                    #     elif Path(self.finetune_model.CHECKPOINT_DIR /model_task/ model_name_safe).exists():
-                    #         print(f"{Fore.GREEN}Loading conversation model from checkpoint...{Style.RESET_ALL}")
-                            
-                    #     elif model_path.exists():
-                    #         print(f"{Fore.GREEN}Loading conversation model from path...{Style.RESET_ALL}")
-                    #         model, tokenizer = load_saved_model(model_path)
+                        elif model_path.exists():
+                            print(f"{Fore.GREEN}Loading conversation model from path...{Style.RESET_ALL}")
+                            model, tokenizer = load_saved_model(model_path)
                     # break
                     ## run finetuning part
                     if model is not None and saved_dataset is not None:
