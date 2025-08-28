@@ -1,7 +1,7 @@
 import json
 from datasets import load_dataset, get_dataset_config_names,get_dataset_config_info
 from transformers import AutoModel,AutoTokenizer
-from huggingface_hub import hf_hub_download, HfApi
+from huggingface_hub import hf_hub_download, HfApi,snapshot_download
 from pathlib import Path
 from colorama import Fore, Style, init
 import os
@@ -27,7 +27,7 @@ class FlexibleDatasetLoader:
         self.DATAMODEL_DIR = self.variable.DMConfig_DIR
         self.SAVED_CONFIG_FILE = self.variable.SAVED_CONFIG_Path
     
-    
+        self.allow_download = ['*.json','*.csv','*.parquet','*.zip']
     #load dataset
     def load(self, name, config):
         #load datasets with congig
@@ -96,11 +96,11 @@ class FlexibleDatasetLoader:
             
         # Get the dataset info to find the actual files
         # dataset_info = self.api.dataset_info(name)
-        # # Download each file from the dataset
+        # Download each file from the dataset
         # for file_info in dataset_info.siblings:
         #     try:
         #         # Create the target directory if it doesn't exist
-        #         target_dir = dataset_dir / os.path.dirname(file_info.rfilename)
+                # target_dir = dataset_dir / os.path.dirname(file_info.rfilename)
         #         # target_dir.mkdir(parents=True, exist_ok=False)
                 
         #         # # Use a shorter cache path
@@ -117,6 +117,7 @@ class FlexibleDatasetLoader:
                     
         #             # force_download=True
         #         )
+                
         #         # Copy the file to the target directory if it's not already there
         #         target_path = target_dir / os.path.basename(file_info.rfilename)
         #         if not target_path.exists():
@@ -125,7 +126,12 @@ class FlexibleDatasetLoader:
         #     except Exception as e:
         #         print(f"{Fore.YELLOW}Warning: Could not download {file_info.rfilename}: {str(e)}{Style.RESET_ALL}")
         #         continue
-            
+        
+        try:
+            snapshot_download(repo_id=name,revision='main',local_dir=dataset_dir,allow_patterns=self.allow_download,repo_type="dataset")
+        except Exception as e:
+            print(f"{Fore.RED}Error downloading dataset {name}: {str(e)}{Style.RESET_ALL}")
+
     def get(self):
         return self.dataset
 
