@@ -5,7 +5,7 @@ from typing import Optional, List, Dict, Any, Union, Tuple
 import torch
 import numpy as np
 from colorama import Fore, Style, init
-from datasets import load_dataset, concatenate_datasets, DatasetDict
+from datasets import load_dataset, concatenate_datasets, DatasetDict,get_dataset_config_info
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
@@ -64,6 +64,7 @@ class FinetuneModel:
         self.device_map = "cuda:0" if torch.cuda.is_available() else "cpu"
         self.metric = evaluate.load("accuracy")
         # self.chainpipe = Chainpipe()
+        
         
         # Clear CUDA cache
         if torch.cuda.is_available():
@@ -400,8 +401,17 @@ class FinetuneModel:
         """
         print(f"{Fore.CYAN}Retrieving dataset {dataset_name}{Style.RESET_ALL}")
         
+        info = get_dataset_config_info(dataset_name)
+        info_split = info.splits.keys()
+        
+        if split not in info_split:
+            split = "test"
+        
+        
+            
         try:
             self.dataset_name = dataset_name
+            
             if config is not None:
                 try:
                     print(f"{Fore.YELLOW}Attempting to load dataset with config: {config}{Style.RESET_ALL}")
@@ -726,7 +736,13 @@ class Manager:
                         try:
                             print(f"{Fore.CYAN}Loading dataset config: {dataset_name} {config.get(dataset_name, 'No config found')}{Style.RESET_ALL}")
                             
-                            dataset = self.finetune_model.load_dataset(dataset_name, config.get(dataset_name, None), split='train')
+                            info = get_dataset_config_info(dataset_name)
+                            split = "train"
+                            info_split = info.splits.keys()
+                            if split not in info_split:
+                                split = "test"
+                                
+                            dataset = self.finetune_model.load_dataset(dataset_name, config.get(dataset_name, None), split=split)
                            
                             
                             if first_dataset is None:
