@@ -5,7 +5,7 @@ from typing import Optional, List, Dict, Any, Union, Tuple
 import torch
 import numpy as np
 from colorama import Fore, Style, init
-from datasets import load_dataset, concatenate_datasets, DatasetDict,get_dataset_config_info
+from datasets import load_dataset, concatenate_datasets, DatasetDict,get_dataset_config_info,get_dataset_split_names,get_dataset_config_names
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
@@ -386,7 +386,7 @@ class FinetuneModel:
             print(f"{Fore.RED}Error loading model from scratch: {str(e)}{Style.RESET_ALL} from {model_path}")
             return None, None
     
-    def load_dataset(self, dataset_name: str, config: Optional[Dict] = None, split: Optional[str] = None) -> Optional[DatasetDict]:
+    def load_dataset(self, dataset_name: str, config: Optional[Dict] = None) -> Optional[DatasetDict]:
         """Load a dataset.
         
         Args:
@@ -399,11 +399,8 @@ class FinetuneModel:
         """
         print(f"{Fore.CYAN}Retrieving dataset {dataset_name}{Style.RESET_ALL}")
         
-        info = get_dataset_config_info(dataset_name)
-        info_split = info.splits.keys()
-        
-        if split not in info_split:
-            split = "test"
+        valid_sep = ['train' if 'train' in get_dataset_split_names(dataset_name, config) else 'test' for config in get_dataset_config_names(dataset_name)]
+        split = valid_sep[0] if valid_sep else 'train'
         
         
             
@@ -713,13 +710,7 @@ class Manager:
                         try:
                             print(f"{Fore.CYAN}Loading dataset config: {dataset_name} {config.get(dataset_name, 'No config found')}{Style.RESET_ALL}")
                             
-                            info = get_dataset_config_info(dataset_name)
-                            split = "train"
-                            info_split = info.splits.keys()
-                            if split not in info_split:
-                                split = "test"
-                                
-                            dataset = self.finetune_model.load_dataset(dataset_name, config.get(dataset_name, None), split=split)
+                            dataset = self.finetune_model.load_dataset(dataset_name, config.get(dataset_name, 'default'))
                            
                             
                             if first_dataset is None:
@@ -799,7 +790,8 @@ class Manager:
 
                     pd.DataFrame(saved_dataset).to_csv(Path(__file__).parent.parent.absolute() / "embedded_dataset.csv")
                     
-                    model_local_path = self.repository / modelname
+                    # model_local_path = self.repository / modelname
+                    
                     #create model as design
                     if "conversations" in union_cols:
                         #if model is not local and been createdd
@@ -815,8 +807,10 @@ class Manager:
                             create_model = CreateModel(modelname, "conversation-model")
                             create_model.add_conversation()
                             create_model.save_regular_model()
+                            
                         elif Path(self.finetune_model.CHECKPOINT_DIR /model_task/ model_name_safe).exists():
                             print(f"{Fore.GREEN}Loading conversation model from checkpoint...{Style.RESET_ALL}")
+                            # model, tokenizer = self.finetune_model.load_model(modelname, self.finetune_model.resume_from_checkpoint)
                           
                             
                         elif model_path.exists():
@@ -836,12 +830,11 @@ class Manager:
                             create_model.add_vision()
                             create_model.save_vision_model()
                         elif Path(self.finetune_model.CHECKPOINT_DIR /model_task/ model_name_safe).exists():
-                            print(f"{Fore.GREEN}Loading conversation model from checkpoint...{Style.RESET_ALL}")
+                            print(f"{Fore.GREEN}Loading vision model from checkpoint...{Style.RESET_ALL}")
                             
                         elif model_path.exists():
                             print(f"{Fore.GREEN}Loading conversation model from path...{Style.RESET_ALL}")
                             model, tokenizer = load_saved_model(model_path)
-                    # break
                     ## run finetuning part
                     if model is not None and saved_dataset is not None:
                         self.finetune_model.runtuning(model, tokenizer, saved_dataset, modelname)

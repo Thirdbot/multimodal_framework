@@ -92,8 +92,8 @@ class ChatTemplate:
     
     def seperated_data(self,dataset_name,dataset,keys,create_model_path=None,mul_field=[],Tokenizing=False):
         dataset_keys = dataset.features.keys()
-        if Tokenizing:
-            
+        
+        if Tokenizing: 
             if len(mul_field) == 0:
                 print("no multimodality to tokenize")
                 # Format text data for tokenization
@@ -621,7 +621,7 @@ class ChatTemplate:
             return None
 
     #i wrote this function to recursively check the dataset and seperated the dataset
-    def process_dataset(self,dataset_name,dataset,created_model_path=None,mul_field=None, is_conversation=False, is_check=False, is_regular=True,Tokenizing=False):
+    def process_dataset(self,dataset_name,dataset,created_model_path=None,mul_field=[], is_conversation=False, is_check=False, is_regular=True,Tokenizing=False):
         
         dataset_keys = dataset.features.keys()
 
