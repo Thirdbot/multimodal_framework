@@ -58,6 +58,7 @@ setcard = ApiCardSetup()
 list_models = api.list_models(model_name='Qwen/Qwen1.5-0.5B-Chat',limit=1,gated=False)
 # list_datasets = api.list_datasets(tags='text-generation',limit=3,gated=False)
 list_datasets = api.list_datasets(dataset_name='waltsun/MOAT',limit=1,gated=False)
+# list_datasets = api.list_datasets(dataset_name="FreedomIntelligence/medical-o1-reasoning-SFT",limit=1,gated=False)
 
 #set new list to download
 list_download = setcard.set(list_models,list_datasets)
