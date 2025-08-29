@@ -1,5 +1,5 @@
 import json
-from datasets import load_dataset, get_dataset_config_names,get_dataset_config_info
+from datasets import load_dataset, get_dataset_config_names,get_dataset_split_names
 from transformers import AutoModel,AutoTokenizer
 from huggingface_hub import hf_hub_download, HfApi,snapshot_download
 from pathlib import Path
@@ -34,12 +34,14 @@ class FlexibleDatasetLoader:
         print('name:',name)
         print('config:',config)
         
-        info = get_dataset_config_info(name)
-        info_split = info.splits.keys()
-        if self.split not in info_split:
-            self.split = "test"
-   
+
+
+        valid_sep = ['train' if 'train' in get_dataset_split_names(name, config) else 'test' for config in get_dataset_config_names(name)]
+        self.split = valid_sep[0] if valid_sep else 'train'
+
+        
         if config:
+            print(f"load with config {config}")
             try:
                 # Create dataset directory with name and config
                 short_name = name.split('/')[-1]  # Get just the last part of the name
@@ -62,70 +64,36 @@ class FlexibleDatasetLoader:
             except Exception as e:
                 print(f"{e}")
                 #config error or entering wrong config then goes recursive to else statement
-                return self.load(name, None)
+                return self.load(name, {})
                     
         else:
             #if there is no config or config None then find config
             configs = get_dataset_config_names(name)
             #always return configs
-            if isinstance(configs, list):
-                #instance of saved_config
-                user_input = None
-                print(f"{Fore.CYAN}Available configs for {name}: {configs}{Style.RESET_ALL}")
-                saved_config = dict()
-                try:
-                    with open(self.SAVED_CONFIG_FILE, 'r') as f:
-                        #load dict format of json format
-                        saved_config = json.load(f)
-                except:
-                    #create new files
-                    self.SAVED_CONFIG_FILE.touch(exist_ok=True)
-                
-                #find name table 
-                if name in saved_config:
-                    user_input = saved_config[name]
-                else:
-                    user_input = input(f"{Fore.YELLOW}Enter the config you want to use: {Style.RESET_ALL}")
-                    #new config
-                    saved_config[name] = user_input
-                    self.config = saved_config
-                    with open(self.SAVED_CONFIG_FILE, 'w') as f:
-                        json.dump(saved_config, f, indent=4)
-                #return config as it will be recursive again last times
-                return self.load(name, user_input)
+
+            user_input = None
+            print(f"{Fore.CYAN}Available configs for {name}: {configs}{Style.RESET_ALL}")
+            saved_config = dict()
+            try:
+                with open(self.SAVED_CONFIG_FILE, 'r') as f:
+                    #load dict format of json format
+                    saved_config = json.load(f)
+            except:
+                #create new files
+                self.SAVED_CONFIG_FILE.touch(exist_ok=True)
             
-        # Get the dataset info to find the actual files
-        # dataset_info = self.api.dataset_info(name)
-        # Download each file from the dataset
-        # for file_info in dataset_info.siblings:
-        #     try:
-        #         # Create the target directory if it doesn't exist
-                # target_dir = dataset_dir / os.path.dirname(file_info.rfilename)
-        #         # target_dir.mkdir(parents=True, exist_ok=False)
-                
-        #         # # Use a shorter cache path
-        #         # cache_dir = self.REPO_DIR / "cache" / short_name
-        #         # cache_dir.mkdir(parents=True, exist_ok=True)
-                
-        #         # Download directly to dataset directory
-        #         file_path = hf_hub_download(
-        #             repo_id=name,
-        #             filename=file_info.rfilename,
-        #             repo_type="dataset",
-        #             local_dir=str(target_dir),
-        #             cache_dir=str(target_dir),
-                    
-        #             # force_download=True
-        #         )
-                
-        #         # Copy the file to the target directory if it's not already there
-        #         target_path = target_dir / os.path.basename(file_info.rfilename)
-        #         if not target_path.exists():
-        #             shutil.copy2(file_path, target_path)
-        #         print(f"{Fore.GREEN}Downloaded {file_info.rfilename} to: {target_path}{Style.RESET_ALL}")
-        #     except Exception as e:
-        #         print(f"{Fore.YELLOW}Warning: Could not download {file_info.rfilename}: {str(e)}{Style.RESET_ALL}")
-        #         continue
+            #find name table 
+            if name in saved_config:
+                user_input = saved_config[name]
+            else:
+                user_input = input(f"{Fore.YELLOW}Enter the config you want to use: {Style.RESET_ALL}")
+                #new config
+                saved_config[name] = user_input
+                self.config = saved_config
+                with open(self.SAVED_CONFIG_FILE, 'w') as f:
+                    json.dump(saved_config, f, indent=4)
+            #return config as it will be recursive again last times
+            return self.load(name, user_input)
         
         try:
             snapshot_download(repo_id=name,revision='main',local_dir=dataset_dir,allow_patterns=self.allow_download,repo_type="dataset")

@@ -361,6 +361,7 @@ class CreateModel:
         self.save_name = self.model_name.replace("/","_")
         self.model_category = model_category
         
+        
         self.chat_template = """{% for message in messages %}
         {% if message['role'] == 'system' %}
         {{ message['content'] }}
@@ -528,9 +529,6 @@ class CreateModel:
             torch_dtype=torch.bfloat16,
             low_cpu_mem_usage=True
         )
-        self.clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-large-patch14")
-        self.vision_processor = VisionProcessor(self.clip_processor, self.tokenizer)
-        
         self.vision_config = VisionConfig()
         self.vismodel = VisionModel(self.vision_config, self.vision_model, self.model)
         
@@ -575,6 +573,22 @@ class CreateModel:
             llm_int8_threshold=6.0,
             llm_int8_has_fp16_weight=False,
         )
+        # Save tokenizer
+        self.tokenizer.save_pretrained(
+            self.model_path,
+            legacy_format=False
+        )
+        
+        self.clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-large-patch14")
+        self.vision_processor = VisionProcessor(self.clip_processor, self.tokenizer)
+        
+        # Save vision model with quantization
+        self.vismodel.save_pretrained(
+            self.model_path,
+            quantization_config=quantization_config,
+            torch_dtype=torch.bfloat16,
+            safe_serialization=True
+        )
         
         # Save vision model with quantization
         self.vision_model.save_pretrained(
@@ -601,19 +615,7 @@ class CreateModel:
         # Save main model configuration
         self.vision_config.save_pretrained(self.model_path)
         
-        # Save vision model with quantization
-        self.vismodel.save_pretrained(
-            self.model_path,
-            quantization_config=quantization_config,
-            torch_dtype=torch.bfloat16,
-            safe_serialization=True
-        )
         
-        # Save tokenizer
-        self.tokenizer.save_pretrained(
-            self.model_path,
-            legacy_format=False
-        )
         
         # Create Modelfile for Ollama
         modelfile_content = f"""FROM python:3.9
