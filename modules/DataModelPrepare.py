@@ -604,11 +604,11 @@ class FinetuneModel:
             
             # Save the initial LoRA config
             model.save_pretrained(trainer.args.output_dir)
+            print("Saving model...")
             
             # Start training
             trainer.train()
             
-            print("Saving model...")
             model_save_path = self.TASK_MODEL_DIR / modelname.replace('/', '_')
             model_save_path.mkdir(parents=True, exist_ok=True)
             
@@ -622,26 +622,7 @@ class FinetuneModel:
                 target_modules = list(target_modules)
             else:
                 target_modules = []
-            
-            # # Save model info with serializable values
-            # model_info = {
-            #     "model_id": modelname,
-            #     "model_task": self.model_task,
-            #     "base_model": modelname,
-            #     "finetuned": True,
-            #     "quantization": "4bit",
-            #     "lora_config": {
-            #         "r": int(model.peft_config["default"].r),
-            #         "alpha": float(model.peft_config["default"].lora_alpha),
-            #         "dropout": float(model.peft_config["default"].lora_dropout),
-            #         "target_modules": target_modules
-            #     },
-            #     "last_checkpoint": str(self.last_checkpoint) if self.last_checkpoint else None
-            # }
-            
-            # with open(model_save_path / "model_info.json", "w", encoding="utf-8") as f:
-            #     json.dump(model_info, f, indent=2, ensure_ascii=False)
-            
+          
             print(f"{Fore.GREEN}Model saved to: {model_save_path}{Style.RESET_ALL}")
             
         except Exception as e:
@@ -810,7 +791,7 @@ class Manager:
                             
                         elif Path(self.finetune_model.CHECKPOINT_DIR /model_task/ model_name_safe).exists():
                             print(f"{Fore.GREEN}Loading conversation model from checkpoint...{Style.RESET_ALL}")
-                            # model, tokenizer = self.finetune_model.load_model(modelname, self.finetune_model.resume_from_checkpoint)
+                            #implement later
                           
                             
                         elif model_path.exists():
@@ -821,6 +802,7 @@ class Manager:
                     if "image" in union_cols or "images" in union_cols:
                         model_name_safe = modelname.replace("/","_")
                         model_path = self.finetune_model.VISION_MODEL_DIR / model_name_safe
+                        model_task = 'vision-text-generation'
                         if Path(modelname).exists():
                             model_path = modelname
                             
@@ -829,12 +811,14 @@ class Manager:
                             create_model = CreateModel(modelname, "vision-model")
                             create_model.add_vision()
                             create_model.save_vision_model()
+                            
                         elif Path(self.finetune_model.CHECKPOINT_DIR /model_task/ model_name_safe).exists():
                             print(f"{Fore.GREEN}Loading vision model from checkpoint...{Style.RESET_ALL}")
+                            #implement later
                             
-                        elif model_path.exists():
-                            print(f"{Fore.GREEN}Loading conversation model from path...{Style.RESET_ALL}")
-                            model, tokenizer = load_saved_model(model_path)
+                    if model_path.exists():
+                        print(f"{Fore.GREEN}Loading conversation model from path...{Style.RESET_ALL}")
+                        model, tokenizer = load_saved_model(model_path)
                     ## run finetuning part
                     if model is not None and saved_dataset is not None:
                         self.finetune_model.runtuning(model, tokenizer, saved_dataset, modelname)
