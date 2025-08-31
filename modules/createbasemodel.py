@@ -596,7 +596,8 @@ class CreateModel:
             torch_dtype=torch.bfloat16,
             low_cpu_mem_usage=True
         )
-        
+
+
         self.vismodel = VisionModel(self.vision_config, self.vision_model, self.model)
         
     def save_regular_model(self):
@@ -646,6 +647,7 @@ class CreateModel:
             legacy_format=False
         )
         
+
        
         
         # Save vision model with quantization

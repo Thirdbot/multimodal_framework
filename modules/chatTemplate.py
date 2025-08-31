@@ -183,7 +183,9 @@ class ChatTemplate:
                         for idx, img in enumerate(set_data):
                             try:
                                 processed = self.image_processor(img, return_tensors="pt")
+
                                 processed_images.append(processed['pixel_values'].squeeze(0))
+
                                 valid_image_idx.append(idx)
                             except Exception as e:
                                 continue
