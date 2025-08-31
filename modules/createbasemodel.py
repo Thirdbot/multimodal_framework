@@ -163,7 +163,9 @@ class VisionModel(PreTrainedModel):
         
         embed_dim = self.lang_model.model.embed_tokens.weight.shape[1]
 
+
         self.text_adapter = torch.nn.Linear(embed_dim, config.lang_embed_dim).to(device)
+
         
 
 
@@ -306,7 +308,9 @@ class VisionModel(PreTrainedModel):
         
     def process_inputs(self, input_ids, attention_mask, pixel_values, attend_to_img_tokens=True):
         # Processing inputs
+
         # device = torch.device("cuda")
+
                 
 
         # In process_inputs:
@@ -318,7 +322,9 @@ class VisionModel(PreTrainedModel):
         # if embeddings.shape[-1] != 2048:
         #     embeddings = self.text_adapter(embeddings)
 
+
         device = next(self.lang_model.parameters()).device
+
         embeddings = embeddings.to(device)
         attention_mask = attention_mask.to(device)
         if pixel_values is not None:
@@ -773,7 +779,9 @@ def load_saved_model(model_path,checkpoint=False):
             model.train()  # Ensure model is in training mode
             
             tokenizer = AutoTokenizer.from_pretrained(model_path)
+
         return model, tokenizer
+
         
     except Exception as e:
         print(f"Error loading model: {str(e)}")
@@ -783,6 +791,7 @@ def load_saved_model(model_path,checkpoint=False):
 # #create template from model
 
 # Example usage:
+
 
 # Load the model and tokenizer
 
@@ -860,3 +869,4 @@ def load_saved_model(model_path,checkpoint=False):
 # # Decode and print the outputs
 # decoded_outputs = tokenizer.batch_decode(outputs, skip_special_tokens=True)
 # print(decoded_outputs)
+
