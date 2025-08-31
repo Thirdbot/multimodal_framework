@@ -25,7 +25,7 @@ class VisionConfig(PretrainedConfig):
     model_type = "vision-model"
     architectures = ["VisionModel"]
     
-    def __init__(self, lang_embed_dim=2048, clip_dim=1024, **kwargs):
+    def __init__(self, lang_embed_dim=1024, clip_dim=1024, **kwargs):
         super().__init__(**kwargs)
         self.lang_embed_dim = lang_embed_dim
         self.clip_dim = clip_dim
@@ -80,16 +80,6 @@ class ConversationModel(PreTrainedModel):
         
         return target_modules_map.get(model_type, ["q_proj", "k_proj", "v_proj", "o_proj"])
     
-    @property
-    def is_gradient_checkpointing(self) -> bool:
-        """Whether gradient checkpointing is enabled."""
-        return self._is_gradient_checkpointing
-    
-    @is_gradient_checkpointing.setter
-    def is_gradient_checkpointing(self, value: bool):
-        """Set gradient checkpointing state."""
-        self._is_gradient_checkpointing = value
-    
     def forward(self, input_ids=None, attention_mask=None, labels=None, **kwargs):
         """Forward pass for conversation model."""
         outputs = self.model(
@@ -102,6 +92,16 @@ class ConversationModel(PreTrainedModel):
     
     def generate(self, *args, **kwargs):
         return self.model.generate(*args, **kwargs)
+    
+    @property
+    def is_gradient_checkpointing(self) -> bool:
+        """Whether gradient checkpointing is enabled."""
+        return self._is_gradient_checkpointing
+    
+    @is_gradient_checkpointing.setter
+    def is_gradient_checkpointing(self, value: bool):
+        """Set gradient checkpointing state."""
+        self._is_gradient_checkpointing = value
         
     def gradient_checkpointing_enable(self, gradient_checkpointing_kwargs=None):
         """Enable gradient checkpointing for the model."""
@@ -152,23 +152,33 @@ class VisionAdapter(torch.nn.Module):
 
 class VisionModel(PreTrainedModel):
     config_class = VisionConfig
-    
     def __init__(self, config, vision_model, lang_model):
         super().__init__(config)
         self.vision_model = vision_model
         self.vision_adapter = VisionAdapter(config.lang_embed_dim, config.clip_dim)
         self.lang_model = lang_model
+        self.supports_gradient_checkpointing = True
+        self._is_gradient_checkpointing = False
+        
+        embed_dim = self.lang_model.model.embed_tokens.weight.shape[1]
+
+        self.text_adapter = torch.nn.Linear(embed_dim, config.lang_embed_dim)
+        
+
 
     def forward(self, input_ids=None, attention_mask=None, pixel_values=None,
                 attend_to_img_tokens=True, labels=None, **kwargs):
         """Forward pass with proper loss calculation."""
-        input_ids = kwargs.get("input_ids", input_ids)
-        attention_mask = kwargs.get("attention_mask", attention_mask)
-        pixel_values = kwargs.get("pixel_values", pixel_values)
-        labels = kwargs.get("labels", labels)
-
         # Process inputs and get embeddings
         embeddings, attention_mask = self.process_inputs(input_ids, attention_mask, pixel_values, attend_to_img_tokens)
+
+        # Pad labels to match the sequence length of embeddings
+        if labels is not None:
+            num_img_tokens = embeddings.shape[1] - input_ids.shape[1]  # Calculate image token count
+            labels = torch.cat([
+                torch.full((labels.shape[0], num_img_tokens), -100, dtype=labels.dtype, device=labels.device),
+                labels
+            ], dim=1)
 
         # Forward pass through language model
         outputs = self.lang_model(
@@ -235,6 +245,39 @@ class VisionModel(PreTrainedModel):
         
         return outputs
     
+    
+    @property
+    def is_gradient_checkpointing(self) -> bool:
+        """Whether gradient checkpointing is enabled."""
+        return self._is_gradient_checkpointing
+    
+    @is_gradient_checkpointing.setter
+    def is_gradient_checkpointing(self, value: bool):
+        """Set gradient checkpointing state."""
+        self._is_gradient_checkpointing = value
+        
+    def gradient_checkpointing_enable(self, gradient_checkpointing_kwargs=None):
+        """Enable gradient checkpointing for the model."""
+        if hasattr(self.vision_model, "gradient_checkpointing_enable"):
+            self.vision_model.gradient_checkpointing_enable(gradient_checkpointing_kwargs=gradient_checkpointing_kwargs)
+        self.is_gradient_checkpointing = True
+        
+    def gradient_checkpointing_disable(self):
+        """Disable gradient checkpointing for the model."""
+        if hasattr(self.vision_model, "gradient_checkpointing_disable"):
+            self.vision_model.gradient_checkpointing_disable()
+        self.is_gradient_checkpointing = False
+        
+    def _set_gradient_checkpointing(self, module, value=False):
+        """Set gradient checkpointing for a specific module."""
+        if hasattr(module, "gradient_checkpointing"):
+            module.gradient_checkpointing = value
+            
+    def enable_input_require_grads(self):
+        """Enable input gradients - required for gradient checkpointing."""
+        if hasattr(self.vision_model, "enable_input_require_grads"):
+            self.vision_model.enable_input_require_grads()
+
     def generate(self, input_ids=None, attention_mask=None, pixel_values=None,
                  attend_to_img_tokens=True, **kwargs):
         input_ids = kwargs.pop("input_ids", input_ids)
@@ -262,10 +305,28 @@ class VisionModel(PreTrainedModel):
         
     def process_inputs(self, input_ids, attention_mask, pixel_values, attend_to_img_tokens=True):
         # Processing inputs
+        device = torch.device("cuda")
+                
+
+        # In process_inputs:
         embeddings = self.lang_model.model.embed_tokens(input_ids)
+        if self.text_adapter is not None:
+            embeddings = self.text_adapter(embeddings)
+        
+        # #temporary cast dim
+        # if embeddings.shape[-1] != 2048:
+        #     embeddings = self.text_adapter(embeddings)
+
+        # device = next(self.lang_model.parameters()).device
+        embeddings = embeddings.to(device)
+        attention_mask = attention_mask.to(device)
+        if pixel_values is not None:
+            pixel_values = pixel_values.to(device)
 
         if pixel_values is not None:
             image_embeddings = self.vision_model(pixel_values).last_hidden_state
+            
+            #clip dims to lang dims
             adapted_embeddings = self.vision_adapter(image_embeddings)
             embeddings = torch.cat((adapted_embeddings, embeddings), axis=1)
             attention_mask = self.__extend_attention_mask(attention_mask, attend_to_img_tokens)
@@ -282,35 +343,35 @@ class VisionModel(PreTrainedModel):
         mask[:, -seq_length:] = atten_mask
         return mask
 
+        
 # Processor class
 class VisionProcessor(ProcessorMixin):
-    attributes = ['image_processor','tokenizer']
-    
-    def __init__(self,image_processor,tokenizer):
+    #added audio cause error needed audio
+    attributes = ['image_processor','tokenizer','audio_tokenizer']
+
+    def __init__(self,image_processor,tokenizer,audio_tokenizer=None):
         self.image_processor = image_processor
         self.tokenizer = tokenizer
         self.tokenizer.pad_token = self.tokenizer.eos_token
         self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
         self.chat_template = self.tokenizer.chat_template
+        self.audio_tokenizer = audio_tokenizer
         self.current_processor = self
     
-    def add_label(self,inputs):
-        special_images_tokens = self.tokenizer.convert_tokens_to_ids("<image>")
-        num_images_tokens = 257
-        
-        input_ids = inputs['input_ids'].clone()
-        special_images_column = torch.full(
-            (input_ids.size(0),num_images_tokens),
-            float(special_images_tokens),
-            device=input_ids.device,
-            dtype=input_ids.dtype
-        )
-        
-        inputs['labels'] = torch.cat([special_images_column,input_ids],dim=1)
-        
+    def add_label(self, inputs):
+        num_images_tokens = 257  # Number of image tokens
+
+        # Prepend -100 to labels for image tokens
+        inputs['labels'] = torch.cat([
+            torch.full((inputs['input_ids'].size(0), num_images_tokens), 
+                       -100, dtype=inputs['input_ids'].dtype,
+                       device=inputs['input_ids'].device),
+            inputs['input_ids']
+        ], dim=1)
+
         return inputs
     
-    def __call__(self, text=None, images=None, create_labels=False):
+    def __call__(self, text=None, images=None, create_labels=True):
         """
         Process images and/or text inputs.
         
@@ -419,6 +480,11 @@ class CreateModel:
             use_fast=True,
             trust_remote_code=True
         )
+        self.clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-large-patch14", use_fast=True)
+        self.vision_processor = VisionProcessor(self.clip_processor, self.tokenizer)
+        
+        self.vision_config = VisionConfig(lang_embed_dim=1024,
+                                          clip_dim=1024)
         
         self.tokenizer.chat_template = self.chat_template
 
@@ -529,7 +595,8 @@ class CreateModel:
             torch_dtype=torch.bfloat16,
             low_cpu_mem_usage=True
         )
-        self.vision_config = VisionConfig()
+
+
         self.vismodel = VisionModel(self.vision_config, self.vision_model, self.model)
         
     def save_regular_model(self):
@@ -579,20 +646,13 @@ class CreateModel:
             legacy_format=False
         )
         
-        self.clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-large-patch14")
-        self.vision_processor = VisionProcessor(self.clip_processor, self.tokenizer)
-        
-        # Save vision model with quantization
-        self.vismodel.save_pretrained(
-            self.model_path,
-            quantization_config=quantization_config,
-            torch_dtype=torch.bfloat16,
-            safe_serialization=True
-        )
+
+       
         
         # Save vision model with quantization
         self.vision_model.save_pretrained(
             vision_model_path,
+            # self.model_path,
             quantization_config=quantization_config,
             torch_dtype=torch.bfloat16,
             safe_serialization=True
@@ -617,53 +677,51 @@ class CreateModel:
         
         
         
-        # Create Modelfile for Ollama
-        modelfile_content = f"""FROM python:3.9
+        # # Create Modelfile for Ollama
+        # modelfile_content = f"""FROM python:3.9
 
-        # Set up the model directory
-        WORKDIR /model
-        COPY . /model/
+        # # Set up the model directory
+        # WORKDIR /model
+        # COPY . /model/
 
-        # Install required packages
-        RUN pip install transformers torch torchvision pillow sentencepiece protobuf
+        # # Install required packages
+        # RUN pip install transformers torch torchvision pillow sentencepiece protobuf
 
-        # Set up the model configuration
-        PARAMETER temperature 0.7
-        PARAMETER top_p 0.9
-        PARAMETER top_k 40
-        PARAMETER num_ctx 2048
+        # # Set up the model configuration
+        # PARAMETER temperature 0.7
+        # PARAMETER top_p 0.9
+        # PARAMETER top_k 40
+        # PARAMETER num_ctx 2048
 
-        # Set up the model template
-        TEMPLATE \"\"\"{self.chat_template}\"\"\"
+        # # Set up the model template
+        # TEMPLATE \"\"\"{self.chat_template}\"\"\"
 
-        # Set up the model system prompt
-        SYSTEM \"\"\"You are a helpful AI assistant that can understand and describe images.\"\"\"
+        # # Set up the model system prompt
+        # SYSTEM \"\"\"You are a helpful AI assistant that can understand and describe images.\"\"\"
 
-        # Set up the model parameters
-        PARAMETER stop "Human:"
-        PARAMETER stop "Assistant:"
+        # # Set up the model parameters
+        # PARAMETER stop "Human:"
+        # PARAMETER stop "Assistant:"
 
-        # Set up model architecture
-        PARAMETER model_type "vision-model"
-        PARAMETER clip_dim {self.vision_config.clip_dim}
-        PARAMETER lang_embed_dim {self.vision_config.lang_embed_dim}
-        """
+        # # Set up model architecture
+        # PARAMETER model_type "vision-model"
+        # PARAMETER clip_dim {self.vision_config.clip_dim}
+        # PARAMETER lang_embed_dim {self.vision_config.lang_embed_dim}
+        # """
         
-        # Save Modelfile
-        with open(os.path.join(self.model_path, "Modelfile"), "w") as f:
-            f.write(modelfile_content)
+        # # Save Modelfile
+        # with open(os.path.join(self.model_path, "Modelfile"), "w") as f:
+        #     f.write(modelfile_content)
             
  
 
 
 # Load model and processor from demo_path
-def load_saved_model(model_path):
-    """Load a saved model and its processor."""
-    demo_path = model_path
-    
+def load_saved_model(model_path,checkpoint=False):
+    """Load a saved model and its processor."""    
     try:
         # Load the config
-        config = AutoConfig.from_pretrained(demo_path)
+        config = AutoConfig.from_pretrained(model_path)
         print(f"Loaded config with model type: {config.model_type}")
         print(f"Model architecture: {config.architectures}")
         
@@ -673,9 +731,16 @@ def load_saved_model(model_path):
             hasattr(config, 'architectures') and config.architectures and "VisionModel" in config.architectures
         )
         
+        if is_vision_model and checkpoint:
+            vision_model_path = os.path.join(model_path, "vision_model")
+            lang_model_path = os.path.join(model_path, "lang_model")
+            
+        if is_vision_model and not checkpoint:
+            vision_model_path = os.path.join(model_path, "vision_model")
+            lang_model_path = os.path.join(model_path, "lang_model")
+
         if is_vision_model:
-            vision_model_path = os.path.join(demo_path, "vision_model")
-            lang_model_path = os.path.join(demo_path, "lang_model")
+            print("Loading vision model...")
             
             # Load components
             vision_model = CLIPVisionModel.from_pretrained(vision_model_path)
@@ -685,13 +750,16 @@ def load_saved_model(model_path):
             model = VisionModel(config, vision_model, lang_model)
             
             # Load processor
-            tokenizer = AutoTokenizer.from_pretrained(demo_path)
+            tokenizer = AutoTokenizer.from_pretrained(model_path)
+            
+            model.config.use_cache = False
+            model.train()  # Ensure model is in training mode
             return model, tokenizer
         else:
             # For conversation models, use AutoModelForCausalLM
             print("Loading conversation model...")
             base_model = AutoModelForCausalLM.from_pretrained(
-                demo_path,
+                model_path,
                 config=config,
                 trust_remote_code=True,
                 torch_dtype=torch.bfloat16,
@@ -703,12 +771,13 @@ def load_saved_model(model_path):
             model.config.use_cache = False
             model.train()  # Ensure model is in training mode
             
-            tokenizer = AutoTokenizer.from_pretrained(demo_path)
+            tokenizer = AutoTokenizer.from_pretrained(model_path)
             return model, tokenizer
         
     except Exception as e:
         print(f"Error loading model: {str(e)}")
         raise
+
      
 # #create template from model
 
@@ -718,4 +787,3 @@ def load_saved_model(model_path):
 # inputs = processor(text="What do you see in this image?", images=image)
 # outputs = model.generate(**inputs)
 # print(processor.tokenizer.batch_decode(outputs, skip_special_tokens=False))
-        
