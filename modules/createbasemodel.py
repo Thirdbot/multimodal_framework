@@ -163,6 +163,7 @@ class VisionModel(PreTrainedModel):
         embed_dim = self.lang_model.model.embed_tokens.weight.shape[1]
 
         self.text_adapter = torch.nn.Linear(embed_dim, config.lang_embed_dim)
+        
 
 
     def forward(self, input_ids=None, attention_mask=None, pixel_values=None,
@@ -645,22 +646,15 @@ class CreateModel:
         )
         
        
+        
         # Save vision model with quantization
-        self.vismodel.save_pretrained(
-            self.model_path,
+        self.vision_model.save_pretrained(
+            vision_model_path,
+            # self.model_path,
             quantization_config=quantization_config,
             torch_dtype=torch.bfloat16,
             safe_serialization=True
         )
-        
-        # # Save vision model with quantization
-        # self.vision_model.save_pretrained(
-        #     vision_model_path,
-        #     # self.model_path,
-        #     quantization_config=quantization_config,
-        #     torch_dtype=torch.bfloat16,
-        #     safe_serialization=True
-        # )
         
         # Save language model with quantization
         self.model.save_pretrained(
@@ -721,13 +715,11 @@ class CreateModel:
 
 
 # Load model and processor from demo_path
-def load_saved_model(model_path):
-    """Load a saved model and its processor."""
-    demo_path = model_path
-    
+def load_saved_model(model_path,checkpoint=False):
+    """Load a saved model and its processor."""    
     try:
         # Load the config
-        config = AutoConfig.from_pretrained(demo_path)
+        config = AutoConfig.from_pretrained(model_path)
         print(f"Loaded config with model type: {config.model_type}")
         print(f"Model architecture: {config.architectures}")
         
@@ -737,10 +729,16 @@ def load_saved_model(model_path):
             hasattr(config, 'architectures') and config.architectures and "VisionModel" in config.architectures
         )
         
+        if is_vision_model and checkpoint:
+            vision_model_path = os.path.join(model_path, "vision_model")
+            lang_model_path = os.path.join(model_path, "lang_model")
+            
+        if is_vision_model and not checkpoint:
+            vision_model_path = os.path.join(model_path, "vision_model")
+            lang_model_path = os.path.join(model_path, "lang_model")
+
         if is_vision_model:
             print("Loading vision model...")
-            vision_model_path = os.path.join(demo_path, "vision_model")
-            lang_model_path = os.path.join(demo_path, "lang_model")
             
             # Load components
             vision_model = CLIPVisionModel.from_pretrained(vision_model_path)
@@ -750,7 +748,7 @@ def load_saved_model(model_path):
             model = VisionModel(config, vision_model, lang_model)
             
             # Load processor
-            tokenizer = AutoTokenizer.from_pretrained(demo_path)
+            tokenizer = AutoTokenizer.from_pretrained(model_path)
             
             model.config.use_cache = False
             model.train()  # Ensure model is in training mode
@@ -759,7 +757,7 @@ def load_saved_model(model_path):
             # For conversation models, use AutoModelForCausalLM
             print("Loading conversation model...")
             base_model = AutoModelForCausalLM.from_pretrained(
-                demo_path,
+                model_path,
                 config=config,
                 trust_remote_code=True,
                 torch_dtype=torch.bfloat16,
@@ -771,12 +769,13 @@ def load_saved_model(model_path):
             model.config.use_cache = False
             model.train()  # Ensure model is in training mode
             
-            tokenizer = AutoTokenizer.from_pretrained(demo_path)
+            tokenizer = AutoTokenizer.from_pretrained(model_path)
             return model, tokenizer
         
     except Exception as e:
         print(f"Error loading model: {str(e)}")
         raise
+
      
 # #create template from model
 
