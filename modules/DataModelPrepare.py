@@ -54,9 +54,10 @@ class FinetuneModel:
         self.per_device_eval_batch_size = 1
         self.gradient_accumulation_steps = 4  # Reduced gradient accumulation
         self.learning_rate = 2e-5  # Reduced learning rate
-        self.num_train_epochs = 100
+        self.num_train_epochs = 0.01
         self.save_strategy = "best"
         
+       
         # Initialize paths and directories
         self._setup_directories()
         
@@ -75,28 +76,27 @@ class FinetuneModel:
         self.model_id = None
         self.dataset_name = None
         self.model_task = None
-        self.resume_from_checkpoint = True
+
         self.chat_template = None
-        self.last_checkpoint = None
-        
-    
-    def _setup_directories(self):
-        """Set up required directories."""        
+
         self.CUTOM_MODEL_DIR = self.variable.CUTOM_MODEL_DIR
         self.VISION_MODEL_DIR = self.variable.VISION_MODEL_DIR
         self.REGULAR_MODEL_DIR = self.variable.REGULAR_MODEL_DIR
         
         
-        
-        self.MODEL_DIR = self.variable.MODEL_DIR
-        self.CHECKPOINT_DIR = self.variable.CHECKPOINT_DIR
-        self.OFFLOAD_DIR = self.variable.OFFLOAD_DIR
-        
-        
+
         
         self.MODEL_LOCAL_DIR = self.variable.REPO_DIR
         
         
+        
+
+    
+    def _setup_directories(self):
+        """Set up required directories."""        
+        self.MODEL_DIR = self.variable.MODEL_DIR
+        self.CHECKPOINT_DIR = self.variable.CHECKPOINT_DIR
+        self.OFFLOAD_DIR = self.variable.OFFLOAD_DIR
         
         for directory in [self.MODEL_DIR, self.CHECKPOINT_DIR, self.OFFLOAD_DIR]:
             directory.mkdir(parents=True, exist_ok=True)
@@ -164,43 +164,45 @@ class FinetuneModel:
             print(f"{Fore.YELLOW}Warning: Could not determine model task, using default: {str(e)}{Style.RESET_ALL}")
             return "text-generation"
     
-    def find_last_checkpoint(self, model_name: str) -> Optional[Path]:
-        """Find the last checkpoint for a model.
+
+    # def find_last_checkpoint(self, model_name: str) -> Optional[Path]:
+    #     """Find the last checkpoint for a model.
         
-        Args:
-            model_name: The model identifier
+    #     Args:
+    #         model_name: The model identifier
             
-        Returns:
-            Path to the last checkpoint if found, None otherwise
-        """
-        try:
-            model_task = self.get_model_task(model_name)
-            model_name = model_name.replace('/', '_') if '/' in model_name else model_name
+    #     Returns:
+    #         Path to the last checkpoint if found, None otherwise
+    #     """
+    #     try:
+    #         model_task = self.get_model_task(model_name)
+    #         model_name = model_name.replace('/', '_') if '/' in model_name else model_name
             
-            checkpoint_dir = self.CHECKPOINT_DIR / model_task / model_name
+    #         checkpoint_dir = self.CHECKPOINT_DIR / model_task / model_name
             
-            if not checkpoint_dir.exists():
-                print(f"{Fore.YELLOW}No checkpoint directory found at {checkpoint_dir}{Style.RESET_ALL}")
-                return None
+    #         if not checkpoint_dir.exists():
+    #             print(f"{Fore.YELLOW}No checkpoint directory found at {checkpoint_dir}{Style.RESET_ALL}")
+    #             return None
             
-            checkpoints = [d for d in checkpoint_dir.iterdir() if d.is_dir() and d.name.startswith("checkpoint-")]
+    #         checkpoints = [d for d in checkpoint_dir.iterdir() if d.is_dir() and d.name.startswith("checkpoint-")]
             
-            if not checkpoints:
-                print(f"{Fore.YELLOW}No checkpoints found in {checkpoint_dir}{Style.RESET_ALL}")
-                return None
+    #         if not checkpoints:
+    #             print(f"{Fore.YELLOW}No checkpoints found in {checkpoint_dir}{Style.RESET_ALL}")
+    #             return None
             
-            latest_checkpoint = max(checkpoints, key=lambda x: int(x.name.split("-")[1]))
+    #         latest_checkpoint = max(checkpoints, key=lambda x: int(x.name.split("-")[1]))
             
-            if not (latest_checkpoint / "model.safetensors").exists() and not (latest_checkpoint / "adapter_model.safetensors").exists():
-                print(f"{Fore.YELLOW}Latest checkpoint {latest_checkpoint} is incomplete, starting from scratch{Style.RESET_ALL}")
-                return None
+    #         if not (latest_checkpoint / "model.safetensors").exists() and not (latest_checkpoint / "adapter_model.safetensors").exists():
+    #             print(f"{Fore.YELLOW}Latest checkpoint {latest_checkpoint} is incomplete, starting from scratch{Style.RESET_ALL}")
+    #             return None
                 
-            print(f"{Fore.GREEN}Found valid checkpoint at {latest_checkpoint}{Style.RESET_ALL}")
-            return latest_checkpoint
+    #         print(f"{Fore.GREEN}Found valid checkpoint at {latest_checkpoint}{Style.RESET_ALL}")
+    #         return latest_checkpoint
             
-        except Exception as e:
-            print(f"{Fore.RED}Error finding last checkpoint: {str(e)}{Style.RESET_ALL}")
-            return None
+    #     except Exception as e:
+    #         print(f"{Fore.RED}Error finding last checkpoint: {str(e)}{Style.RESET_ALL}")
+    #         return None
+    
     
     def load_model(self, model_id: str, resume_from_checkpoint: bool = False) -> Tuple[Optional[AutoModelForCausalLM], Optional[AutoTokenizer]]:
         """Load a model and its tokenizer.
@@ -214,8 +216,10 @@ class FinetuneModel:
         """
         print(f"{Fore.CYAN}Retrieving model {model_id}{Style.RESET_ALL}")
         
-        self.resume_from_checkpoint = resume_from_checkpoint
-        print(f"Load from last checkpoint: {self.resume_from_checkpoint}")
+
+        # self.resume_from_checkpoint = resume_from_checkpoint
+        # print(f"Load from last checkpoint: {self.resume_from_checkpoint}")
+
         
         try:
             # Check if model_id is a local path or Hugging Face model ID
@@ -231,79 +235,80 @@ class FinetuneModel:
             self.TASK_MODEL_DIR = self.MODEL_DIR.joinpath(self.model_task)
             self.TASK_MODEL_DIR.mkdir(parents=True, exist_ok=True)
             
-            if resume_from_checkpoint:
-                return self._load_from_checkpoint(model_id)
-            return self._load_from_scratch(model_id)
-            
+
+            # if resume_from_checkpoint:
+            #     return self._load_from_checkpoint(model_id)
+
         except Exception as e:
             print(f"{Fore.RED}Error loading model {model_id}: {str(e)}{Style.RESET_ALL}")
             return None, None
     
-    def _load_from_checkpoint(self, model_id: str) -> Tuple[Optional[AutoModelForCausalLM], Optional[AutoTokenizer]]:
-        """Load model and tokenizer from checkpoint.
+
+    # def _load_from_checkpoint(self, model_id: str) -> Tuple[Optional[AutoModelForCausalLM], Optional[AutoTokenizer]]:
+    #     """Load model and tokenizer from checkpoint.
         
-        Args:
-            model_id: The model identifier
+    #     Args:
+    #         model_id: The model identifier
             
-        Returns:
-            Tuple of (model, tokenizer)
-        """
-        self.last_checkpoint = self.find_last_checkpoint(model_id)
-        if not self.last_checkpoint:
-            print(f"{Fore.YELLOW}No valid checkpoint found, starting from scratch{Style.RESET_ALL}")
-            return self._load_from_scratch(model_id)
+    #     Returns:
+    #         Tuple of (model, tokenizer)
+    #     """
+    #     # self.last_checkpoint = self.find_last_checkpoint(model_id)
+    #     if not self.last_checkpoint:
+    #         print(f"{Fore.YELLOW}No valid checkpoint found, starting from scratch{Style.RESET_ALL}")
+    #         return self._load_from_scratch(model_id)
         
-        print(f"{Fore.CYAN}Resuming from checkpoint: {self.last_checkpoint}{Style.RESET_ALL}")
+    #     print(f"{Fore.CYAN}Resuming from checkpoint: {self.last_checkpoint}{Style.RESET_ALL}")
         
-        try:
-            # Configure quantization
-            bnb_config = BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_compute_dtype=torch.float32,
-                bnb_4bit_quant_type="fp4",
-                bnb_4bit_use_double_quant=False
-            )
+    #     try:
+    #         # Configure quantization
+    #         bnb_config = BitsAndBytesConfig(
+    #             load_in_4bit=True,
+    #             bnb_4bit_compute_dtype=torch.float32,
+    #             bnb_4bit_quant_type="fp4",
+    #             bnb_4bit_use_double_quant=False
+    #         )
             
-            # Load base model with quantization
-            base_model = AutoModelForCausalLM.from_pretrained(
-                model_id,
-                device_map=self.device_map,
-                trust_remote_code=True,
-                quantization_config=bnb_config,
-                torch_dtype=torch.float32
-            )
+    #         # Load base model with quantization
+    #         base_model = AutoModelForCausalLM.from_pretrained(
+    #             model_id,
+    #             device_map=self.device_map,
+    #             trust_remote_code=True,
+    #             quantization_config=bnb_config,
+    #             torch_dtype=torch.float32
+    #         )
             
-            # Prepare model for k-bit training
-            base_model = prepare_model_for_kbit_training(base_model)
+    #         # Prepare model for k-bit training
+    #         base_model = prepare_model_for_kbit_training(base_model)
             
-            # Load tokenizer from checkpoint
-            tokenizer = AutoTokenizer.from_pretrained(
-                str(self.last_checkpoint),
-                trust_remote_code=True,
-                padding_side="right",
-                truncation_side="right"
-            )
+    #         # Load tokenizer from checkpoint
+    #         tokenizer = AutoTokenizer.from_pretrained(
+    #             str(self.last_checkpoint),
+    #             trust_remote_code=True,
+    #             padding_side="right",
+    #             truncation_side="right"
+    #         )
             
-            # Load the PEFT model configuration and weights
-            model = AutoPeftModelForCausalLM.from_pretrained(
-                str(self.last_checkpoint),
-                device_map=self.device_map,
-                torch_dtype=torch.float32,
-                is_trainable=True
-            )
+    #         # Load the PEFT model configuration and weights
+    #         model = AutoPeftModelForCausalLM.from_pretrained(
+    #             str(self.last_checkpoint),
+    #             device_map=self.device_map,
+    #             torch_dtype=torch.float32,
+    #             is_trainable=True
+    #         )
             
-            model.train()
-            model.gradient_checkpointing_enable()
+    #         model.train()
+    #         model.gradient_checkpointing_enable()
             
-            self.chat_template = ChatTemplate(tokenizer=tokenizer)
+    #         self.chat_template = ChatTemplate(tokenizer=tokenizer)
             
-            print(f"{Fore.GREEN}Successfully loaded checkpoint with LoRA configuration{Style.RESET_ALL}")
-            return model, tokenizer
+    #         print(f"{Fore.GREEN}Successfully loaded checkpoint with LoRA configuration{Style.RESET_ALL}")
+    #         return model, tokenizer
             
-        except Exception as e:
-            print(f"{Fore.RED}Error loading from checkpoint: {str(e)}{Style.RESET_ALL}")
-            print(f"{Fore.YELLOW}Attempting to load from scratch...{Style.RESET_ALL}")
-            return self._load_from_scratch(model_id)
+    #     except Exception as e:
+    #         print(f"{Fore.RED}Error loading from checkpoint: {str(e)}{Style.RESET_ALL}")
+    #         print(f"{Fore.YELLOW}Attempting to load from scratch...{Style.RESET_ALL}")
+    #         return self._load_from_scratch(model_id)
     
     def _load_from_scratch(self, model_id: str) -> Tuple[Optional[AutoModelForCausalLM], Optional[AutoTokenizer]]:
         """Load model and tokenizer from scratch.
@@ -457,7 +462,9 @@ class FinetuneModel:
             print(f"{Fore.RED}Error tokenizing dataset: {str(e)}{Style.RESET_ALL}")
             return None
     
-    def train_args(self, modelname: str) -> TrainingArguments:
+
+    def train_args(self,task:str, modelname: str) -> TrainingArguments:
+
         """Get training arguments.
         
         Args:
@@ -466,7 +473,9 @@ class FinetuneModel:
         Returns:
             Training arguments
         """
-        model_folder = self.CHECKPOINT_DIR / self.model_task
+
+        model_folder = self.CHECKPOINT_DIR / task
+
         if "custom_models" in modelname.split("\\"):
             modelname = modelname.split("\\")
             modelname = modelname[-1]
@@ -506,7 +515,9 @@ class FinetuneModel:
             group_by_length=True,
             length_column_name="length",
             report_to="none",
-            resume_from_checkpoint=self.last_checkpoint if self.resume_from_checkpoint else None,
+
+            resume_from_checkpoint=self.CHECKPOINT_DIR,
+
             save_safetensors=True,
             save_only_model=False,  # Changed to False to save optimizer state
             overwrite_output_dir=True,
@@ -544,7 +555,9 @@ class FinetuneModel:
             print(f"{Fore.YELLOW}Warning: Error computing metrics: {str(e)}{Style.RESET_ALL}")
             return {"accuracy": 0.0}
     
-    def Trainer(self, model: AutoModelForCausalLM, dataset, tokenizer: AutoTokenizer, modelname: str) -> Trainer:
+
+    def Trainer(self, model: AutoModelForCausalLM, dataset, tokenizer: AutoTokenizer, modelname: str,task:str) -> Trainer:
+
         try:
             """Create a trainer instance."""
             # Print model parameters
@@ -578,7 +591,9 @@ class FinetuneModel:
 
             return Trainer(
                 model=model,
-                args=self.train_args(modelname),
+
+                args=self.train_args(task,modelname),
+
                 train_dataset=train_dataset,
                 data_collator=data_collator,
             )
@@ -587,7 +602,9 @@ class FinetuneModel:
             return None
     
     def runtuning(self, model: AutoModelForCausalLM, tokenizer: AutoTokenizer, 
-                 dataset: DatasetDict, modelname: str) -> None:
+
+                 dataset: DatasetDict, modelname: str,task:str) -> None:
+
         """Run the fine-tuning process.
         
         Args:
@@ -600,48 +617,80 @@ class FinetuneModel:
             if "custom_models" in modelname.split("/"):
                 modelname = modelname.split("/")
                 modelname = modelname[-1]
-            trainer = self.Trainer(model=model, dataset=dataset, tokenizer=tokenizer, modelname=modelname)
+
+            trainer = self.Trainer(model=model, dataset=dataset, tokenizer=tokenizer, modelname=modelname,task=task)
             
             # Save the initial LoRA config
             model.save_pretrained(trainer.args.output_dir)
+            print("Saving model...")
             
             # Start training
             trainer.train()
-            
-            print("Saving model...")
-            model_save_path = self.TASK_MODEL_DIR / modelname.replace('/', '_')
-            model_save_path.mkdir(parents=True, exist_ok=True)
-            
-            # Save the final model and adapter
-            model.save_pretrained(str(model_save_path), safe_serialization=True)
-            tokenizer.save_pretrained(str(model_save_path))
-            
-            # Get target modules and ensure they're serializable
-            target_modules = model.peft_config["default"].target_modules
-            if isinstance(target_modules, (set, list, tuple)):
-                target_modules = list(target_modules)
+
+            if hasattr(model, "config"):
+                if hasattr(model.config, "model_type"):
+                    model_type = model.config.model_type
+                else:
+                    model_type = "conversation-model"
+                    model.config.model_type = "conversation-model"
             else:
-                target_modules = []
+                model_type = "conversation-model"
+                model.config.model_type = "conversation-model"
+
+            print(f"{Fore.CYAN}Identified model type to save: {model_type}{Style.RESET_ALL}")
             
-            # # Save model info with serializable values
-            # model_info = {
-            #     "model_id": modelname,
-            #     "model_task": self.model_task,
-            #     "base_model": modelname,
-            #     "finetuned": True,
-            #     "quantization": "4bit",
-            #     "lora_config": {
-            #         "r": int(model.peft_config["default"].r),
-            #         "alpha": float(model.peft_config["default"].lora_alpha),
-            #         "dropout": float(model.peft_config["default"].lora_dropout),
-            #         "target_modules": target_modules
-            #     },
-            #     "last_checkpoint": str(self.last_checkpoint) if self.last_checkpoint else None
-            # }
             
-            # with open(model_save_path / "model_info.json", "w", encoding="utf-8") as f:
-            #     json.dump(model_info, f, indent=2, ensure_ascii=False)
+            modelname = modelname.replace('/', '_') if '/' in modelname else modelname
             
+            
+            #save model needed outside checkpoints
+            if model_type == "vision-model" or "VisionModel" in model_type:
+                model_save_path = self.CHECKPOINT_DIR / 'text-vision-text-generation' / modelname
+                model_save_path.mkdir(parents=True, exist_ok=True)
+                # Save the final model and adapter
+                model.save_pretrained(str(model_save_path), safe_serialization=True)
+                tokenizer.save_pretrained(str(model_save_path))
+                if hasattr(model, "lang_model"):
+                    lang_model_path = model_save_path / "lang_model"
+                    lang_model_path.mkdir(parents=True, exist_ok=True)
+                    model.lang_model.save_pretrained(str(lang_model_path))
+                    print(f"{Fore.GREEN}Language model saved to: {lang_model_path}{Style.RESET_ALL}")
+                
+                if hasattr(model, "vision_model"):
+                    vision_model_path = model_save_path / "vision_model"
+                    vision_model_path.mkdir(parents=True, exist_ok=True)
+                    model.vision_model.save_pretrained(str(vision_model_path))
+                    print(f"{Fore.GREEN}Vision model saved to: {vision_model_path}{Style.RESET_ALL}")
+                
+                if hasattr(model, "vision_processor"):
+                    vision_processor_path = model_save_path / "vision_processor"
+                    vision_processor_path.mkdir(parents=True, exist_ok=True)
+                    model.vision_processor.save_pretrained(str(vision_processor_path))
+                    print(f"{Fore.GREEN}Vision processor saved to: {vision_processor_path}{Style.RESET_ALL}")
+                
+            elif model_type == "conversation-model" or "ConversationModel" in model_type:
+                model_save_path = self.CHECKPOINT_DIR / 'text-generation' / modelname
+                model_save_path.mkdir(parents=True, exist_ok=True)
+                # Save the final model and adapter
+                model.save_pretrained(str(model_save_path), safe_serialization=True)
+                tokenizer.save_pretrained(str(model_save_path))
+                model.config.save_pretrained(str(model_save_path))
+            else:
+                model_save_path = self.CHECKPOINT_DIR / 'text-generation' / modelname
+                model_save_path.mkdir(parents=True, exist_ok=True)
+                model.save_pretrained(str(model_save_path), safe_serialization=True)
+                tokenizer.save_pretrained(str(model_save_path))
+                model.config.save_pretrained(str(model_save_path))
+
+
+            # # Get target modules and ensure they're serializable
+            # target_modules = model.peft_config["default"].target_modules
+            # if isinstance(target_modules, (set, list, tuple)):
+            #     target_modules = list(target_modules)
+            # else:
+            #     target_modules = []
+          
+
             print(f"{Fore.GREEN}Model saved to: {model_save_path}{Style.RESET_ALL}")
             
         except Exception as e:
@@ -696,7 +745,9 @@ class Manager:
             for modelname,dict_dataset in list_model_data['model'].items():
                     
                     #load tokenizer
-                    model, tokenizer = self.finetune_model.load_model(modelname, self.finetune_model.resume_from_checkpoint)
+
+                    model, tokenizer = self.finetune_model.load_model(modelname)
+
                 
                     saved_dataset = None
                     first_dataset = None
@@ -798,46 +849,49 @@ class Manager:
                         model_name_safe = modelname.replace("/","_")
                         model_path = self.finetune_model.REGULAR_MODEL_DIR / model_name_safe
                         model_task = "text-generation"
+
+                        self.CHECKPOINT_DIR = self.finetune_model.CHECKPOINT_DIR / model_task / model_name_safe
                         #if it local created model
-                        if Path(modelname).exists():
-                            model_path = modelname
-                            
+
                         if not (model_path).exists():
                             print(f"{Fore.GREEN}Creating conversation model...from {modelname}{Style.RESET_ALL}")
                             create_model = CreateModel(modelname, "conversation-model")
                             create_model.add_conversation()
                             create_model.save_regular_model()
-                            
+      
+
                         elif Path(self.finetune_model.CHECKPOINT_DIR /model_task/ model_name_safe).exists():
                             print(f"{Fore.GREEN}Loading conversation model from checkpoint...{Style.RESET_ALL}")
-                            # model, tokenizer = self.finetune_model.load_model(modelname, self.finetune_model.resume_from_checkpoint)
+                            model, tokenizer = load_saved_model(self.finetune_model.CHECKPOINT_DIR /model_task/ model_name_safe)
                           
-                            
-                        elif model_path.exists():
-                            print(f"{Fore.GREEN}Loading conversation model from path...{Style.RESET_ALL}")
-                            model, tokenizer = load_saved_model(model_path)
+
 
                     #temporal fix this
                     if "image" in union_cols or "images" in union_cols:
                         model_name_safe = modelname.replace("/","_")
-                        model_path = self.finetune_model.VISION_MODEL_DIR / model_name_safe
-                        if Path(modelname).exists():
-                            model_path = modelname
-                            
+
+                        model_path = self.finetune_model.VISION_MODEL_DIR / model_name_safe                       
+                        model_task = "text-vision-text-generation"
+                        self.CHECKPOINT_DIR = self.finetune_model.CHECKPOINT_DIR / model_task / model_name_safe
+
                         if not (model_path).exists():
                             print(f"{Fore.GREEN}Creating vision model...from {modelname}{Style.RESET_ALL}")
                             create_model = CreateModel(modelname, "vision-model")
                             create_model.add_vision()
                             create_model.save_vision_model()
-                        elif Path(self.finetune_model.CHECKPOINT_DIR /model_task/ model_name_safe).exists():
+
+
+                        elif Path(self.finetune_model.CHECKPOINT_DIR / model_task  / model_name_safe).exists():
                             print(f"{Fore.GREEN}Loading vision model from checkpoint...{Style.RESET_ALL}")
+                            model, tokenizer = load_saved_model(self.finetune_model.CHECKPOINT_DIR / model_task / model_name_safe)
                             
-                        elif model_path.exists():
-                            print(f"{Fore.GREEN}Loading conversation model from path...{Style.RESET_ALL}")
-                            model, tokenizer = load_saved_model(model_path)
+
+                    print(f"{Fore.GREEN}Loading model from path...{Style.RESET_ALL}")
+                    model, tokenizer = load_saved_model(model_path)
                     ## run finetuning part
                     if model is not None and saved_dataset is not None:
-                        self.finetune_model.runtuning(model, tokenizer, saved_dataset, modelname)
+                        self.finetune_model.runtuning(model, tokenizer, saved_dataset, modelname, model_task)
+
             return model, dataset
             
         except Exception as e:
