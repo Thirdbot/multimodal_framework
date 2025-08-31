@@ -653,14 +653,14 @@ class CreateModel:
             safe_serialization=True
         )
         
-        # Save vision model with quantization
-        self.vision_model.save_pretrained(
-            vision_model_path,
-            # self.model_path,
-            quantization_config=quantization_config,
-            torch_dtype=torch.bfloat16,
-            safe_serialization=True
-        )
+        # # Save vision model with quantization
+        # self.vision_model.save_pretrained(
+        #     vision_model_path,
+        #     # self.model_path,
+        #     quantization_config=quantization_config,
+        #     torch_dtype=torch.bfloat16,
+        #     safe_serialization=True
+        # )
         
         # Save language model with quantization
         self.model.save_pretrained(
