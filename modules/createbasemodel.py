@@ -154,6 +154,7 @@ class VisionModel(PreTrainedModel):
     config_class = VisionConfig
     def __init__(self, config, vision_model, lang_model):
         super().__init__(config)
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.vision_model = vision_model
         self.vision_adapter = VisionAdapter(config.lang_embed_dim, config.clip_dim)
         self.lang_model = lang_model
@@ -162,7 +163,7 @@ class VisionModel(PreTrainedModel):
         
         embed_dim = self.lang_model.model.embed_tokens.weight.shape[1]
 
-        self.text_adapter = torch.nn.Linear(embed_dim, config.lang_embed_dim)
+        self.text_adapter = torch.nn.Linear(embed_dim, config.lang_embed_dim).to(device)
         
 
 
@@ -305,7 +306,7 @@ class VisionModel(PreTrainedModel):
         
     def process_inputs(self, input_ids, attention_mask, pixel_values, attend_to_img_tokens=True):
         # Processing inputs
-        device = torch.device("cuda")
+        # device = torch.device("cuda")
                 
 
         # In process_inputs:
@@ -317,7 +318,7 @@ class VisionModel(PreTrainedModel):
         # if embeddings.shape[-1] != 2048:
         #     embeddings = self.text_adapter(embeddings)
 
-        # device = next(self.lang_model.parameters()).device
+        device = next(self.lang_model.parameters()).device
         embeddings = embeddings.to(device)
         attention_mask = attention_mask.to(device)
         if pixel_values is not None:
@@ -742,7 +743,7 @@ def load_saved_model(model_path,checkpoint=False):
             
             # Load components
             vision_model = CLIPVisionModel.from_pretrained(vision_model_path)
-            lang_model = AutoModelForCausalLM.from_pretrained(lang_model_path)
+            lang_model = AutoModelForCausalLM.from_pretrained(lang_model_path,torch_dtype=torch.float32)
             
             # Create model
             model = VisionModel(config, vision_model, lang_model)
@@ -770,7 +771,7 @@ def load_saved_model(model_path,checkpoint=False):
             model.train()  # Ensure model is in training mode
             
             tokenizer = AutoTokenizer.from_pretrained(model_path)
-            return model, tokenizer
+        return model, tokenizer
         
     except Exception as e:
         print(f"Error loading model: {str(e)}")
@@ -780,8 +781,80 @@ def load_saved_model(model_path,checkpoint=False):
 # #create template from model
 
 # Example usage:
-# model, processor = load_saved_model()
-# image = load_image("https://media.istockphoto.com/id/155439315/photo/passenger-airplane-flying-above-clouds-during-sunset.jpg?s=612x612&w=0&k=20&c=LJWadbs3B-jSGJBVy9s0f8gZMHi2NvWFXa3VJ2lFcL0=")
-# inputs = processor(text="What do you see in this image?", images=image)
-# outputs = model.generate(**inputs)
-# print(processor.tokenizer.batch_decode(outputs, skip_special_tokens=False))
+
+# Load the model and tokenizer
+
+# Load the model and tokenizer
+# path = Path(__file__).parent.parent.absolute() / "custom_models" / "vision-model" / "Qwen_Qwen1.5-0.5B-Chat"
+# model, tokenizer = load_saved_model(path.as_posix())
+
+# # Get the device and dtype of the model
+# device = next(model.parameters()).device
+# dtype = next(model.parameters()).dtype
+
+# # Load the image
+# image_url = "https://media.istockphoto.com/id/155439315/photo/passenger-airplane-flying-above-clouds-during-sunset.jpg?s=612x612&w=0&k=20&c=LJWadbs3B-jSGJBVy9s0f8gZMHi2NvWFXa3VJ2lFcL0="
+# image = load_image(image_url)
+
+# # Initialize the processor
+# clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-large-patch14", use_fast=True)
+# processor = VisionProcessor(image_processor=clip_processor, tokenizer=tokenizer)
+
+# # Tokenize the text
+# text_input = processor.tokenizer("What do you see in this image?", return_tensors="pt")
+
+# # Preprocess the image
+# pixel_values = processor.image_processor(images=image, return_tensors="pt")["pixel_values"]
+
+# # Move inputs to the model's device and dtype
+# inputs = {
+#     "input_ids": text_input["input_ids"].to(device),  # Keep input_ids as integers
+#     "attention_mask": text_input["attention_mask"].to(device).to(dtype),
+#     "pixel_values": pixel_values.to(device).to(dtype)
+# }
+
+# # Generate outputs
+# outputs = model.generate(
+#     input_ids=inputs["input_ids"],
+#     attention_mask=inputs["attention_mask"],
+#     pixel_values=inputs["pixel_values"],
+#     max_new_tokens=50,  # Limit the number of tokens to generate
+#     num_beams=4,        # Use beam search for better results
+#     temperature=0.7,    # Sampling temperature
+#     do_sample=True      # Enable sampling
+# )
+
+# # Decode and print the outputs
+# decoded_outputs = processor.tokenizer.batch_decode(outputs, skip_special_tokens=True)
+# print(decoded_outputs)
+
+
+
+
+# Working Good
+# Load the model and tokenizer
+# path = Path(__file__).parent.parent.absolute() / "custom_models" / "conversation-model" / "Qwen_Qwen1.5-0.5B-Chat"
+# model, tokenizer = load_saved_model(path.as_posix())
+
+# # Move the model to the appropriate device
+# device = next(model.parameters()).device
+
+# # Define the text input
+# text_prompt = "Nigga"
+
+# # Tokenize the text input
+# text_input = tokenizer(text_prompt, return_tensors="pt").to(device)
+
+# # Generate outputs
+# outputs = model.generate(
+#     input_ids=text_input["input_ids"],
+#     attention_mask=text_input["attention_mask"],
+#     max_new_tokens=50,  # Limit the number of tokens to generate
+#     num_beams=4,        # Use beam search for better results
+#     temperature=0.7,    # Sampling temperature
+#     do_sample=True      # Enable sampling
+# )
+
+# # Decode and print the outputs
+# decoded_outputs = tokenizer.batch_decode(outputs, skip_special_tokens=True)
+# print(decoded_outputs)
