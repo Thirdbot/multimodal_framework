@@ -239,6 +239,9 @@ class FinetuneModel:
             # if resume_from_checkpoint:
             #     return self._load_from_checkpoint(model_id)
 
+            return self._load_from_scratch(model_id)
+
+
         except Exception as e:
             print(f"{Fore.RED}Error loading model {model_id}: {str(e)}{Style.RESET_ALL}")
             return None, None
