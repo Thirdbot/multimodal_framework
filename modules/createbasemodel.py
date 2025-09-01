@@ -33,10 +33,10 @@ class VisionConfig(PretrainedConfig):
 # Model classes
 class ConversationModel(PreTrainedModel):
     config_class = ConversationConfig
-    
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     def __init__(self, config, base_model):
         super().__init__(config)
-        self.model = base_model
+        self.model = base_model.to(self.device)  # Move base model to GPU
         self.config = config
         
         # Copy PEFT attributes from base model
@@ -83,9 +83,9 @@ class ConversationModel(PreTrainedModel):
     def forward(self, input_ids=None, attention_mask=None, labels=None, **kwargs):
         """Forward pass for conversation model."""
         outputs = self.model(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            labels=labels,
+            input_ids=input_ids.to(self.device),  # Move input_ids to GPU
+            attention_mask=attention_mask.to(self.device),  # Move attention_mask to GPU
+            labels=labels.to(self.device) if labels is not None else None,  # Move labels to GPU
             **kwargs
         )
         return outputs
@@ -142,6 +142,8 @@ class VisionAdapter(torch.nn.Module):
         self.layer3 = torch.nn.Linear(500, lang_embed_dim)
 
     def forward(self, x):
+        # Ensure the input tensor matches the model's dtype
+        x = x.to(self.layer1.weight.dtype)  # Match the dtype of the layer weights
         x = self.layer1(x)
         x = self.activation(x)
         x = self.layer2(x)
@@ -152,22 +154,18 @@ class VisionAdapter(torch.nn.Module):
 
 class VisionModel(PreTrainedModel):
     config_class = VisionConfig
+
     def __init__(self, config, vision_model, lang_model):
         super().__init__(config)
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.vision_model = vision_model
-        self.vision_adapter = VisionAdapter(config.lang_embed_dim, config.clip_dim)
-        self.lang_model = lang_model
+        self.vision_model = vision_model.to(device)  # Move vision model to GPU
+        self.vision_adapter = VisionAdapter(config.lang_embed_dim, config.clip_dim).to(device)  # Move adapter to GPU
+        self.lang_model = lang_model.to(device)  # Move language model to GPU
         self.supports_gradient_checkpointing = True
         self._is_gradient_checkpointing = False
-        
+
         embed_dim = self.lang_model.model.embed_tokens.weight.shape[1]
-
-
-        self.text_adapter = torch.nn.Linear(embed_dim, config.lang_embed_dim).to(device)
-
-        
-
+        self.text_adapter = torch.nn.Linear(embed_dim, config.lang_embed_dim).to(device)  # Move text adapter to GPU
 
     def forward(self, input_ids=None, attention_mask=None, pixel_values=None,
                 attend_to_img_tokens=True, labels=None, **kwargs):
@@ -307,39 +305,25 @@ class VisionModel(PreTrainedModel):
         )
         
     def process_inputs(self, input_ids, attention_mask, pixel_values, attend_to_img_tokens=True):
-        # Processing inputs
-
-        # device = torch.device("cuda")
-
-                
-
-        # In process_inputs:
-        embeddings = self.lang_model.model.embed_tokens(input_ids)
-        if self.text_adapter is not None:
-            embeddings = self.text_adapter(embeddings)
-        
-        # #temporary cast dim
-        # if embeddings.shape[-1] != 2048:
-        #     embeddings = self.text_adapter(embeddings)
-
-
+        # Get the device and dtype of the model
         device = next(self.lang_model.parameters()).device
+        dtype = next(self.lang_model.parameters()).dtype
 
-        embeddings = embeddings.to(device)
-        attention_mask = attention_mask.to(device)
-        if pixel_values is not None:
-            pixel_values = pixel_values.to(device)
+        # Move embeddings and attention mask to the correct device and dtype
+        embeddings = self.lang_model.model.embed_tokens(input_ids).to(device).to(dtype)
+        attention_mask = attention_mask.to(device).to(dtype)
 
         if pixel_values is not None:
-            image_embeddings = self.vision_model(pixel_values).last_hidden_state
-            
-            #clip dims to lang dims
+            pixel_values = pixel_values.to(device).to(dtype)
+            image_embeddings = self.vision_model(pixel_values).last_hidden_state.to(dtype)
+
+            # Adapt image embeddings to match language embeddings
             adapted_embeddings = self.vision_adapter(image_embeddings)
             embeddings = torch.cat((adapted_embeddings, embeddings), axis=1)
             attention_mask = self.__extend_attention_mask(attention_mask, attend_to_img_tokens)
 
         return embeddings, attention_mask
-        
+
     def __extend_attention_mask(self, atten_mask, atten_to_img=True, num_added_tokens=257):
         # Extending the attention mask to image embeddings
         batch_size, seq_length = atten_mask.shape
@@ -803,7 +787,7 @@ def load_saved_model(model_path,checkpoint=False):
 # device = next(model.parameters()).device
 # dtype = next(model.parameters()).dtype
 
-# # Load the image
+# Load the image
 # image_url = "https://media.istockphoto.com/id/155439315/photo/passenger-airplane-flying-above-clouds-during-sunset.jpg?s=612x612&w=0&k=20&c=LJWadbs3B-jSGJBVy9s0f8gZMHi2NvWFXa3VJ2lFcL0="
 # image = load_image(image_url)
 
@@ -842,16 +826,16 @@ def load_saved_model(model_path,checkpoint=False):
 
 
 
-# Working Good
-# Load the model and tokenizer
-# path = Path(__file__).parent.parent.absolute() / "custom_models" / "conversation-model" / "Qwen_Qwen1.5-0.5B-Chat"
-# model, tokenizer = load_saved_model(path.as_posix())
+# # Working Good
+# # Load the model and tokenizer
+# # path = Path(__file__).parent.parent.absolute() / "custom_models" / "conversation-model" / "Qwen_Qwen1.5-0.5B-Chat"
+# # model, tokenizer = load_saved_model(path.as_posix())
 
 # # Move the model to the appropriate device
-# device = next(model.parameters()).device
+# # device = next(model.parameters()).device
 
 # # Define the text input
-# text_prompt = "Nigga"
+# text_prompt = "Hello"
 
 # # Tokenize the text input
 # text_input = tokenizer(text_prompt, return_tensors="pt").to(device)
