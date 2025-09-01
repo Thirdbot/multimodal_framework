@@ -42,8 +42,10 @@ from modules.DataDownload import DataLoader
 # from modules.finetuning_model import FinetuneModel
 from modules.DataModelPrepare import Manager
 from modules.variable import Variable
+from modules.inference import InferenceManager
+from pathlib import Path
 
-acess_token = os.environ.get("hf_token")
+# acess_token = os.environ.get("hf_token")
 
 api = HfApi()
 variable = Variable()
@@ -56,12 +58,9 @@ SavedConfigsfile.touch(exist_ok=True)
 setcard = ApiCardSetup()
 
 list_models = api.list_models(model_name='Qwen/Qwen1.5-0.5B-Chat',limit=1,gated=False)
-# list_datasets = api.list_datasets(tags='text-generation',limit=3,gated=False)
 
 # list_datasets = api.list_datasets(dataset_name='waltsun/MOAT',limit=1,gated=False)
-
-list_datasets = api.list_datasets(dataset_name='waltsun/MOAT',limit=1,gated=False)
-# list_datasets = api.list_datasets(dataset_name="FreedomIntelligence/medical-o1-reasoning-SFT",limit=1,gated=False)
+list_datasets = api.list_datasets(dataset_name="FreedomIntelligence/medical-o1-reasoning-SFT",limit=1,gated=False)
 
 
 #set new list to download
@@ -77,6 +76,42 @@ downloading.run(list_download)
 finetune = Manager()
 
 finetune.dataset_prepare(list_download)
+
+
+
+
+# Inference setup
+# print("\n--- Starting Inference ---\n")
+# model_path = Path(__file__).parent.absolute() / "checkpoints" / "text-vision-text-generation" / "Qwen_Qwen1.5-0.5B-Chat"
+# inference_manager = InferenceManager(model_path)
+
+# # Example 1: Text-only inference
+# user_input = "Where are you?"
+
+# # Print the formatted chat
+# response = inference_manager.generate_response(user_input)
+# print(f"{response}")
+
+# # # # # Example 2: Multimodal inference
+# image_path = "https://media.istockphoto.com/id/155439315/photo/passenger-airplane-flying-above-clouds-during-sunset.jpg?s=612x612&w=0&k=20&c=LJWadbs3B-jSGJBVy9s0f8gZMHi2NvWFXa3VJ2lFcL0="  # Replace with the actual path to your image
+# user_input = "What do you see in this image?"
+# response = inference_manager.generate_response(user_input, image_path=image_path)
+# print(f"Response: {response}")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 #left to do
