@@ -50,11 +50,11 @@ class FinetuneModel:
         """Initialize the FinetuneModel with default parameters."""
         # Training parameters
         self.variable = Variable()
-        self.per_device_train_batch_size = 1  # Reduced batch size
+        self.per_device_train_batch_size = 10  # Reduced batch size
         self.per_device_eval_batch_size = 1
-        self.gradient_accumulation_steps = 4  # Reduced gradient accumulation
+        self.gradient_accumulation_steps = 2  # Reduced gradient accumulation
         self.learning_rate = 2e-5  # Reduced learning rate
-        self.num_train_epochs = 100
+        self.num_train_epochs = 0.01
         self.save_strategy = "best"
         
        
