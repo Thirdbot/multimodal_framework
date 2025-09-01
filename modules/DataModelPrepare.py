@@ -50,9 +50,9 @@ class FinetuneModel:
         """Initialize the FinetuneModel with default parameters."""
         # Training parameters
         self.variable = Variable()
-        self.per_device_train_batch_size = 1  # Reduced batch size
+        self.per_device_train_batch_size = 10  # Reduced batch size
         self.per_device_eval_batch_size = 1
-        self.gradient_accumulation_steps = 4  # Reduced gradient accumulation
+        self.gradient_accumulation_steps = 2  # Reduced gradient accumulation
         self.learning_rate = 2e-5  # Reduced learning rate
         self.num_train_epochs = 0.01
         self.save_strategy = "best"
@@ -861,12 +861,12 @@ class Manager:
                             create_model = CreateModel(modelname, "conversation-model")
                             create_model.add_conversation()
                             create_model.save_regular_model()
+                            model, tokenizer = load_saved_model(model_path)
       
 
-                        elif Path(self.finetune_model.CHECKPOINT_DIR /model_task/ model_name_safe).exists():
+                        elif Path(self.CHECKPOINT_DIR).exists():
                             print(f"{Fore.GREEN}Loading conversation model from checkpoint...{Style.RESET_ALL}")
-                            model, tokenizer = load_saved_model(self.finetune_model.CHECKPOINT_DIR /model_task/ model_name_safe)
-                          
+                            model, tokenizer = load_saved_model(self.CHECKPOINT_DIR)
 
 
                     #temporal fix this
@@ -882,20 +882,21 @@ class Manager:
                             create_model = CreateModel(modelname, "vision-model")
                             create_model.add_vision()
                             create_model.save_vision_model()
-
-
-                        elif Path(self.finetune_model.CHECKPOINT_DIR / model_task  / model_name_safe).exists():
-                            print(f"{Fore.GREEN}Loading vision model from checkpoint...{Style.RESET_ALL}")
-                            model, tokenizer = load_saved_model(self.finetune_model.CHECKPOINT_DIR / model_task / model_name_safe)
+                            model, tokenizer = load_saved_model(model_path)
                             
 
-                    print(f"{Fore.GREEN}Loading model from path...{Style.RESET_ALL}")
-                    model, tokenizer = load_saved_model(model_path)
+
+                        elif Path(self.CHECKPOINT_DIR).exists():
+                            print(f"{Fore.GREEN}Loading vision model from checkpoint...{Style.RESET_ALL}")
+                            model, tokenizer = load_saved_model(self.CHECKPOINT_DIR)
+                            
+
+                 
                     ## run finetuning part
                     if model is not None and saved_dataset is not None:
                         self.finetune_model.runtuning(model, tokenizer, saved_dataset, modelname, model_task)
 
-            return model, dataset
+            return model, saved_dataset
             
         except Exception as e:
             print(f"{Fore.RED}Error running finetune: {str(e)}{Style.RESET_ALL}")
