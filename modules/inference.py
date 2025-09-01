@@ -63,8 +63,7 @@ class InferenceManager:
             torch.backends.cudnn.benchmark = True
         else:
             print("Warning: Running on CPU. Performance will be slower.")
-    # def setup_chatTemplate(self):
-    #     self.chatTemplate = ChatTemplate(tokenizer=self.tokenizer)
+   
 
     def _load_model_and_tokenizer(self):
         """Load the model and tokenizer, and determine if it's multimodal."""
@@ -119,8 +118,8 @@ class InferenceManager:
         formatted_chat = template.render(messages=messages)
 
         # Normalize whitespace: strip leading/trailing, collapse multiple blank lines and indent
-        formatted_chat = re.sub(r"[ \t]+$", "", formatted_chat, flags=re.MULTILINE)   # trim trailing spaces per line
-        formatted_chat = re.sub(r"\n\s*\n+", "\n\n", formatted_chat)                  # collapse multiple blank lines
+        formatted_chat = re.sub(r"[ \t]+$", "", formatted_chat, flags=re.MULTILINE)   
+        formatted_chat = re.sub(r"\n\s*\n+", "\n\n", formatted_chat)                 
         formatted_chat = formatted_chat.strip()
 
         # Ensure Assistant: marker exists at end
