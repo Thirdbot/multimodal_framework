@@ -50,11 +50,11 @@ class FinetuneModel:
         """Initialize the FinetuneModel with default parameters."""
         # Training parameters
         self.variable = Variable()
-        self.per_device_train_batch_size = 10  # Reduced batch size
+        self.per_device_train_batch_size = 1  # Reduced batch size
         self.per_device_eval_batch_size = 1
         self.gradient_accumulation_steps = 2  # Reduced gradient accumulation
         self.learning_rate = 2e-5  # Reduced learning rate
-        self.num_train_epochs = 0.01
+        self.num_train_epochs = 0.1
         self.save_strategy = "best"
         
        
@@ -82,10 +82,6 @@ class FinetuneModel:
         self.CUTOM_MODEL_DIR = self.variable.CUTOM_MODEL_DIR
         self.VISION_MODEL_DIR = self.variable.VISION_MODEL_DIR
         self.REGULAR_MODEL_DIR = self.variable.REGULAR_MODEL_DIR
-        
-        
-
-        
         self.MODEL_LOCAL_DIR = self.variable.REPO_DIR
         
         
@@ -94,11 +90,10 @@ class FinetuneModel:
     
     def _setup_directories(self):
         """Set up required directories."""        
-        self.MODEL_DIR = self.variable.MODEL_DIR
         self.CHECKPOINT_DIR = self.variable.CHECKPOINT_DIR
         self.OFFLOAD_DIR = self.variable.OFFLOAD_DIR
         
-        for directory in [self.MODEL_DIR, self.CHECKPOINT_DIR, self.OFFLOAD_DIR]:
+        for directory in [self.CHECKPOINT_DIR, self.OFFLOAD_DIR]:
             directory.mkdir(parents=True, exist_ok=True)
     
     def get_model_architecture(self, model_id: str) -> List[str]:
@@ -165,43 +160,43 @@ class FinetuneModel:
             return "text-generation"
     
 
-    # def find_last_checkpoint(self, model_name: str) -> Optional[Path]:
-    #     """Find the last checkpoint for a model.
+    def find_last_checkpoint(self, model_name: str) -> Optional[Path]:
+        """Find the last checkpoint for a model.
         
-    #     Args:
-    #         model_name: The model identifier
+        Args:
+            model_name: The model identifier
             
-    #     Returns:
-    #         Path to the last checkpoint if found, None otherwise
-    #     """
-    #     try:
-    #         model_task = self.get_model_task(model_name)
-    #         model_name = model_name.replace('/', '_') if '/' in model_name else model_name
+        Returns:
+            Path to the last checkpoint if found, None otherwise
+        """
+        try:
+            model_task = self.get_model_task(model_name)
+            model_name = model_name.replace('/', '_') if '/' in model_name else model_name
             
-    #         checkpoint_dir = self.CHECKPOINT_DIR / model_task / model_name
+            checkpoint_dir = self.CHECKPOINT_DIR / model_task / model_name
             
-    #         if not checkpoint_dir.exists():
-    #             print(f"{Fore.YELLOW}No checkpoint directory found at {checkpoint_dir}{Style.RESET_ALL}")
-    #             return None
+            if not checkpoint_dir.exists():
+                print(f"{Fore.YELLOW}No checkpoint directory found at {checkpoint_dir}{Style.RESET_ALL}")
+                return None
             
-    #         checkpoints = [d for d in checkpoint_dir.iterdir() if d.is_dir() and d.name.startswith("checkpoint-")]
+            checkpoints = [d for d in checkpoint_dir.iterdir() if d.is_dir() and d.name.startswith("checkpoint-")]
             
-    #         if not checkpoints:
-    #             print(f"{Fore.YELLOW}No checkpoints found in {checkpoint_dir}{Style.RESET_ALL}")
-    #             return None
+            if not checkpoints:
+                print(f"{Fore.YELLOW}No checkpoints found in {checkpoint_dir}{Style.RESET_ALL}")
+                return None
             
-    #         latest_checkpoint = max(checkpoints, key=lambda x: int(x.name.split("-")[1]))
+            latest_checkpoint = max(checkpoints, key=lambda x: int(x.name.split("-")[1]))
             
-    #         if not (latest_checkpoint / "model.safetensors").exists() and not (latest_checkpoint / "adapter_model.safetensors").exists():
-    #             print(f"{Fore.YELLOW}Latest checkpoint {latest_checkpoint} is incomplete, starting from scratch{Style.RESET_ALL}")
-    #             return None
+            if not (latest_checkpoint / "model.safetensors").exists() and not (latest_checkpoint / "adapter_model.safetensors").exists():
+                print(f"{Fore.YELLOW}Latest checkpoint {latest_checkpoint} is incomplete, starting from scratch{Style.RESET_ALL}")
+                return None
                 
-    #         print(f"{Fore.GREEN}Found valid checkpoint at {latest_checkpoint}{Style.RESET_ALL}")
-    #         return latest_checkpoint
+            print(f"{Fore.GREEN}Found valid checkpoint at {latest_checkpoint}{Style.RESET_ALL}")
+            return latest_checkpoint
             
-    #     except Exception as e:
-    #         print(f"{Fore.RED}Error finding last checkpoint: {str(e)}{Style.RESET_ALL}")
-    #         return None
+        except Exception as e:
+            print(f"{Fore.RED}Error finding last checkpoint: {str(e)}{Style.RESET_ALL}")
+            return None
     
     
     def load_model(self, model_id: str, resume_from_checkpoint: bool = False) -> Tuple[Optional[AutoModelForCausalLM], Optional[AutoTokenizer]]:
@@ -232,8 +227,8 @@ class FinetuneModel:
             self.model_task = self.get_model_task(model_id)
             print(f"{Fore.CYAN}Model task detected: {self.model_task}{Style.RESET_ALL}")
             
-            self.TASK_MODEL_DIR = self.MODEL_DIR.joinpath(self.model_task)
-            self.TASK_MODEL_DIR.mkdir(parents=True, exist_ok=True)
+            # self.TASK_MODEL_DIR = self.MODEL_DIR.joinpath(self.model_task)
+            # self.TASK_MODEL_DIR.mkdir(parents=True, exist_ok=True)
             
 
             # if resume_from_checkpoint:
@@ -371,8 +366,8 @@ class FinetuneModel:
             
             # Configure LoRA
             lora_config = LoraConfig(
-                r=8,  # Rank
-                lora_alpha=16,  # Alpha scaling
+                r=32,  # Rank
+                lora_alpha=64,  # Alpha scaling
                 target_modules=target_modules,
                 lora_dropout=0.05,
                 bias="none",
@@ -494,15 +489,15 @@ class FinetuneModel:
             num_train_epochs=self.num_train_epochs,
             weight_decay=0.01,
             save_strategy="steps",
-            save_steps=100,
-            save_total_limit=2,
-            logging_dir=str(self.CHECKPOINT_DIR),
+            save_steps=10,
+            save_total_limit=1,
+            logging_dir=str(output_dir),
             logging_strategy="steps",
             logging_steps=10,
             logging_first_step=True,
             gradient_accumulation_steps=self.gradient_accumulation_steps,
-            fp16=False,  # Disable fp16 since we're using bf16
-            bf16=True,  # Use bfloat16 instead of fp16
+            fp16=False,  
+            bf16=True,  
             optim="adamw_torch_fused" if cuda_available else "adamw_torch",
             lr_scheduler_type="cosine",
             warmup_ratio=0.1,
@@ -518,9 +513,7 @@ class FinetuneModel:
             group_by_length=True,
             length_column_name="length",
             report_to="none",
-
             resume_from_checkpoint=self.CHECKPOINT_DIR,
-
             save_safetensors=True,
             save_only_model=False,  # Changed to False to save optimizer state
             overwrite_output_dir=True,
@@ -651,7 +644,7 @@ class FinetuneModel:
                 model_save_path = self.CHECKPOINT_DIR / 'text-vision-text-generation' / modelname
                 model_save_path.mkdir(parents=True, exist_ok=True)
                 # Save the final model and adapter
-                model.save_pretrained(str(model_save_path), safe_serialization=True)
+                trainer.save_model(str(model_save_path))
                 tokenizer.save_pretrained(str(model_save_path))
                 if hasattr(model, "lang_model"):
                     lang_model_path = model_save_path / "lang_model"
@@ -675,24 +668,15 @@ class FinetuneModel:
                 model_save_path = self.CHECKPOINT_DIR / 'text-generation' / modelname
                 model_save_path.mkdir(parents=True, exist_ok=True)
                 # Save the final model and adapter
-                model.save_pretrained(str(model_save_path), safe_serialization=True)
+                trainer.save_model(str(model_save_path))
                 tokenizer.save_pretrained(str(model_save_path))
                 model.config.save_pretrained(str(model_save_path))
             else:
                 model_save_path = self.CHECKPOINT_DIR / 'text-generation' / modelname
                 model_save_path.mkdir(parents=True, exist_ok=True)
-                model.save_pretrained(str(model_save_path), safe_serialization=True)
+                trainer.save_model(str(model_save_path))
                 tokenizer.save_pretrained(str(model_save_path))
                 model.config.save_pretrained(str(model_save_path))
-
-
-            # # Get target modules and ensure they're serializable
-            # target_modules = model.peft_config["default"].target_modules
-            # if isinstance(target_modules, (set, list, tuple)):
-            #     target_modules = list(target_modules)
-            # else:
-            #     target_modules = []
-          
 
             print(f"{Fore.GREEN}Model saved to: {model_save_path}{Style.RESET_ALL}")
             
@@ -861,7 +845,7 @@ class Manager:
                             create_model = CreateModel(modelname, "conversation-model")
                             create_model.add_conversation()
                             create_model.save_regular_model()
-                            model, tokenizer = load_saved_model(model_path)
+                            # model, tokenizer = load_saved_model(model_path)
       
 
                         elif Path(self.CHECKPOINT_DIR).exists():
@@ -882,14 +866,15 @@ class Manager:
                             create_model = CreateModel(modelname, "vision-model")
                             create_model.add_vision()
                             create_model.save_vision_model()
-                            model, tokenizer = load_saved_model(model_path)
+                            # model, tokenizer = load_saved_model(model_path)
                             
 
 
                         elif Path(self.CHECKPOINT_DIR).exists():
                             print(f"{Fore.GREEN}Loading vision model from checkpoint...{Style.RESET_ALL}")
                             model, tokenizer = load_saved_model(self.CHECKPOINT_DIR)
-                            
+                    
+                    model, tokenizer = load_saved_model(model_path)
 
                  
                     ## run finetuning part
