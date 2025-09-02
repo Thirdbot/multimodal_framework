@@ -13,11 +13,12 @@ from modules.createbasemodel import VisionModel, ConversationModel
 from transformers.image_utils import load_image
 from jinja2 import Template
 import re
+from modules.variable import Variable
 
 class InferenceManager:
     """Manages inference with a language or multimodal model."""
 
-    def __init__(self, model_path: str, max_new_tokens: int = 50, temperature: float = 0.9, top_p: float = 0.9):
+    def __init__(self, model_path: str, max_new_tokens: int = 1000, temperature: float = 0.7, top_p: float = 0.9):
         """Initialize the inference manager.
 
         Args:
@@ -31,23 +32,21 @@ class InferenceManager:
         self.temperature = temperature
         self.top_p = top_p
         self.vision_path = Path(model_path ) / "vision_model"
+        self.vision_processor_path = Path(model_path ) / "vision_processor"
         self.lang_path = Path(model_path ) / "lang_model"
+        self.variable = Variable()
+        self.dtype = self.variable.DTYPE
         
-        self.chat_template = """
-                            {% for message in messages %}
-                                {% if message['role'] == 'system' %}
-                                {{ message['content'] }}
-                                {% elif message['role'] == 'user' %}
-                                Human: {% if message.get('images') %}
-                                [Images: {{ message['images']|length }}]
-                                {% endif %}
-                                {{ message['content'] }}
-                                {% elif message['role'] == 'assistant' %}
-                                Assistant: {{ message['content'] }}
-                                {% endif %}
-                            {% endfor %}
-                            Assistant:
-                            """
+        self.chat_template = """{% for message in messages -%}
+{% if message['role'] == 'system' -%}
+{{ message['content'] }}
+{% elif message['role'] == 'user' -%}
+Human:{% if message.get('images') %} [Images: {% for img in message['images'] %}{{ img }} {% endfor %}]{% endif %} {{ message['content'] }}
+{% elif message['role'] == 'assistant' -%}
+Assistant: {{ message['content'] }}
+{% endif -%}
+{% endfor -%}
+Assistant:"""
 
         self._setup_device()
         self._load_model_and_tokenizer()
@@ -75,14 +74,15 @@ class InferenceManager:
             # Check if the model is multimodal
             if hasattr(config, "model_type") and config.model_type == "vision-model":
                 print("Detected multimodal model. Loading VisionModel...")
-                vision_model = CLIPVisionModel.from_pretrained(self.vision_path, torch_dtype=torch.float16)
-                lang_model = AutoModelForCausalLM.from_pretrained(self.lang_path, torch_dtype=torch.float16)
-                self.model = VisionModel(config, vision_model, lang_model).to(self.device)
+                self.vision_model = CLIPVisionModel.from_pretrained(self.vision_path, torch_dtype=self.dtype)
+                self.vision_processor = CLIPProcessor.from_pretrained(self.vision_processor_path)
+                self.lang_model = AutoModelForCausalLM.from_pretrained(self.lang_path, torch_dtype=self.dtype)
+                self.model = VisionModel(config,self.vision_model, self.lang_model).to(self.device)
             else:
                 print("Detected text-only model. Loading ConversationModel...")
                 base_model = AutoModelForCausalLM.from_pretrained(
                     self.model_path,
-                    torch_dtype=torch.float16,
+                    torch_dtype=self.dtype,
                     device_map="auto"
                 )
                 self.model = ConversationModel(config, base_model).to(self.device)
@@ -149,16 +149,26 @@ class InferenceManager:
 
             # Use tokenizer/template-aware formatter
             prompt = self.format_chat(messages,self.chat_template)
+            
+            print(prompt)
 
             # Prepare inputs for the model
             inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
+
+            # model_dtype = next(self.model.parameters()).dtype
+
+            # For attention_mask and pixel_values (if present)
+            if "attention_mask" in inputs:
+                inputs["attention_mask"] = inputs["attention_mask"].to(self.dtype)
+            if "pixel_values" in inputs:
+                inputs["pixel_values"] = inputs["pixel_values"].to(self.device).to(self.dtype)
 
             # Handle multimodal inputs if the model supports it
             if hasattr(self.model, "vision_model") and image_path:
                 # Load and preprocess the image
                 image = load_image(image_path)
-                processor = self._get_image_processor()
-                pixel_values = processor(images=image, return_tensors="pt")["pixel_values"].to(self.device)
+                # processor = self._get_image_processor()
+                pixel_values = self.vision_processor(images=image, return_tensors="pt")["pixel_values"].to(self.device)
                 inputs["pixel_values"] = pixel_values
 
             # Generate outputs
@@ -205,10 +215,11 @@ class InferenceManager:
         
         return response.strip()
 
-    def _get_image_processor(self):
-        """Get the appropriate image processor for the model."""
-        try:
-            return CLIPProcessor.from_pretrained("openai/clip-vit-large-patch14", use_fast=True)
-        except Exception as e:
-            print(f"Error loading image processor: {str(e)}")
-            raise
+    # def _get_image_processor(self):
+    #     """Get the appropriate image processor for the model."""
+    #     try:
+    #         clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-large-patch14", use_fast=True)
+    #         return self.vision_processor()
+        # except Exception as e:
+        #     print(f"Error loading image processor: {str(e)}")
+        #     raise
