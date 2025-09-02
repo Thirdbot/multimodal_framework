@@ -1,5 +1,6 @@
 from huggingface_hub import HfApi 
 from pathlib import Path
+import torch
 
 class Variable():
     
@@ -47,3 +48,4 @@ class Variable():
         self.CHECKPOINT_DIR = self.WORKSPACE / self.model_checkpoints
         self.OFFLOAD_DIR = self.WORKSPACE / "offload"
         
+        self.DTYPE = torch.float32

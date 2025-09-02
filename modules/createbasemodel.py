@@ -12,6 +12,8 @@ from transformers.image_utils import load_image
 from transformers import BitsAndBytesConfig
 from peft import AutoPeftModelForCausalLM, LoraConfig, get_peft_model, prepare_model_for_kbit_training
 
+from modules.variable import Variable
+
 # Config classes
 class ConversationConfig(PretrainedConfig):
     model_type = "conversation-model"
@@ -25,10 +27,10 @@ class VisionConfig(PretrainedConfig):
     model_type = "vision-model"
     architectures = ["VisionModel"]
     
-    def __init__(self, lang_embed_dim=1024, clip_dim=1024, **kwargs):
+    def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.lang_embed_dim = lang_embed_dim
-        self.clip_dim = clip_dim
+        # self.lang_embed_dim = lang_embed_dim
+        # self.clip_dim = clip_dim
 
 # Model classes
 class ConversationModel(PreTrainedModel):
@@ -159,13 +161,14 @@ class VisionModel(PreTrainedModel):
         super().__init__(config)
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.vision_model = vision_model.to(device)  # Move vision model to GPU
-        self.vision_adapter = VisionAdapter(config.lang_embed_dim, config.clip_dim).to(device)  # Move adapter to GPU
+        self.vision_adapter = VisionAdapter(1024, 1024).to(device)  # Move adapter to GPU
         self.lang_model = lang_model.to(device)  # Move language model to GPU
         self.supports_gradient_checkpointing = True
         self._is_gradient_checkpointing = False
+        self.config = config
 
-        embed_dim = self.lang_model.model.embed_tokens.weight.shape[1]
-        self.text_adapter = torch.nn.Linear(embed_dim, config.lang_embed_dim).to(device)  # Move text adapter to GPU
+        embeddings = self.lang_model.get_input_embeddings()
+        self.text_adapter = torch.nn.Linear(embeddings.weight.shape[1], 1024).to(device)  # Move text adapter to GPU
 
     def forward(self, input_ids=None, attention_mask=None, pixel_values=None,
                 attend_to_img_tokens=True, labels=None, **kwargs):
@@ -310,7 +313,7 @@ class VisionModel(PreTrainedModel):
         dtype = next(self.lang_model.parameters()).dtype
 
         # Move embeddings and attention mask to the correct device and dtype
-        embeddings = self.lang_model.model.embed_tokens(input_ids).to(device).to(dtype)
+        embeddings = self.lang_model.get_input_embeddings()(input_ids)
         attention_mask = attention_mask.to(device).to(dtype)
 
         if pixel_values is not None:
@@ -412,7 +415,8 @@ class CreateModel:
         self.model_name = model_name
         self.save_name = self.model_name.replace("/","_")
         self.model_category = model_category
-        
+        self.variable = Variable()
+        self.dtype = self.variable.DTYPE
         
         self.chat_template = """{% for message in messages %}
         {% if message['role'] == 'system' %}
@@ -434,7 +438,7 @@ class CreateModel:
         # Load the original model and its config with more stable quantization
         quantization_config = BitsAndBytesConfig(
             load_in_4bit=True,
-            bnb_4bit_compute_dtype=torch.float32,  # Use float32 for compute
+            bnb_4bit_compute_dtype=self.dtype,  # Use float32 for compute
             bnb_4bit_quant_type="fp4",  # Use fp4 instead of nf4 for more stability
             bnb_4bit_use_double_quant=False,  # Disable double quantization
             llm_int8_threshold=0.0,  # Disable int8 threshold
@@ -447,7 +451,7 @@ class CreateModel:
                 self.model_name,
                 quantization_config=quantization_config,
                 device_map="auto",
-                torch_dtype=torch.float32,  # Use float32 instead of bfloat16
+                torch_dtype=self.dtype,  # Use float32 instead of bfloat16
                 low_cpu_mem_usage=True,
                 trust_remote_code=True
             )
@@ -458,12 +462,12 @@ class CreateModel:
             self.model = AutoModelForCausalLM.from_pretrained(
                 self.model_name,
                 device_map="auto",
-                torch_dtype=torch.float32,
+                torch_dtype=self.dtype,
                 low_cpu_mem_usage=True,
                 trust_remote_code=True
             )
         
-        self.original_config = AutoConfig.from_pretrained(self.model_name)
+        self.original_config = ConversationConfig()
         
         # First load the tokenizer to get the correct vocab size
         self.tokenizer = AutoTokenizer.from_pretrained(
@@ -474,8 +478,7 @@ class CreateModel:
         self.clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-large-patch14", use_fast=True)
         self.vision_processor = VisionProcessor(self.clip_processor, self.tokenizer)
         
-        self.vision_config = VisionConfig(lang_embed_dim=1024,
-                                          clip_dim=1024)
+        self.vision_config = VisionConfig()
         
         self.tokenizer.chat_template = self.chat_template
 
@@ -485,7 +488,7 @@ class CreateModel:
             # Configure quantization
             bnb_config = BitsAndBytesConfig(
                 load_in_4bit=True,
-                bnb_4bit_compute_dtype=torch.float32,
+                bnb_4bit_compute_dtype=self.dtype,
                 bnb_4bit_quant_type="fp4",
                 bnb_4bit_use_double_quant=False
             )
@@ -498,7 +501,7 @@ class CreateModel:
                     device_map="auto",
                     trust_remote_code=True,
                     quantization_config=bnb_config,
-                    torch_dtype=torch.float32
+                    torch_dtype=self.dtype
                 )
             
             # Prepare model for k-bit training
@@ -530,8 +533,8 @@ class CreateModel:
             
             # Configure LoRA
             lora_config = LoraConfig(
-                r=8,  # Rank
-                lora_alpha=16,  # Alpha scaling
+                r=16,  # Rank
+                lora_alpha=32,  # Alpha scaling
                 target_modules=target_modules,
                 lora_dropout=0.05,
                 bias="none",
@@ -572,7 +575,7 @@ class CreateModel:
         # Initialize models and processor with quantization
         quantization_config = BitsAndBytesConfig(
             load_in_4bit=True,
-            bnb_4bit_compute_dtype=torch.bfloat16,
+            bnb_4bit_compute_dtype=self.dtype,
             bnb_4bit_quant_type="nf4",
             bnb_4bit_use_double_quant=True,
             llm_int8_threshold=6.0,
@@ -583,7 +586,7 @@ class CreateModel:
             "openai/clip-vit-large-patch14",
             quantization_config=quantization_config,
             device_map="auto",
-            torch_dtype=torch.bfloat16,
+            torch_dtype=self.dtype,
             low_cpu_mem_usage=True
         )
 
@@ -616,99 +619,61 @@ class CreateModel:
         
     def save_vision_model(self):
         """Save the model and all its components with optimizations."""
-        # Create necessary directories
-        vision_model_path = os.path.join(self.model_path, "vision_model")
-        lang_model_path = os.path.join(self.model_path, "lang_model")
-        os.makedirs(vision_model_path, exist_ok=True)
-        os.makedirs(lang_model_path, exist_ok=True)
-        
-        # Save base model first with quantization
-        quantization_config = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_compute_dtype=torch.bfloat16,
-            bnb_4bit_quant_type="nf4",
-            bnb_4bit_use_double_quant=True,
-            llm_int8_threshold=6.0,
-            llm_int8_has_fp16_weight=False,
-        )
-        # Save tokenizer
-        self.tokenizer.save_pretrained(
-            self.model_path,
-            legacy_format=False
-        )
-        
-
-       
-        
-        # Save vision model with quantization
-        self.vision_model.save_pretrained(
-            vision_model_path,
-            # self.model_path,
-            quantization_config=quantization_config,
-            torch_dtype=torch.bfloat16,
-            safe_serialization=True
-        )
-        
-        # Save language model with quantization
-        self.model.save_pretrained(
-            lang_model_path,
-            quantization_config=quantization_config,
-            torch_dtype=torch.bfloat16,
-            safe_serialization=True
-        )
-        
-        # Save vision processor
-        self.vision_processor.save_pretrained(
-            os.path.join(self.model_path, "vision_processor"),
-            safe_serialization=True
-        )
-        
-        # Save main model configuration
-        self.vision_config.save_pretrained(self.model_path)
-        
-        
-        
-        # # Create Modelfile for Ollama
-        # modelfile_content = f"""FROM python:3.9
-
-        # # Set up the model directory
-        # WORKDIR /model
-        # COPY . /model/
-
-        # # Install required packages
-        # RUN pip install transformers torch torchvision pillow sentencepiece protobuf
-
-        # # Set up the model configuration
-        # PARAMETER temperature 0.7
-        # PARAMETER top_p 0.9
-        # PARAMETER top_k 40
-        # PARAMETER num_ctx 2048
-
-        # # Set up the model template
-        # TEMPLATE \"\"\"{self.chat_template}\"\"\"
-
-        # # Set up the model system prompt
-        # SYSTEM \"\"\"You are a helpful AI assistant that can understand and describe images.\"\"\"
-
-        # # Set up the model parameters
-        # PARAMETER stop "Human:"
-        # PARAMETER stop "Assistant:"
-
-        # # Set up model architecture
-        # PARAMETER model_type "vision-model"
-        # PARAMETER clip_dim {self.vision_config.clip_dim}
-        # PARAMETER lang_embed_dim {self.vision_config.lang_embed_dim}
-        # """
-        
-        # # Save Modelfile
-        # with open(os.path.join(self.model_path, "Modelfile"), "w") as f:
-        #     f.write(modelfile_content)
+        try:
+            # Create necessary directories
+            vision_model_path = os.path.join(self.model_path, "vision_model")
+            lang_model_path = os.path.join(self.model_path, "lang_model")
+            os.makedirs(vision_model_path, exist_ok=True)
+            os.makedirs(lang_model_path, exist_ok=True)
             
- 
+            # Save base model first with quantization
+            quantization_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_compute_dtype=self.dtype,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_use_double_quant=True,
+                llm_int8_threshold=6.0,
+                llm_int8_has_fp16_weight=False,
+            )
+            # Save tokenizer
+            self.tokenizer.save_pretrained(
+                self.model_path,
+                legacy_format=False
+            )
+            
+
+        
+            
+            # Save vision model with quantization
+            self.vision_model.save_pretrained(
+                vision_model_path,
+                # self.model_path,
+                quantization_config=quantization_config,
+                torch_dtype=self.dtype,
+                safe_serialization=True
+            )
+            
+            # Save language model with quantization
+            self.model.save_pretrained(
+                lang_model_path,
+                quantization_config=quantization_config,
+                torch_dtype=self.dtype,
+                safe_serialization=True
+            )
+            
+            # Save vision processor
+            self.vision_processor.save_pretrained(
+                os.path.join(self.model_path, "vision_processor"),
+                safe_serialization=True
+            )
+        except:
+            print("Error:: Created Model not save.")
 
 
 # Load model and processor from demo_path
 def load_saved_model(model_path,checkpoint=False):
+    variable = Variable()
+    dtype = variable.DTYPE
     """Load a saved model and its processor."""    
     try:
         # Load the config
@@ -718,8 +683,7 @@ def load_saved_model(model_path,checkpoint=False):
         
         # Check if this is a vision model
         is_vision_model = (
-            hasattr(config, 'model_type') and config.model_type == "vision-model" or
-            hasattr(config, 'architectures') and config.architectures and "VisionModel" in config.architectures
+            hasattr(config, 'model_type') and config.model_type == "vision-model"
         )
         
         if is_vision_model and checkpoint:
@@ -735,7 +699,7 @@ def load_saved_model(model_path,checkpoint=False):
             
             # Load components
             vision_model = CLIPVisionModel.from_pretrained(vision_model_path)
-            lang_model = AutoModelForCausalLM.from_pretrained(lang_model_path,torch_dtype=torch.float32)
+            lang_model = AutoModelForCausalLM.from_pretrained(lang_model_path,torch_dtype=dtype)
             
             # Create model
             model = VisionModel(config, vision_model, lang_model)
@@ -751,10 +715,8 @@ def load_saved_model(model_path,checkpoint=False):
             print("Loading conversation model...")
             base_model = AutoModelForCausalLM.from_pretrained(
                 model_path,
-                config=config,
-                trust_remote_code=True,
-                torch_dtype=torch.bfloat16,
-                device_map="auto"
+                torch_dtype=dtype,
+                device_map=None
             )
             
             # Create conversation model
