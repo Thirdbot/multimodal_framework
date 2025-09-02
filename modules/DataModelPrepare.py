@@ -54,7 +54,7 @@ class FinetuneModel:
         self.per_device_eval_batch_size = 1
         self.gradient_accumulation_steps = 2  # Reduced gradient accumulation
         self.learning_rate = 2e-5  # Reduced learning rate
-        self.num_train_epochs = 100
+        self.num_train_epochs = 0.1
         self.save_strategy = "best"
         
        
@@ -489,15 +489,15 @@ class FinetuneModel:
             num_train_epochs=self.num_train_epochs,
             weight_decay=0.01,
             save_strategy="steps",
-            save_steps=100,
-            save_total_limit=2,
-            logging_dir=str(self.CHECKPOINT_DIR),
+            save_steps=10,
+            save_total_limit=1,
+            logging_dir=str(output_dir),
             logging_strategy="steps",
             logging_steps=10,
             logging_first_step=True,
             gradient_accumulation_steps=self.gradient_accumulation_steps,
-            fp16=False,  # Disable fp16 since we're using bf16
-            bf16=True,  # Use bfloat16 instead of fp16
+            fp16=False,  
+            bf16=True,  
             optim="adamw_torch_fused" if cuda_available else "adamw_torch",
             lr_scheduler_type="cosine",
             warmup_ratio=0.1,
@@ -513,9 +513,7 @@ class FinetuneModel:
             group_by_length=True,
             length_column_name="length",
             report_to="none",
-
             resume_from_checkpoint=self.CHECKPOINT_DIR,
-
             save_safetensors=True,
             save_only_model=False,  # Changed to False to save optimizer state
             overwrite_output_dir=True,
@@ -646,7 +644,7 @@ class FinetuneModel:
                 model_save_path = self.CHECKPOINT_DIR / 'text-vision-text-generation' / modelname
                 model_save_path.mkdir(parents=True, exist_ok=True)
                 # Save the final model and adapter
-                model.save_pretrained(str(model_save_path), safe_serialization=True)
+                trainer.save_model(str(model_save_path))
                 tokenizer.save_pretrained(str(model_save_path))
                 if hasattr(model, "lang_model"):
                     lang_model_path = model_save_path / "lang_model"
@@ -670,24 +668,15 @@ class FinetuneModel:
                 model_save_path = self.CHECKPOINT_DIR / 'text-generation' / modelname
                 model_save_path.mkdir(parents=True, exist_ok=True)
                 # Save the final model and adapter
-                model.save_pretrained(str(model_save_path), safe_serialization=True)
+                trainer.save_model(str(model_save_path))
                 tokenizer.save_pretrained(str(model_save_path))
                 model.config.save_pretrained(str(model_save_path))
             else:
                 model_save_path = self.CHECKPOINT_DIR / 'text-generation' / modelname
                 model_save_path.mkdir(parents=True, exist_ok=True)
-                model.save_pretrained(str(model_save_path), safe_serialization=True)
+                trainer.save_model(str(model_save_path))
                 tokenizer.save_pretrained(str(model_save_path))
                 model.config.save_pretrained(str(model_save_path))
-
-
-            # # Get target modules and ensure they're serializable
-            # target_modules = model.peft_config["default"].target_modules
-            # if isinstance(target_modules, (set, list, tuple)):
-            #     target_modules = list(target_modules)
-            # else:
-            #     target_modules = []
-          
 
             print(f"{Fore.GREEN}Model saved to: {model_save_path}{Style.RESET_ALL}")
             
