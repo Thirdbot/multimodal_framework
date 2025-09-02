@@ -167,8 +167,8 @@ class VisionModel(PreTrainedModel):
         self._is_gradient_checkpointing = False
         self.config = config
 
-        embed_dim = self.lang_model.model.embed_tokens.weight.shape[1]
-        self.text_adapter = torch.nn.Linear(embed_dim, 1024).to(device)  # Move text adapter to GPU
+        embeddings = self.lang_model.get_input_embeddings()
+        self.text_adapter = torch.nn.Linear(embeddings.weight.shape[1], 1024).to(device)  # Move text adapter to GPU
 
     def forward(self, input_ids=None, attention_mask=None, pixel_values=None,
                 attend_to_img_tokens=True, labels=None, **kwargs):
@@ -313,7 +313,7 @@ class VisionModel(PreTrainedModel):
         dtype = next(self.lang_model.parameters()).dtype
 
         # Move embeddings and attention mask to the correct device and dtype
-        embeddings = self.lang_model.model.embed_tokens(input_ids).to(device).to(dtype)
+        embeddings = self.lang_model.get_input_embeddings()(input_ids)
         attention_mask = attention_mask.to(device).to(dtype)
 
         if pixel_values is not None:
@@ -666,11 +666,6 @@ class CreateModel:
                 os.path.join(self.model_path, "vision_processor"),
                 safe_serialization=True
             )
-            
-            # Save main model configuration
-            # self.vismodel.config_class.save_pretrained(self.model_path)
-            #save config
-            # self.vismodel.config.save_pretrained(self.model_path)
         except:
             print("Error:: Created Model not save.")
 
