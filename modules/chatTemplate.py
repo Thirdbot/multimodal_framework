@@ -28,6 +28,8 @@ from tqdm import tqdm
 from transformers import AutoImageProcessor, AutoModel
 from transformers.image_utils import load_image
 # from matplotlib.image import imread
+from torchvision import transforms
+from torchvision.models import resnet50, ResNet50_Weights
 # from pydub import AudioSegment
 
 import torch.nn.functional as F
@@ -37,6 +39,8 @@ from datasets import Dataset
 import io
 
 import pandas
+from jinja2 import Environment,FileSystemLoader
+from modules.variable import Variable
 class ChatTemplate:
     """Class for handling chat templates and conversation formatting"""
     
@@ -61,22 +65,22 @@ class ChatTemplate:
         'assistant': [r'assistant', r'gpt', r'output', r'response']
     }
     
-    def __init__(self, tokenizer=None, model_name=None, template=None):
+    def __init__(self, tokenizer=None, model_name=None):
         self.tokenizer = tokenizer
+        
+        self.model_name = model_name
        
         # Move model loading to device
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print(f"Using device: {self.device}")
         
         # Initialize image model with ResNet for reliable embeddings
-        from torchvision.models import resnet50, ResNet50_Weights
         self.img_model = resnet50(weights=ResNet50_Weights.IMAGENET1K_V2).to(self.device)
         # Remove the final classification layer
         self.img_model = torch.nn.Sequential(*(list(self.img_model.children())[:-1]))
         self.img_model.eval()
         
         # Initialize image preprocessing
-        from torchvision import transforms
         self.img_transform = transforms.Compose([
             transforms.Resize(256),
             transforms.CenterCrop(224),
@@ -89,8 +93,20 @@ class ChatTemplate:
         
         self.sentence_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2").to(self.device)
         self.sentence_model.eval()  # Ensure model is in eval mode from the start
-    
-    def seperated_data(self,dataset_name,dataset,keys,create_model_path=None,mul_field=[],Tokenizing=False):
+        
+        
+        self.variable = Variable()
+        self.local_model_path = self.variable.LocalModel_DIR
+        self.template = self.load_template_from_model()
+        
+    def load_template_from_model(self):
+        model_path = self.local_model_path / self.model_name
+        template_loader = FileSystemLoader(searchpath=model_path)
+        envi = Environment(loader=template_loader)
+        template = envi.get_template("chat_template.jinja")
+        return template
+
+    def seperated_data(self,dataset_name,dataset,keys,mul_field=[],Tokenizing=False):
         dataset_keys = dataset.features.keys()
         
         if Tokenizing: 
@@ -200,7 +216,7 @@ class ChatTemplate:
                     multimodal_data['input_ids'] = text_tokenized['input_ids'][valid_image_idx]
                     multimodal_data['attention_mask'] = text_tokenized['attention_mask'][valid_image_idx]
                     multimodal_data['pixel_values'] = processed_images
-                    multimodal_data['pixel_values'] = processed_images
+                    # multimodal_data['pixel_values'] = processed_images
                 
                 # Create and return dataset with only training data
                 train_dataset = Dataset.from_dict(multimodal_data)
@@ -541,12 +557,6 @@ class ChatTemplate:
     
 
 
-    # #Mean Pooling - Take average of all tokens
-    # def mean_pooling(self,model_output, attention_mask):
-    #     token_embeddings = model_output.last_hidden_state #First element of model_output contains all token embeddings
-    #     input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
-    #     return torch.sum(token_embeddings * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1), min=1e-9)
-
     def text_embedding(self,text):
         try:
             if isinstance(text, (bytes, bytearray)):
@@ -623,7 +633,7 @@ class ChatTemplate:
             return None
 
     #i wrote this function to recursively check the dataset and seperated the dataset
-    def process_dataset(self,dataset_name,dataset,created_model_path=None,mul_field=[], is_conversation=False, is_check=False, is_regular=True,Tokenizing=False):
+    def process_dataset(self,dataset_name,dataset,mul_field=[], is_conversation=False, is_check=False, is_regular=True,Tokenizing=False):
         
         dataset_keys = dataset.features.keys()
 
@@ -634,14 +644,14 @@ class ChatTemplate:
             if any(re.search(self.CONVERSATION_PATTERN, key, re.IGNORECASE) for key in dataset_keys):
                 is_conversation = True
             is_check = True
-            return self.process_dataset(dataset_name=dataset_name,dataset=dataset,created_model_path=created_model_path,mul_field=mul_field, is_conversation=is_conversation, is_check=is_check,Tokenizing=Tokenizing)
+            return self.process_dataset(dataset_name=dataset_name,dataset=dataset,mul_field=mul_field, is_conversation=is_conversation, is_check=is_check,Tokenizing=Tokenizing)
 
         # Second level check - conversation confirm
         elif is_check and is_conversation:
             # print("Found conversations type dataset with 'conversations' column")
             print(f"second level check - is conversation:{is_conversation}")
             #control what being returned as embed or not
-            return self.seperated_data(dataset_name=dataset_name,dataset=dataset,keys='conversations',create_model_path=created_model_path,mul_field=mul_field,Tokenizing=Tokenizing)
+            return self.seperated_data(dataset_name=dataset_name,dataset=dataset,keys='conversations',mul_field=mul_field,Tokenizing=Tokenizing)
 
         # Third level check - regular dataset processing
         elif is_check and not is_conversation:
@@ -658,8 +668,8 @@ class ChatTemplate:
                             return self.seperated_data(dataset_name=dataset_name,dataset=dataset,keys=matching_keys[0],mul_field=mul_field,Tokenizing=Tokenizing)
                         else:
                             print("Trying to format irregular dataset because of no list type")
-                            return self.process_dataset(dataset_name=dataset_name,dataset=dataset,created_model_path=created_model_path,mul_field=mul_field, is_conversation=is_conversation, is_check=is_check, is_regular=False,Tokenizing=Tokenizing)
-                return self.process_dataset(dataset_name=dataset_name,dataset=dataset,created_model_path=created_model_path,mul_field=mul_field, is_conversation=is_conversation, is_check=is_check, is_regular=False,Tokenizing=Tokenizing)
+                            return self.process_dataset(dataset_name=dataset_name,dataset=dataset,mul_field=mul_field, is_conversation=is_conversation, is_check=is_check, is_regular=False,Tokenizing=Tokenizing)
+                return self.process_dataset(dataset_name=dataset_name,dataset=dataset,mul_field=mul_field, is_conversation=is_conversation, is_check=is_check, is_regular=False,Tokenizing=Tokenizing)
 
             # Fourth level check - irregular dataset processing
             if not is_regular:
@@ -772,33 +782,10 @@ class ChatTemplate:
             return None
     
     def format_message(self, message):
-        # Format each message with clear role and content separation
-        formatted_parts = []
-        for msg in message:
-            role = msg['role']
-            content = msg['content']
-            
-            # Determine role type using regex patterns
-            role_type = None
-            for role_type, patterns in self.ROLE_PATTERNS.items():
-                if any(re.search(pattern, role, re.IGNORECASE) for pattern in patterns):
-                    role_type = role_type
-                    break
-            
-            # Add special tokens or markers to clearly separate roles
-            if role_type == 'system':
-                formatted_parts.append(f"<|system|>\n{content}")
-            elif role_type == 'user':
-                formatted_parts.append(f"<|user|>\n{content}")
-            elif role_type == 'assistant':
-                formatted_parts.append(f"<|assistant|>\n{content}")
-            else:
-                formatted_parts.append(f"<|{role}|>\n{content}")
-        
-        # Join all parts with double newlines for clear separation
-        return "\n\n".join(formatted_parts)
+        formatted_chat = self.template.render(messages=message)
+        return formatted_chat
     
-    def prepare_dataset(self, dataset_name, dataset,created_model_path=None, max_length=1000,Tokenizing=False):
+    def prepare_dataset(self, dataset_name, dataset, max_length=1000,Tokenizing=False):
         formatted = None
 
         # Tokenizing
@@ -824,7 +811,6 @@ class ChatTemplate:
                             is_conversation=False,
                             is_check=False,
                             mul_field=mul_field,
-                            created_model_path=created_model_path,
                             Tokenizing=Tokenizing
                         )
                     else:
@@ -833,7 +819,6 @@ class ChatTemplate:
                             dataset=dataset,
                             is_conversation=False,
                             is_check=False,
-                            created_model_path=created_model_path,
                             Tokenizing=Tokenizing
                         )
                     

@@ -43,39 +43,40 @@ from modules.DataDownload import DataLoader
 from modules.DataModelPrepare import Manager
 from modules.variable import Variable
 from modules.inference import InferenceManager
+from modules.train import FinetuneModel
 from pathlib import Path
 
-# acess_token = os.environ.get("hf_token")
+acess_token = os.environ.get("hf_token")
 
-# api = HfApi()
-# variable = Variable()
-# DMConfig_DIR = variable.DMConfig_DIR
+api = HfApi()
+variable = Variable()
+DMConfig_DIR = variable.DMConfig_DIR
 
-# DMConfig_DIR.mkdir(parents=True, exist_ok=True)
-# SavedConfigsfile= variable.SAVED_CONFIG_Path
-# SavedConfigsfile.touch(exist_ok=True)
+DMConfig_DIR.mkdir(parents=True, exist_ok=True)
+SavedConfigsfile= variable.SAVED_CONFIG_Path
+SavedConfigsfile.touch(exist_ok=True)
 
-# setcard = ApiCardSetup()
+setcard = ApiCardSetup()
 
-# list_models = api.list_models(model_name='Qwen/Qwen1.5-0.5B-Chat',limit=1,gated=False)
+list_models = api.list_models(model_name='Qwen/Qwen1.5-0.5B-Chat',limit=1,gated=False)
 
-# list_datasets = api.list_datasets(dataset_name='waltsun/MOAT',limit=1,gated=False)
-# # list_datasets = api.list_datasets(dataset_name="FreedomIntelligence/medical-o1-reasoning-SFT",limit=1,gated=False)
-
-
-# #set new list to download
-# list_download = setcard.set(list_models,list_datasets)
-
-# downloading = DataLoader()
-
-# #download from datacard
-# downloading.run(list_download)
+list_datasets = api.list_datasets(dataset_name='waltsun/MOAT',limit=1,gated=False)
+# list_datasets = api.list_datasets(dataset_name="FreedomIntelligence/medical-o1-reasoning-SFT",limit=1,gated=False)
 
 
-# # #finetune model
-# finetune = Manager()
+#set new list to download
+list_download = setcard.set(list_models,list_datasets)
 
-# finetune.dataset_prepare(list_download)
+downloading = DataLoader()
+
+#download from datacard
+downloading.run(list_download)
+
+
+# #finetune model
+finetune = Manager()
+
+finetune.dataset_prepare(list_download)
 
 
 
@@ -85,30 +86,29 @@ from pathlib import Path
 # model_path = Path(__file__).parent.absolute() / "checkpoints" / "text-generation" / "Qwen_Qwen1.5-0.5B-Chat"
 # model_path = Path(__file__).parent.absolute() / "repositories" / "models" / "Qwen" / "Qwen1.5-0.5B-Chat"
 # model_path = Path(__file__).parent.absolute() / "checkpoints" / "text-vision-text-generation" / "Qwen_Qwen1.5-0.5B-Chat"
-model_path = Path(__file__).parent.absolute() / "custom_models" / "conversation-model" / "Qwen_Qwen1.5-0.5B-Chat"
-inference_manager = InferenceManager(model_path)
+# model_path = Path(__file__).parent.absolute() / "custom_models" / "conversation-model" / "Qwen_Qwen1.5-0.5B-Chat"
+# inference_manager = InferenceManager(model_path)
 
-# # Example 1: Text-only inference
-user_input = "who is spider gwen?"
+# # # Example 1: Text-only inference
+# user_input = "who is spider gwen?"
 
-# Print the formatted chat
-response = inference_manager.generate_response(user_input)
-print(f"{response}")
+# # Print the formatted chat
+# response = inference_manager.generate_response(user_input)
+# print(f"{response}")
 
-# # # # Example 2: Multimodal inference
-model_path = Path(__file__).parent.absolute() / "custom_models" / "vision-model" / "Qwen_Qwen1.5-0.5B-Chat"
-inference_manager = InferenceManager(model_path)
+# # # # # Example 2: Multimodal inference
+# model_path = Path(__file__).parent.absolute() / "custom_models" / "vision-model" / "Qwen_Qwen1.5-0.5B-Chat"
+# inference_manager = InferenceManager(model_path)
 
-image_path = "https://i.pinimg.com/736x/c1/36/c8/c136c8f0595293735269af5136826adb.jpg"  # Replace with the actual path to your image
-user_input = "what is this images about?"
-response = inference_manager.generate_response(user_input, image_path=image_path)
-print(f"{response}")
-
-
+# image_path = "https://i.pinimg.com/736x/c1/36/c8/c136c8f0595293735269af5136826adb.jpg"  # Replace with the actual path to your image
+# user_input = "what is this images about?"
+# response = inference_manager.generate_response(user_input, image_path=image_path)
+# print(f"{response}")
 
 
 
-
+Ft = FinetuneModel()
+Ft.finetune_model()
 
 
 

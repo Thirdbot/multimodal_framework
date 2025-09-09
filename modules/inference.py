@@ -18,6 +18,7 @@ from modules.variable import Variable
 class InferenceManager:
     """Manages inference with a language or multimodal model."""
 
+    
     def __init__(self, model_path: str, max_new_tokens: int = 1000, temperature: float = 0.7, top_p: float = 0.9):
         """Initialize the inference manager.
 
@@ -38,20 +39,21 @@ class InferenceManager:
         self.dtype = self.variable.DTYPE
         
         self.chat_template = """{% for message in messages -%}
-{% if loop.first and messages[0]['role'] != 'system' -%}
-<|im_start|>system
-You are a helpful assistant. with ability to understand and describe images.
-<|im_end|>
-{% endif -%}
-<|im_start|>{{ message['role'] }}
-{% if message['role'] == 'user' and message.get('images') -%}
-[Images: {% for img in message['images'] %}{{ img }} {% endfor %}]
-{% endif -%}
-{{ message['content'] }}
-<|im_end|>
-{% endfor -%}
-<|im_start|>assistant
-"""
+                            {% if loop.first and messages[0]['role'] != 'system' -%}
+                            <|im_start|>system
+                            You are a helpful assistant. with ability to understand and describe images.
+                            <|im_end|>
+                            {% endif -%}
+                            <|im_start|>{{ message['role'] }}
+                            {% if message['role'] == 'user' and message.get('images') -%}
+                            [Images: {% for img in message['images'] %}{{ img }} {% endfor %}]
+                            {% endif -%}
+                            {{ message['content'] }}
+                            <|im_end|>
+                            {% endfor -%}
+                            <|im_start|>assistant
+                            """
+        
 
         self._setup_device()
         self._load_model_and_tokenizer()
