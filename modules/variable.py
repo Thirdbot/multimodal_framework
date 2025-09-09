@@ -40,9 +40,7 @@ class Variable():
          
         self.CUTOM_MODEL_DIR = self.WORKSPACE / self.custom_model_folder
         self.VISION_MODEL_DIR = self.CUTOM_MODEL_DIR / self.vision_model_folder
-        self.REGULAR_MODEL_DIR = self.CUTOM_MODEL_DIR / self.conversation_model_folder
-        
-        
+        self.REGULAR_MODEL_DIR = self.CUTOM_MODEL_DIR / self.conversation_model_folder        
         
         self.MODEL_DIR = self.WORKSPACE / self.model_saved_folder
         self.CHECKPOINT_DIR = self.WORKSPACE / self.model_checkpoints

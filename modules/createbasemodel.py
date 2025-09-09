@@ -11,7 +11,7 @@ import json
 from transformers.image_utils import load_image
 from transformers import BitsAndBytesConfig
 from peft import AutoPeftModelForCausalLM, LoraConfig, get_peft_model, prepare_model_for_kbit_training
-
+from jinja2 import Environment, FileSystemLoader
 from modules.variable import Variable
 
 # Config classes
@@ -431,7 +431,7 @@ class CreateModel:
         {% endif %}
         {% endfor %}
         Assistant:"""
-        
+        self.local_model_path = self.variable.LocalModel_DIR
         self.model_path = Path(__file__).parent.parent.absolute() / "custom_models" / self.model_category / self.save_name
         self.model_path.mkdir(parents=True, exist_ok=True)
         
@@ -475,13 +475,28 @@ class CreateModel:
             use_fast=True,
             trust_remote_code=True
         )
+        self.template = self.load_template_from_model()
+        
+        self.tokenizer.chat_template = self.str_template(self.local_model_path / self.model_name)
+        
         self.clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-large-patch14", use_fast=True)
         self.vision_processor = VisionProcessor(self.clip_processor, self.tokenizer)
         
         self.vision_config = VisionConfig()
         
-        self.tokenizer.chat_template = self.chat_template
-
+    def str_template(self,model_path):
+        template_str = ""
+        with open(model_path / "chat_template.jinja", "r", encoding="utf-8") as f:
+            template_str = f.read()
+        return template_str
+        
+    def load_template_from_model(self):
+        model_path = self.local_model_path / self.model_name
+        template_loader = FileSystemLoader(searchpath=model_path)
+        envi = Environment(loader=template_loader)
+        template = envi.get_template("chat_template.jinja")
+        return template
+    
     def add_conversation(self):
         """Add conversation capability to the model."""
         try:
