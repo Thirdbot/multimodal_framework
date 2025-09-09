@@ -47,5 +47,6 @@ class Variable():
         self.MODEL_DIR = self.WORKSPACE / self.model_saved_folder
         self.CHECKPOINT_DIR = self.WORKSPACE / self.model_checkpoints
         self.OFFLOAD_DIR = self.WORKSPACE / "offload"
-        
+        self.training_config_path = self.CUTOM_MODEL_DIR / "training_config.json"
+        self.DATASET_FORMATTED_DIR = self.CUTOM_MODEL_DIR / "formatted_datasets"
         self.DTYPE = torch.float32
