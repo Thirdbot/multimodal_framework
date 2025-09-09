@@ -38,21 +38,7 @@ class InferenceManager:
         self.variable = Variable()
         self.dtype = self.variable.DTYPE
         
-        self.chat_template = """{% for message in messages -%}
-                            {% if loop.first and messages[0]['role'] != 'system' -%}
-                            <|im_start|>system
-                            You are a helpful assistant. with ability to understand and describe images.
-                            <|im_end|>
-                            {% endif -%}
-                            <|im_start|>{{ message['role'] }}
-                            {% if message['role'] == 'user' and message.get('images') -%}
-                            [Images: {% for img in message['images'] %}{{ img }} {% endfor %}]
-                            {% endif -%}
-                            {{ message['content'] }}
-                            <|im_end|>
-                            {% endfor -%}
-                            <|im_start|>assistant
-                            """
+        self.chat_template = None
         
 
         self._setup_device()
@@ -96,6 +82,7 @@ class InferenceManager:
 
             # Load the tokenizer
             self.tokenizer = AutoTokenizer.from_pretrained(self.model_path, use_fast=True)
+            self.chat_template = self.tokenizer.chat_template
             if self.tokenizer.pad_token is None:
                 self.tokenizer.pad_token = self.tokenizer.eos_token
 

@@ -78,37 +78,37 @@ finetune = Manager()
 
 finetune.dataset_prepare(list_download)
 
-
-
-
-# # Inference setup
-# print("\n--- Starting Inference ---\n")
-# model_path = Path(__file__).parent.absolute() / "checkpoints" / "text-generation" / "Qwen_Qwen1.5-0.5B-Chat"
-# model_path = Path(__file__).parent.absolute() / "repositories" / "models" / "Qwen" / "Qwen1.5-0.5B-Chat"
-# model_path = Path(__file__).parent.absolute() / "checkpoints" / "text-vision-text-generation" / "Qwen_Qwen1.5-0.5B-Chat"
-# model_path = Path(__file__).parent.absolute() / "custom_models" / "conversation-model" / "Qwen_Qwen1.5-0.5B-Chat"
-# inference_manager = InferenceManager(model_path)
-
-# # # Example 1: Text-only inference
-# user_input = "who is spider gwen?"
-
-# # Print the formatted chat
-# response = inference_manager.generate_response(user_input)
-# print(f"{response}")
-
-# # # # # Example 2: Multimodal inference
-# model_path = Path(__file__).parent.absolute() / "custom_models" / "vision-model" / "Qwen_Qwen1.5-0.5B-Chat"
-# inference_manager = InferenceManager(model_path)
-
-# image_path = "https://i.pinimg.com/736x/c1/36/c8/c136c8f0595293735269af5136826adb.jpg"  # Replace with the actual path to your image
-# user_input = "what is this images about?"
-# response = inference_manager.generate_response(user_input, image_path=image_path)
-# print(f"{response}")
-
-
-
 Ft = FinetuneModel()
 Ft.finetune_model()
+
+
+
+
+# Inference setup
+print("\n--- Starting Inference ---\n")
+# model_path = Path(__file__).parent.absolute() / "checkpoints" / "text-generation" / "Qwen_Qwen1.5-0.5B-Chat"
+# model_path = Path(__file__).parent.absolute() / "repositories" / "models" / "Qwen" / "Qwen1.5-0.5B-Chat"
+model_path = Path(__file__).parent.absolute() / "checkpoints" / "text-vision-text-generation" / "Qwen_Qwen1.5-0.5B-Chat"
+# model_path = Path(__file__).parent.absolute() / "custom_models" / "conversation-model" / "Qwen_Qwen1.5-0.5B-Chat"
+inference_manager = InferenceManager(model_path)
+
+# # Example 1: Text-only inference
+user_input = "who is spider gwen?"
+
+# Print the formatted chat
+response = inference_manager.generate_response(user_input)
+print(f"{response}")
+
+# # # # Example 2: Multimodal inference
+# model_path = Path(__file__).parent.absolute() / "custom_models" / "vision-model" / "Qwen_Qwen1.5-0.5B-Chat"
+inference_manager = InferenceManager(model_path)
+
+image_path = "https://i.pinimg.com/736x/c1/36/c8/c136c8f0595293735269af5136826adb.jpg"  # Replace with the actual path to your image
+user_input = "what is this images about?"
+response = inference_manager.generate_response(user_input, image_path=image_path)
+print(f"{response}")
+
+
 
 
 

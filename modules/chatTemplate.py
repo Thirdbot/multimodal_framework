@@ -99,6 +99,13 @@ class ChatTemplate:
         self.local_model_path = self.variable.LocalModel_DIR
         self.template = self.load_template_from_model()
         
+        self.tokenizer.chat_template = self.str_template(self.local_model_path / self.model_name)
+    
+    def str_template(self,model_path):
+        template_str = ""
+        with open(model_path / "chat_template.jinja", "r", encoding="utf-8") as f:
+            template_str = f.read()
+        return template_str
     def load_template_from_model(self):
         model_path = self.local_model_path / self.model_name
         template_loader = FileSystemLoader(searchpath=model_path)
