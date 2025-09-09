@@ -671,7 +671,7 @@ class CreateModel:
 
 
 # Load model and processor from demo_path
-def load_saved_model(model_path,checkpoint=False):
+def load_saved_model(model_path):
     variable = Variable()
     dtype = variable.DTYPE
     """Load a saved model and its processor."""    
@@ -686,11 +686,7 @@ def load_saved_model(model_path,checkpoint=False):
             hasattr(config, 'model_type') and config.model_type == "vision-model"
         )
         
-        if is_vision_model and checkpoint:
-            vision_model_path = os.path.join(model_path, "vision_model")
-            lang_model_path = os.path.join(model_path, "lang_model")
-            
-        if is_vision_model and not checkpoint:
+        if is_vision_model:
             vision_model_path = os.path.join(model_path, "vision_model")
             lang_model_path = os.path.join(model_path, "lang_model")
 
