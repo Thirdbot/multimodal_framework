@@ -38,15 +38,20 @@ class InferenceManager:
         self.dtype = self.variable.DTYPE
         
         self.chat_template = """{% for message in messages -%}
-{% if message['role'] == 'system' -%}
-{{ message['content'] }}
-{% elif message['role'] == 'user' -%}
-Human:{% if message.get('images') %} [Images: {% for img in message['images'] %}{{ img }} {% endfor %}]{% endif %} {{ message['content'] }}
-{% elif message['role'] == 'assistant' -%}
-Assistant: {{ message['content'] }}
+{% if loop.first and messages[0]['role'] != 'system' -%}
+<|im_start|>system
+You are a helpful assistant. with ability to understand and describe images.
+<|im_end|>
 {% endif -%}
+<|im_start|>{{ message['role'] }}
+{% if message['role'] == 'user' and message.get('images') -%}
+[Images: {% for img in message['images'] %}{{ img }} {% endfor %}]
+{% endif -%}
+{{ message['content'] }}
+<|im_end|>
 {% endfor -%}
-Assistant:"""
+<|im_start|>assistant
+"""
 
         self._setup_device()
         self._load_model_and_tokenizer()
@@ -75,7 +80,7 @@ Assistant:"""
             if hasattr(config, "model_type") and config.model_type == "vision-model":
                 print("Detected multimodal model. Loading VisionModel...")
                 self.vision_model = CLIPVisionModel.from_pretrained(self.vision_path, torch_dtype=self.dtype)
-                self.vision_processor = CLIPProcessor.from_pretrained(self.vision_processor_path)
+                self.vision_processor = CLIPProcessor.from_pretrained("openai/clip-vit-large-patch14", use_fast=True)
                 self.lang_model = AutoModelForCausalLM.from_pretrained(self.lang_path, torch_dtype=self.dtype)
                 self.model = VisionModel(config,self.vision_model, self.lang_model).to(self.device)
             else:
@@ -150,7 +155,7 @@ Assistant:"""
             # Use tokenizer/template-aware formatter
             prompt = self.format_chat(messages,self.chat_template)
             
-            print(prompt)
+            # print(prompt)
 
             # Prepare inputs for the model
             inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)

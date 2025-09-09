@@ -728,6 +728,8 @@ class Manager:
             saved_dataset = None
             print(list_model_data)
             
+            
+            
             #load model and dataset prepare for tuning
             for modelname,dict_dataset in list_model_data['model'].items():
                     
@@ -805,7 +807,6 @@ class Manager:
                                     concat_dataset = concatenate_datasets([first_dataset, second_dataset])
                                     print(f"{Fore.GREEN}Successfully joined datasets with columns: {concat_dataset.column_names}{Style.RESET_ALL}")
                                 
-
                             
                             
                         except Exception as e:
