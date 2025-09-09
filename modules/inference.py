@@ -110,6 +110,7 @@ class InferenceManager:
 
         # Render the template with the messages
         formatted_chat = template.render(messages=messages)
+        print(f"Formatted Chat:{formatted_chat}")
 
         # Normalize whitespace: strip leading/trailing, collapse multiple blank lines and indent
         formatted_chat = re.sub(r"[ \t]+$", "", formatted_chat, flags=re.MULTILINE)   
@@ -135,7 +136,7 @@ class InferenceManager:
         try:
             # Define the messages
             messages = [
-                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "system", "content": "You are a helpful assistant. and be able to answer question based on image provided. if images is not provided, answer based on your knowledge only."},
                 {"role": "user", "content": user_input}
             ]
             if image_path:
