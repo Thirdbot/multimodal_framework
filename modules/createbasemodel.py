@@ -653,7 +653,6 @@ class CreateModel:
             # Save tokenizer
             self.tokenizer.save_pretrained(
                 self.model_path,
-                legacy_format=False
             )
             
 
@@ -662,7 +661,6 @@ class CreateModel:
             # Save vision model with quantization
             self.vision_model.save_pretrained(
                 vision_model_path,
-                # self.model_path,
                 quantization_config=quantization_config,
                 torch_dtype=self.dtype,
                 safe_serialization=True

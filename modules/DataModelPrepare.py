@@ -64,7 +64,7 @@ class Manager:
         self.training_config_path = self.variable.training_config_path
         self.DATASET_FORMATTED_DIR = self.variable.DATASET_FORMATTED_DIR
         self.device_map = "cuda:0" if torch.cuda.is_available() else "cpu"
-        
+        self.chat_template_saved = None
         os.makedirs(self.DATASET_FORMATTED_DIR, exist_ok=True)
 
     
@@ -294,6 +294,7 @@ class Manager:
             print(f"{Fore.GREEN}Set padding token to EOS token{Style.RESET_ALL}")
             
         self.chat_template = ChatTemplate(tokenizer=tokenizer,model_name=model_name)
+        self.chat_template_saved = self.chat_template.tokenizer.chat_template
         try:
             tokenized_dataset = self.chat_template.prepare_dataset(
                 dataset_name,
@@ -461,8 +462,8 @@ class Manager:
                     create_model = CreateModel(modelname, "conversation-model")
                     create_model.add_conversation()
                     create_model.save_regular_model()
-
-
+                    with open(model_path / "chat_template.jinja", 'w') as f:
+                        f.write(self.chat_template_saved)
 
             #temporal fix this
             if "image" in union_cols or "images" in union_cols:
@@ -475,6 +476,9 @@ class Manager:
                     create_model = CreateModel(modelname, "vision-model")
                     create_model.add_vision()
                     create_model.save_vision_model()
+                    with open(model_path / "chat_template.jinja", 'w') as f:
+                        f.write(self.chat_template_saved)
+
         
 
                    
