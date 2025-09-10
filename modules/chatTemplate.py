@@ -776,7 +776,8 @@ class ChatTemplate:
                         for idx,data in enumerate(dataset[mul]):
                             if data is not None:
                                 data_list.append(data)
-                                dict_list['conversations'][idx].append({ "role": "user", "content": f"<{mul}>{data}</{mul}>"})
+                                dict_list['conversations'][idx][0]['content'] += f" <images>{data}</images>"
+                                
                         dict_list[mul] = data_list
                 # Create dataset with both conversations and multimodal data
                 print(f"Creating dataset with fields: {list(dict_list.keys())}")
