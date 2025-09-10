@@ -146,13 +146,11 @@ class InferenceManager:
             ]
             # If image is provided, add a special token to the user message
             if image_path:
-                messages[-1]["content"] += " <images>"
-                # Optionally, keep the image path for template rendering (if needed)
-                messages[-1]["images"] = [image_path]
+                messages[-1]["content"] += f" <images>{image_path}</images>"
 
             # Use tokenizer/template-aware formatter
             prompt = self.format_chat(messages, self.chat_template)
-
+            print(f"Formatted Prompt:\n{prompt}\n{'-'*50}")
             # Prepare inputs for the model
             inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
 
