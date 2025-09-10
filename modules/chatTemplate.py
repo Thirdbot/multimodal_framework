@@ -101,16 +101,49 @@ class ChatTemplate:
         
         self.tokenizer.chat_template = self.str_template(self.local_model_path / self.model_name)
     
-    def str_template(self,model_path):
-        template_str = ""
+    def str_template(self, model_path):
         with open(model_path / "chat_template.jinja", "r", encoding="utf-8") as f:
             template_str = f.read()
+    
+            image_logic = """
+                        {% if message.images is defined and message.images %}
+                            {% for image_url in message.images %}
+                                <img src="{{ image_url }}" alt="User provided image" />
+                            {% endfor %}
+                        {% endif %}
+                        """
+                        
+            if image_logic.strip() not in template_str:
+                template_str = template_str.replace(
+                    "{{ message.content }}",
+                    "{{ message.content }}" + image_logic
+                )
         return template_str
+    
     def load_template_from_model(self):
         model_path = self.local_model_path / self.model_name
-        template_loader = FileSystemLoader(searchpath=model_path)
-        envi = Environment(loader=template_loader)
-        template = envi.get_template("chat_template.jinja")
+        template_file = model_path / "chat_template.jinja"
+        with open(template_file, "r", encoding="utf-8") as f:
+            template_str = f.read()
+
+        # Inject image logic only once
+        image_logic = """
+                    {% if message.images is defined and message.images %}
+                        {% for image_url in message.images %}
+                            <img src="{{ image_url }}" alt="User provided image" />
+                        {% endfor %}
+                    {% endif %}
+                    """
+        # Only inject if not already present
+        if image_logic.strip() not in template_str:
+            template_str = template_str.replace(
+                "{{ message.content }}",
+                "{{ message.content }}" + image_logic
+            )
+
+        # Compile to Jinja2 Template object
+        envi = Environment()
+        template = envi.from_string(template_str)
         return template
 
     def seperated_data(self,dataset_name,dataset,keys,mul_field=[],Tokenizing=False):
@@ -684,16 +717,7 @@ class ChatTemplate:
                 
                 dict_list = {"conversations":[]}
                 
-                # Handle multimodal columns with regex
-                if mul_field and len(mul_field) > 0:
-                    print(f"Irregular dataset found multimodal column: {mul_field}")
-                    for mul in mul_field:
-                        dict_list[mul] = []
-                        data_list = []
-                        for data in dataset[mul]:
-                            if data is not None:
-                                data_list.append(data)
-                        dict_list[mul] = data_list
+                
                 
                 for patterns in self.POTENTIAL_COLUMNS_PATTERNS:
                     # Find matching columns using regex
@@ -743,7 +767,17 @@ class ChatTemplate:
                     else:
                         print(f"No matching columns found for irregular dataset")
                         return
-
+                # Handle multimodal columns with regex
+                if mul_field and len(mul_field) > 0:
+                    print(f"Irregular dataset found multimodal column: {mul_field}")
+                    for mul in mul_field:
+                        dict_list[mul] = []
+                        data_list = []
+                        for idx,data in enumerate(dataset[mul]):
+                            if data is not None:
+                                data_list.append(data)
+                                dict_list['conversations'][idx].append({ "role": "user", "content": f"<{mul}>{data}</{mul}>"})
+                        dict_list[mul] = data_list
                 # Create dataset with both conversations and multimodal data
                 print(f"Creating dataset with fields: {list(dict_list.keys())}")
                 dataset_maker = Dataset.from_dict(dict_list)
@@ -790,6 +824,7 @@ class ChatTemplate:
     
     def format_message(self, message):
         formatted_chat = self.template.render(messages=message)
+        print(f"Formatted chat message:{formatted_chat}")
         return formatted_chat
     
     def prepare_dataset(self, dataset_name, dataset, max_length=1000,Tokenizing=False):
