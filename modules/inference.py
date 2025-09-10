@@ -14,6 +14,7 @@ from transformers.image_utils import load_image
 from jinja2 import Template
 import re
 from modules.variable import Variable
+from peft import PeftModel, PeftConfig
 
 class InferenceManager:
     """Manages inference with a language or multimodal model."""
@@ -81,8 +82,14 @@ class InferenceManager:
                 self.model = ConversationModel(config, base_model).to(self.device)
 
             # Load the tokenizer
-            self.tokenizer = AutoTokenizer.from_pretrained(self.model_path, use_fast=True)
-            self.chat_template = self.tokenizer.chat_template
+            self.tokenizer = AutoTokenizer.from_pretrained(self.lang_path, use_fast=True)
+            # Ensure chat_template is loaded, fallback to config if not present
+            if hasattr(self.tokenizer, "chat_template") and self.tokenizer.chat_template is not None:
+                self.chat_template = self.tokenizer.chat_template
+            elif hasattr(config, "chat_template") and config.chat_template is not None:
+                self.chat_template = config.chat_template
+            else:
+                raise ValueError("Chat template not found in tokenizer or config.")
             if self.tokenizer.pad_token is None:
                 self.tokenizer.pad_token = self.tokenizer.eos_token
 
@@ -109,15 +116,13 @@ class InferenceManager:
         template = Template(chat_template)
 
         # Render the template with the messages
-        formatted_chat = template.render(messages=messages)
-        print(f"Formatted Chat:{formatted_chat}")
-
+        formatted_chat = template.render(messages=messages)        
         # Normalize whitespace: strip leading/trailing, collapse multiple blank lines and indent
         formatted_chat = re.sub(r"[ \t]+$", "", formatted_chat, flags=re.MULTILINE)   
         formatted_chat = re.sub(r"\n\s*\n+", "\n\n", formatted_chat)                 
         formatted_chat = formatted_chat.strip()
 
-        # Ensure Assistant: marker exists at end
+        # # Ensure Assistant: marker exists at end
         if not re.search(r"Assistant:\s*$", formatted_chat):
             formatted_chat = formatted_chat + "\n\nAssistant:"
 
@@ -136,16 +141,17 @@ class InferenceManager:
         try:
             # Define the messages
             messages = [
-                {"role": "system", "content": "You are a helpful assistant. and be able to answer question based on image provided. if images is not provided, answer based on your knowledge only."},
+                {"role": "system", "content": "You are a helpful assistant. Answer questions based on the image if provided."},
                 {"role": "user", "content": user_input}
             ]
+            # If image is provided, add a special token to the user message
             if image_path:
+                messages[-1]["content"] += " <images>"
+                # Optionally, keep the image path for template rendering (if needed)
                 messages[-1]["images"] = [image_path]
 
             # Use tokenizer/template-aware formatter
-            prompt = self.format_chat(messages,self.chat_template)
-            
-            # print(prompt)
+            prompt = self.format_chat(messages, self.chat_template)
 
             # Prepare inputs for the model
             inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
@@ -160,61 +166,47 @@ class InferenceManager:
 
             # Handle multimodal inputs if the model supports it
             if hasattr(self.model, "vision_model") and image_path:
-                # Load and preprocess the image
                 image = load_image(image_path)
-                # processor = self._get_image_processor()
                 pixel_values = self.vision_processor(images=image, return_tensors="pt")["pixel_values"].to(self.device)
                 inputs["pixel_values"] = pixel_values
 
             # Generate outputs
             outputs = self.model.generate(
                 input_ids=inputs["input_ids"],
-                attention_mask=inputs["attention_mask"],
+                attention_mask=inputs.get("attention_mask"),
                 pixel_values=inputs.get("pixel_values"),
                 max_new_tokens=self.max_new_tokens,
                 temperature=self.temperature,
                 top_p=self.top_p,
                 do_sample=True,
-                repetition_penalty=1.2,  # Add repetition penalty
-                no_repeat_ngram_size=3   # Prevent repeating 3-grams
+                repetition_penalty=1.2,
+                no_repeat_ngram_size=3
             )
 
             # Decode the response
             response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
-            
-            # Clean up the response
-            response = self._clean_response(response)
-            
+            # response = self._clean_response(response)
             return response
 
         except Exception as e:
             print(f"Error generating response: {str(e)}")
             return "An error occurred during inference."
 
-    def _clean_response(self, response: str) -> str:
-        """Clean up repetitive patterns in the response."""
-        # Extract content after the last "Assistant:" if present
-        if "Assistant:" in response:
-            response = response.split("Assistant:")[-1].strip()
+    # def _clean_response(self, response: str) -> str:
+    #     """Clean up repetitive patterns in the response."""
+    #     # Extract content after the last "Assistant:" if present
+    #     if "Assistant:" in response:
+    #         response = response.split("Assistant:")[-1].strip()
         
-        # For simple factual questions, often just the first sentence is enough
-        if len(response) > 100 and "." in response[:100]:
-            first_sentence = response.split('.')[0] + '.'
-            return first_sentence
+    #     # For simple factual questions, often just the first sentence is enough
+    #     if len(response) > 100 and "." in response[:100]:
+    #         first_sentence = response.split('.')[0] + '.'
+    #         return first_sentence
         
-        # Remove repetitive country patterns
-        common_entities = ["France", "Germany", "Paris", "Berlin", "Europe"]
-        for entity in common_entities:
-            pattern = f"({entity})(,\\s*{entity})+\\b"
-            response = re.sub(pattern, r"\1", response)
+    #     # Remove repetitive country patterns
+    #     common_entities = ["France", "Germany", "Paris", "Berlin", "Europe"]
+    #     for entity in common_entities:
+    #         pattern = f"({entity})(,\\s*{entity})+\\b"
+    #         response = re.sub(pattern, r"\1", response)
         
-        return response.strip()
-
-    # def _get_image_processor(self):
-    #     """Get the appropriate image processor for the model."""
-    #     try:
-    #         clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-large-patch14", use_fast=True)
-    #         return self.vision_processor()
-        # except Exception as e:
-        #     print(f"Error loading image processor: {str(e)}")
-        #     raise
+    #     return response.strip()

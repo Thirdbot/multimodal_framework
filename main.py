@@ -59,7 +59,6 @@ from pathlib import Path
 # setcard = ApiCardSetup()
 
 # list_models = api.list_models(model_name='Qwen/Qwen1.5-0.5B-Chat',limit=1,gated=False)
-
 # list_datasets = api.list_datasets(dataset_name='waltsun/MOAT',limit=1,gated=False)
 # # list_datasets = api.list_datasets(dataset_name="FreedomIntelligence/medical-o1-reasoning-SFT",limit=1,gated=False)
 
@@ -78,18 +77,18 @@ from pathlib import Path
 
 # finetune.dataset_prepare(list_download)
 
-Ft = FinetuneModel()
-Ft.finetune_model()
+# Ft = FinetuneModel()
+# Ft.finetune_model()
 
 
 
 
 # # Inference setup
-# print("\n--- Starting Inference ---\n")
-# # model_path = Path(__file__).parent.absolute() / "checkpoints" / "text-generation" / "Qwen_Qwen1.5-0.5B-Chat"
-# model_path = Path(__file__).parent.absolute() / "repositories" / "models" / "Qwen" / "Qwen1.5-0.5B-Chat"
+# # print("\n--- Starting Inference ---\n")
+# model_path = Path(__file__).parent.absolute() / "checkpoints" / "text-generation" / "Qwen_Qwen1.5-0.5B-Chat"
+# # model_path = Path(__file__).parent.absolute() / "repositories" / "models" / "Qwen" / "Qwen1.5-0.5B-Chat"
 model_path = Path(__file__).parent.absolute() / "checkpoints" / "text-vision-text-generation" / "Qwen_Qwen1.5-0.5B-Chat"
-# model_path = Path(__file__).parent.absolute() / "custom_models" / "conversation-model" / "Qwen_Qwen1.5-0.5B-Chat"
+# # model_path = Path(__file__).parent.absolute() / "custom_models" / "conversation-model" / "Qwen_Qwen1.5-0.5B-Chat"
 # inference_manager = InferenceManager(model_path)
 
 # # # Example 1: Text-only inference
