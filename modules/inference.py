@@ -18,6 +18,7 @@ from modules.variable import Variable
 class InferenceManager:
     """Manages inference with a language or multimodal model."""
 
+    
     def __init__(self, model_path: str, max_new_tokens: int = 1000, temperature: float = 0.7, top_p: float = 0.9):
         """Initialize the inference manager.
 
@@ -37,16 +38,8 @@ class InferenceManager:
         self.variable = Variable()
         self.dtype = self.variable.DTYPE
         
-        self.chat_template = """{% for message in messages -%}
-{% if message['role'] == 'system' -%}
-{{ message['content'] }}
-{% elif message['role'] == 'user' -%}
-Human:{% if message.get('images') %} [Images: {% for img in message['images'] %}{{ img }} {% endfor %}]{% endif %} {{ message['content'] }}
-{% elif message['role'] == 'assistant' -%}
-Assistant: {{ message['content'] }}
-{% endif -%}
-{% endfor -%}
-Assistant:"""
+        self.chat_template = None
+        
 
         self._setup_device()
         self._load_model_and_tokenizer()
@@ -75,7 +68,7 @@ Assistant:"""
             if hasattr(config, "model_type") and config.model_type == "vision-model":
                 print("Detected multimodal model. Loading VisionModel...")
                 self.vision_model = CLIPVisionModel.from_pretrained(self.vision_path, torch_dtype=self.dtype)
-                self.vision_processor = CLIPProcessor.from_pretrained(self.vision_processor_path)
+                self.vision_processor = CLIPProcessor.from_pretrained("openai/clip-vit-large-patch14", use_fast=True)
                 self.lang_model = AutoModelForCausalLM.from_pretrained(self.lang_path, torch_dtype=self.dtype)
                 self.model = VisionModel(config,self.vision_model, self.lang_model).to(self.device)
             else:
@@ -89,6 +82,7 @@ Assistant:"""
 
             # Load the tokenizer
             self.tokenizer = AutoTokenizer.from_pretrained(self.model_path, use_fast=True)
+            self.chat_template = self.tokenizer.chat_template
             if self.tokenizer.pad_token is None:
                 self.tokenizer.pad_token = self.tokenizer.eos_token
 
@@ -116,6 +110,7 @@ Assistant:"""
 
         # Render the template with the messages
         formatted_chat = template.render(messages=messages)
+        print(f"Formatted Chat:{formatted_chat}")
 
         # Normalize whitespace: strip leading/trailing, collapse multiple blank lines and indent
         formatted_chat = re.sub(r"[ \t]+$", "", formatted_chat, flags=re.MULTILINE)   
@@ -141,7 +136,7 @@ Assistant:"""
         try:
             # Define the messages
             messages = [
-                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "system", "content": "You are a helpful assistant. and be able to answer question based on image provided. if images is not provided, answer based on your knowledge only."},
                 {"role": "user", "content": user_input}
             ]
             if image_path:
@@ -150,7 +145,7 @@ Assistant:"""
             # Use tokenizer/template-aware formatter
             prompt = self.format_chat(messages,self.chat_template)
             
-            print(prompt)
+            # print(prompt)
 
             # Prepare inputs for the model
             inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
