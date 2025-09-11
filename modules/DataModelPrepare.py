@@ -50,11 +50,6 @@ class Manager:
     """Manager class for handling fine-tuning operations."""
     
     def __init__(self):
-        """Initialize the Manager.
-        
-        Args:
-            model_data_json_path: Path to the model data JSON file
-        """
         self.variable = Variable()        
         self.repository = self.variable.REPO_DIR
         self.CUTOM_MODEL_DIR = self.variable.CUTOM_MODEL_DIR
@@ -69,14 +64,6 @@ class Manager:
 
     
     def get_model_architecture(self, model_id: str) -> List[str]:
-        """Detect the model architecture and return appropriate LoRA configuration.
-        
-        Args:
-            model_id: The model identifier
-            
-        Returns:
-            List of target modules for LoRA configuration
-        """
         try:
             config = AutoConfig.from_pretrained(model_id)
             model_type = config.model_type.lower()
@@ -112,14 +99,6 @@ class Manager:
             return ["q_proj", "k_proj", "v_proj", "o_proj"]
     
     def get_model_task(self, model_name: str) -> str:
-        """Get the task type for a model.
-        
-        Args:
-            model_name: The model identifier
-            
-        Returns:
-            The model's task type
-        """
         try:
             api = HfApi()
             models = api.list_models(search=model_name)
@@ -133,15 +112,7 @@ class Manager:
     
 
     def load_model(self, model_id: str) -> Tuple[Optional[AutoModelForCausalLM], Optional[AutoTokenizer]]:
-        """Load a model and its tokenizer.
-        
-        Args:
-            model_id: The model identifier
-            resume_from_checkpoint: Whether to resume from a checkpoint
-            
-        Returns:
-            Tuple of (model, tokenizer)
-        """
+       
         print(f"{Fore.CYAN}Retrieving model {model_id}{Style.RESET_ALL}")
 
         
@@ -159,15 +130,6 @@ class Manager:
     
 
     def _load_from_scratch(self, model_id: str) -> Tuple[Optional[AutoModelForCausalLM], Optional[AutoTokenizer]]:
-        """Load model and tokenizer from scratch.
-        
-        Args:
-            model_id: The model identifier
-            
-        Returns:
-            Tuple of (model, tokenizer)
-        """ 
-
         model_path = self.variable.LocalModel_DIR / model_id
         try:
             print(f"{Fore.CYAN}Downloading and loading model: {model_path}{Style.RESET_ALL}")
@@ -237,16 +199,7 @@ class Manager:
             return None, None
     
     def load_dataset(self, dataset_name: str, config: Optional[Dict] = None) -> Optional[DatasetDict]:
-        """Load a dataset.
         
-        Args:
-            dataset_name: The dataset identifier
-            config: Dataset configuration
-            split: Dataset split to load
-            
-        Returns:
-            Loaded dataset
-        """
         print(f"{Fore.CYAN}Retrieving dataset {dataset_name}{Style.RESET_ALL}")
         
         valid_sep = ['train' if 'train' in get_dataset_split_names(dataset_name, config) else 'test' for config in get_dataset_config_names(dataset_name)]
@@ -308,15 +261,6 @@ class Manager:
             print(f"{Fore.RED}Error tokenizing dataset: {str(e)}{Style.RESET_ALL}")
             return None
     def dataset_prepare(self, list_model_data: List[Dict[str, Any]]) -> Tuple[Optional[AutoModelForCausalLM], Optional[DatasetDict]]:
-        """Run the fine-tuning process.
-        
-        Args:
-            list_model_data: List of model data dictionaries
-            config: Configuration dictionary
-            
-        Returns:
-            Tuple of (model, dataset)
-        """
         
         datamodel_file = self.variable.SAVED_CONFIG_Path
         
