@@ -7,7 +7,6 @@ import json
 from modules.variable import Variable
 
 class ApiCardSetup:
-    '''Setting Api calling Card as models and datasets be required'''
     def __init__(self):
         self.variable = Variable()
         self.hf_api = self.variable.hf_api
@@ -16,10 +15,6 @@ class ApiCardSetup:
         
         
     def set(self,list_models:Optional[Iterable[ModelInfo]],list_datasets:Optional[Iterable[DatasetInfo]]):
-        '''request hf api and convert to history json by getting list_models object and list_datasets object.
-        
-            No Return (only update file)
-        '''
        
        #empty List of model_name and datasets_name
         model_name_list:list = list()

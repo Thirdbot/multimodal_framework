@@ -1,7 +1,5 @@
 import os
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
-
-#for create base model to be use for finetuning and customize architecture
 from transformers import LlamaModel, LlamaConfig, AutoTokenizer, AutoConfig,ProcessorMixin,PretrainedConfig,PreTrainedModel,CLIPVisionModel,CLIPProcessor,AutoModelForCausalLM,AutoModel
 from transformers import AutoProcessor
 from transformers.modeling_outputs import CausalLMOutputWithCrossAttentions
@@ -54,7 +52,6 @@ class ConversationModel(PreTrainedModel):
         self._is_gradient_checkpointing = False
     
     def get_target_modules(self):
-        """Detect the model architecture and return appropriate LoRA target modules."""
         if hasattr(self.model, 'get_target_modules'):
             return self.model.get_target_modules()
             
@@ -366,14 +363,6 @@ class VisionProcessor(ProcessorMixin):
         return inputs
     
     def __call__(self, text=None, images=None, create_labels=True):
-        """
-        Process images and/or text inputs.
-        
-        Args:
-            text: Text input to process
-            images: Image input to process
-            create_labels: If True, creates labels for training
-        """
         result = {}
 
         # Process images
@@ -652,7 +641,7 @@ class CreateModel:
             )
             # Save tokenizer
             self.tokenizer.save_pretrained(
-                self.model_path,
+                lang_model_path
             )
             
 
@@ -682,9 +671,19 @@ class CreateModel:
         except:
             print("Error:: Created Model not save.")
 
+# def find_checkpoint_folder(model_path):
+#     # Check for checkpoint folders in the model_path
+#     checkpoint_dirs = [d for d in os.listdir(model_path) if d.startswith("checkpoint-") and os.path.isdir(os.path.join(model_path, d))]
+#     if not checkpoint_dirs:
+#         return None
+#     # Sort directories by checkpoint number
+#     checkpoint_dirs.sort(key=lambda x: int(x.split("-")[-1]))
+#     print("using latest checkpoint:", checkpoint_dirs[-1])
+#     # Return the latest checkpoint directory
+#     return os.path.join(model_path, checkpoint_dirs[-1])
 
 # Load model and processor from demo_path
-def load_saved_model(model_path):
+def load_saved_model(model_path,checkpoint=False):
     variable = Variable()
     dtype = variable.DTYPE
     """Load a saved model and its processor."""    
@@ -698,23 +697,25 @@ def load_saved_model(model_path):
         is_vision_model = (
             hasattr(config, 'model_type') and config.model_type == "vision-model"
         )
+        lang_model_path = os.path.join(model_path, "lang_model")
+        local_checkpoint_path = model_path
+        vision_model_path = os.path.join(model_path, "vision_model")
+        
         
         if is_vision_model:
-            vision_model_path = os.path.join(model_path, "vision_model")
-            lang_model_path = os.path.join(model_path, "lang_model")
-
-        if is_vision_model:
             print("Loading vision model...")
-            
+            print(f"Vision model path: {vision_model_path}"
+                  f"\nLanguage model path: {lang_model_path}"
+                  f"\nLocal checkpoint path: {local_checkpoint_path}")
             # Load components
-            vision_model = CLIPVisionModel.from_pretrained(vision_model_path)
             lang_model = AutoModelForCausalLM.from_pretrained(lang_model_path,torch_dtype=dtype)
+            vision_model = CLIPVisionModel.from_pretrained(vision_model_path)
             
             # Create model
             model = VisionModel(config, vision_model, lang_model)
             
             # Load processor
-            tokenizer = AutoTokenizer.from_pretrained(model_path)
+            tokenizer = AutoTokenizer.from_pretrained(lang_model_path)
             
             model.config.use_cache = False
             model.train()  # Ensure model is in training mode
@@ -723,7 +724,7 @@ def load_saved_model(model_path):
             # For conversation models, use AutoModelForCausalLM
             print("Loading conversation model...")
             base_model = AutoModelForCausalLM.from_pretrained(
-                model_path,
+                local_checkpoint_path,
                 torch_dtype=dtype,
                 device_map=None
             )
@@ -733,7 +734,7 @@ def load_saved_model(model_path):
             model.config.use_cache = False
             model.train()  # Ensure model is in training mode
             
-            tokenizer = AutoTokenizer.from_pretrained(model_path)
+            tokenizer = AutoTokenizer.from_pretrained(local_checkpoint_path)
 
         return model, tokenizer
 
@@ -741,10 +742,7 @@ def load_saved_model(model_path):
     except Exception as e:
         print(f"Error loading model: {str(e)}")
         raise
-
-     
-# #create template from model
-
+    
 # Example usage:
 
 
