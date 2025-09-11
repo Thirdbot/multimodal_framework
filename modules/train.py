@@ -28,7 +28,7 @@ from huggingface_hub import HfApi
 
 from modules.chatTemplate import ChatTemplate
 # from modules.chainpipe import Chainpipe
-from modules.createbasemodel import load_saved_model, CreateModel, VisionConfig, VisionModel
+from modules.createbasemodel import load_saved_model
 
 from modules.variable import Variable
 import ast
@@ -45,7 +45,7 @@ class FinetuneModel:
         self.per_device_eval_batch_size = 1
         self.gradient_accumulation_steps = 2  # Reduced gradient accumulation
         self.learning_rate = 2e-5  # Reduced learning rate
-        self.num_train_epochs = 0.02
+        self.num_train_epochs = 0.001
         self.save_strategy = "best"
         self.training_config_path = self.variable.training_config_path
         
@@ -88,21 +88,13 @@ class FinetuneModel:
     
     def train_args(self,task:str, modelname: str) -> TrainingArguments:
 
-        """Get training arguments.
-        
-        Args:
-            modelname: The model identifier
-            
-        Returns:
-            Training arguments
-        """
-
         model_folder = self.CHECKPOINT_DIR / task
 
         if "custom_models" in modelname.split("\\"):
             modelname = modelname.split("\\")
             modelname = modelname[-1]
         output_dir = model_folder / modelname if '/' not in modelname else model_folder / modelname.replace('/', '_')
+        
         output_dir.mkdir(parents=True, exist_ok=True)
         
         cuda_available = torch.cuda.is_available()
@@ -138,7 +130,7 @@ class FinetuneModel:
             group_by_length=True,
             length_column_name="length",
             report_to="none",
-            resume_from_checkpoint=self.CHECKPOINT_DIR,
+            resume_from_checkpoint=True,
             save_safetensors=True,
             save_only_model=False,  # Changed to False to save optimizer state
             overwrite_output_dir=True,
@@ -149,14 +141,7 @@ class FinetuneModel:
         )
     
     def compute_metrics(self, eval_pred: Tuple[np.ndarray, np.ndarray]) -> Dict[str, float]:
-        """Compute evaluation metrics.
-        
-        Args:
-            eval_pred: Tuple of (predictions, labels)
-            
-        Returns:
-            Dictionary of metrics
-        """
+     
         logits, labels = eval_pred
         predictions = np.argmax(logits[:, -1, :], axis=-1)
         valid_labels = labels[:, -1]
@@ -199,7 +184,7 @@ class FinetuneModel:
             # Configure data collator for language modeling
             data_collator = DataCollatorForLanguageModeling(
                 tokenizer=tokenizer,
-                mlm=False,  # We want causal language modeling, not masked
+                mlm=False,  # We want masked language modeling
                 pad_to_multiple_of=8  # For better GPU utilization
             )
             
@@ -222,15 +207,6 @@ class FinetuneModel:
     def runtuning(self, model: AutoModelForCausalLM, tokenizer: AutoTokenizer, 
 
                  dataset: DatasetDict, modelname: str,task:str) -> None:
-
-        """Run the fine-tuning process.
-        
-        Args:
-            model: The model to train
-            tokenizer: The tokenizer to use
-            dataset: The dataset to use
-            modelname: The model identifier
-        """
         try:
             if "custom_models" in modelname.split("/"):
                 modelname = modelname.split("/")
@@ -239,8 +215,8 @@ class FinetuneModel:
             trainer = self.Trainer(model=model, dataset=dataset, tokenizer=tokenizer, modelname=modelname,task=task)
             
             # Save the initial LoRA config
-            model.save_pretrained(trainer.args.output_dir)
-            print("Saving model...")
+            # model.save_pretrained(trainer.args.output_dir)
+            # print("Saving model...")
             
             # Start training
             trainer.train()
@@ -271,7 +247,9 @@ class FinetuneModel:
                 if hasattr(model, "lang_model"):
                     lang_model_path = model_save_path / "lang_model"
                     lang_model_path.mkdir(parents=True, exist_ok=True)
+                    
                     model.lang_model.save_pretrained(str(lang_model_path))
+                    tokenizer.save_pretrained(str(lang_model_path))
                     print(f"{Fore.GREEN}Language model saved to: {lang_model_path}{Style.RESET_ALL}")
                 
                 if hasattr(model, "vision_model"):
@@ -337,7 +315,7 @@ class FinetuneModel:
                     # load from checkpoint if exists for training only
                     if Path(self.conversation_checkpoint).exists():
                         print(f"{Fore.GREEN}Loading conversation model from checkpoint...{Style.RESET_ALL}")
-                        model, tokenizer = load_saved_model(self.conversation_checkpoint)
+                        model, tokenizer = load_saved_model(self.conversation_checkpoint,checkpoint=True)
                     else:
                         model, tokenizer = load_saved_model(model_path)
 
@@ -353,7 +331,7 @@ class FinetuneModel:
 
                     if Path(self.vision_checkpoint).exists():
                         print(f"{Fore.GREEN}Loading vision model from checkpoint...{Style.RESET_ALL}")
-                        model, tokenizer = load_saved_model(self.vision_checkpoint)
+                        model, tokenizer = load_saved_model(self.vision_checkpoint,checkpoint=True)
                     else:
                         model, tokenizer = load_saved_model(model_path)
                 print(f"{Fore.CYAN}Dataset loaded with {len(dataset)} records{Style.RESET_ALL}")
