@@ -1,7 +1,5 @@
 import os
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
-
-#for create base model to be use for finetuning and customize architecture
 from transformers import LlamaModel, LlamaConfig, AutoTokenizer, AutoConfig,ProcessorMixin,PretrainedConfig,PreTrainedModel,CLIPVisionModel,CLIPProcessor,AutoModelForCausalLM,AutoModel
 from transformers import AutoProcessor
 from transformers.modeling_outputs import CausalLMOutputWithCrossAttentions
@@ -54,7 +52,6 @@ class ConversationModel(PreTrainedModel):
         self._is_gradient_checkpointing = False
     
     def get_target_modules(self):
-        """Detect the model architecture and return appropriate LoRA target modules."""
         if hasattr(self.model, 'get_target_modules'):
             return self.model.get_target_modules()
             
@@ -366,14 +363,6 @@ class VisionProcessor(ProcessorMixin):
         return inputs
     
     def __call__(self, text=None, images=None, create_labels=True):
-        """
-        Process images and/or text inputs.
-        
-        Args:
-            text: Text input to process
-            images: Image input to process
-            create_labels: If True, creates labels for training
-        """
         result = {}
 
         # Process images
@@ -753,10 +742,7 @@ def load_saved_model(model_path,checkpoint=False):
     except Exception as e:
         print(f"Error loading model: {str(e)}")
         raise
-
     
-# #create template from model
-
 # Example usage:
 
 

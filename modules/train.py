@@ -43,9 +43,9 @@ class FinetuneModel:
         self.variable = Variable()
         self.per_device_train_batch_size = 1  # Reduced batch size
         self.per_device_eval_batch_size = 1
-        self.gradient_accumulation_steps = 1  # Reduced gradient accumulation
+        self.gradient_accumulation_steps = 2  # Reduced gradient accumulation
         self.learning_rate = 2e-5  # Reduced learning rate
-        self.num_train_epochs = 6
+        self.num_train_epochs = 0.001
         self.save_strategy = "best"
         self.training_config_path = self.variable.training_config_path
         
@@ -87,15 +87,6 @@ class FinetuneModel:
             directory.mkdir(parents=True, exist_ok=True)
     
     def train_args(self,task:str, modelname: str) -> TrainingArguments:
-
-        """Get training arguments.
-        
-        Args:
-            modelname: The model identifier
-            
-        Returns:
-            Training arguments
-        """
 
         model_folder = self.CHECKPOINT_DIR / task
 
@@ -150,14 +141,7 @@ class FinetuneModel:
         )
     
     def compute_metrics(self, eval_pred: Tuple[np.ndarray, np.ndarray]) -> Dict[str, float]:
-        """Compute evaluation metrics.
-        
-        Args:
-            eval_pred: Tuple of (predictions, labels)
-            
-        Returns:
-            Dictionary of metrics
-        """
+     
         logits, labels = eval_pred
         predictions = np.argmax(logits[:, -1, :], axis=-1)
         valid_labels = labels[:, -1]
@@ -223,15 +207,6 @@ class FinetuneModel:
     def runtuning(self, model: AutoModelForCausalLM, tokenizer: AutoTokenizer, 
 
                  dataset: DatasetDict, modelname: str,task:str) -> None:
-
-        """Run the fine-tuning process.
-        
-        Args:
-            model: The model to train
-            tokenizer: The tokenizer to use
-            dataset: The dataset to use
-            modelname: The model identifier
-        """
         try:
             if "custom_models" in modelname.split("/"):
                 modelname = modelname.split("/")
