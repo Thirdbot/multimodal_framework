@@ -55,7 +55,8 @@ class ChatTemplate:
          r'^(?:chosen)$',
          r'^(?:rejected)$',
          r'^(?:role)$',
-         r'^(?:text)$')
+         r'^(?:text)$',
+         r'^(?:caption)$')
     ]
     
     # Role patterns and mappings
@@ -107,9 +108,13 @@ class ChatTemplate:
     
             image_logic = """
                         {% if message.images is defined and message.images %}
-                            {% for image_url in message.images %}
-                                <img src="{{ image_url }}" alt="User provided image" />
-                            {% endfor %}
+                            {% if message.images is string %}
+                                <images>{{ message.images }}</images>
+                            {% else %}
+                                {% for image in message.images %}
+                                    <images>{{ image }}</images>
+                                {% endfor %}
+                            {% endif %}
                         {% endif %}
                         """
                         
@@ -128,12 +133,16 @@ class ChatTemplate:
 
         # Inject image logic only once
         image_logic = """
-                    {% if message.images is defined and message.images %}
-                        {% for image_url in message.images %}
-                            <img src="{{ image_url }}" alt="User provided image" />
-                        {% endfor %}
-                    {% endif %}
-                    """
+                        {% if message.images is defined and message.images %}
+                            {% if message.images is string %}
+                                <images>{{ message.images }}</images>
+                            {% else %}
+                                {% for image in message.images %}
+                                    <images>{{ image }}</images>
+                                {% endfor %}
+                            {% endif %}
+                        {% endif %}
+                        """
         # Only inject if not already present
         if image_logic.strip() not in template_str:
             template_str = template_str.replace(
@@ -718,72 +727,86 @@ class ChatTemplate:
                 dict_list = {"conversations":[]}
                 
                 
-                
-                for patterns in self.POTENTIAL_COLUMNS_PATTERNS:
-                    # Find matching columns using regex
-                    matching_cols_0 = [key for key in dataset_keys if re.search(patterns[0], key, re.IGNORECASE)]
-                    matching_cols_1 = [key for key in dataset_keys if re.search(patterns[1], key, re.IGNORECASE)]
-                    matching_cols_2 = [key for key in dataset_keys if re.search(patterns[2], key, re.IGNORECASE)]
-                    matching_cols_3 = [key for key in dataset_keys if re.search(patterns[3], key, re.IGNORECASE)]
-                    matching_cols_4 = [key for key in dataset_keys if re.search(patterns[4], key, re.IGNORECASE)]
-                    matching_cols_5 = [key for key in dataset_keys if re.search(patterns[5], key, re.IGNORECASE)]
-                    matching_cols_6 = [key for key in dataset_keys if re.search(patterns[6], key, re.IGNORECASE)]
+                try:
+                    for patterns in self.POTENTIAL_COLUMNS_PATTERNS:
+                        # Find matching columns using regex
+                        matching_cols_0 = [key for key in dataset_keys if re.search(patterns[0], key, re.IGNORECASE)]
+                        matching_cols_1 = [key for key in dataset_keys if re.search(patterns[1], key, re.IGNORECASE)]
+                        matching_cols_2 = [key for key in dataset_keys if re.search(patterns[2], key, re.IGNORECASE)]
+                        matching_cols_3 = [key for key in dataset_keys if re.search(patterns[3], key, re.IGNORECASE)]
+                        matching_cols_4 = [key for key in dataset_keys if re.search(patterns[4], key, re.IGNORECASE)]
+                        matching_cols_5 = [key for key in dataset_keys if re.search(patterns[5], key, re.IGNORECASE)]
+                        matching_cols_6 = [key for key in dataset_keys if re.search(patterns[6], key, re.IGNORECASE)]
+                        matching_cols_7 = [key for key in dataset_keys if re.search(patterns[7], key, re.IGNORECASE)]
+                        
+                        # print(f"matching_cols_0: {matching_cols_0}, matching_cols_1: {matching_cols_1}, matching_cols_2: {matching_cols_2}, matching_cols_3: {matching_cols_3}, matching_cols_4: {matching_cols_4}, matching_cols_5: {matching_cols_5}, matching_cols_6: {matching_cols_6}, matching_cols_7: {matching_cols_7}")
 
-                    if matching_cols_0 and matching_cols_1 and matching_cols_2:
-                        #instruction data auto assign role
-                        print(f"found {matching_cols_0[0]} and {matching_cols_1[0]} and {matching_cols_2[0]}")
-                        for user_q, asist_a, instruction in zip(dataset[matching_cols_0[0]], dataset[matching_cols_1[0]], dataset[matching_cols_2[0]]):
-                            message_list = [
-                                {"role": "system", "content": instruction},
-                                {"role": "user", "content": user_q},
-                                {"role": "assistant", "content": asist_a}
-                            ]
-                            dict_list["conversations"].append(message_list)
-                    
-                    elif matching_cols_0 and matching_cols_1:
-                        #chat data auto assign role
-                        print(f"found {matching_cols_0[0]} and {matching_cols_1[0]}")
-                        for user_q, asist_a in zip(dataset[matching_cols_0[0]], dataset[matching_cols_1[0]]):
-                            message_list = [
-                                {"role": "user", "content": user_q},
-                                {"role": "assistant", "content": asist_a}
-                            ]
-                            dict_list["conversations"].append(message_list)
-                    
-                    elif matching_cols_3 and matching_cols_4:
-                        #chosen reject instruction
-                        for chosen, rejected in zip(dataset[matching_cols_3[0]], dataset[matching_cols_4[0]]):
-                            message_list = [
-                                {"role": "user", "content": chosen},
-                                {"role": "assistant", "content": rejected}
-                            ]
-                            dict_list["conversations"].append(message_list)
-                    
-                    elif matching_cols_5 and matching_cols_6:
-                        #role text instruction
-                        for role, text in zip(dataset[matching_cols_5[0]], dataset[matching_cols_6[0]]):
-                            message_list = [{"role": role, "content": text}]
-                            dict_list["conversations"].append(message_list)
-                    else:
-                        print(f"No matching columns found for irregular dataset")
-                        return
-                # Handle multimodal columns with regex
-                if mul_field and len(mul_field) > 0:
-                    print(f"Irregular dataset found multimodal column: {mul_field}")
-                    for mul in mul_field:
-                        dict_list[mul] = []
-                        data_list = []
-                        for idx,data in enumerate(dataset[mul]):
-                            if data is not None:
-                                data_list.append(data)
-                                dict_list['conversations'][idx][0]['content'] += f" <images>{data}</images>"
-                                
-                        dict_list[mul] = data_list
-                # Create dataset with both conversations and multimodal data
-                print(f"Creating dataset with fields: {list(dict_list.keys())}")
-                dataset_maker = Dataset.from_dict(dict_list)
-                return self.process_dataset(dataset_name=dataset_name,dataset=dataset_maker,is_conversation=False,is_check=False,mul_field=mul_field,Tokenizing=Tokenizing)
-
+                        if matching_cols_0 and matching_cols_1 and matching_cols_2:
+                            #instruction data auto assign role
+                            print(f"found {matching_cols_0[0]} and {matching_cols_1[0]} and {matching_cols_2[0]}")
+                            for user_q, asist_a, instruction in zip(dataset[matching_cols_0[0]], dataset[matching_cols_1[0]], dataset[matching_cols_2[0]]):
+                                message_list = [
+                                    {"role": "system", "content": instruction},
+                                    {"role": "user", "content": user_q},
+                                    {"role": "assistant", "content": asist_a}
+                                ]
+                                dict_list["conversations"].append(message_list)
+                        
+                        elif matching_cols_0 and matching_cols_1:
+                            #chat data auto assign role
+                            print(f"found {matching_cols_0[0]} and {matching_cols_1[0]}")
+                            for user_q, asist_a in zip(dataset[matching_cols_0[0]], dataset[matching_cols_1[0]]):
+                                message_list = [
+                                    {"role": "user", "content": user_q},
+                                    {"role": "assistant", "content": asist_a}
+                                ]
+                                dict_list["conversations"].append(message_list)
+                        
+                        elif matching_cols_3 and matching_cols_4:
+                            #chosen reject instruction
+                            print(f"found {matching_cols_3[0]} and {matching_cols_4[0]}")
+                            for chosen, rejected in zip(dataset[matching_cols_3[0]], dataset[matching_cols_4[0]]):
+                                message_list = [
+                                    {"role": "user", "content": chosen},
+                                    {"role": "assistant", "content": rejected}
+                                ]
+                                dict_list["conversations"].append(message_list)
+                        
+                        elif matching_cols_5 and matching_cols_6:
+                            #role text instruction
+                            print(f"found {matching_cols_5[0]} and {matching_cols_6[0]}")
+                            for role, text in zip(dataset[matching_cols_5[0]], dataset[matching_cols_6[0]]):
+                                message_list = [{"role": role, "content": text}]
+                                dict_list["conversations"].append(message_list)
+                        elif matching_cols_7:
+                            #single text instruction
+                            print(f"found {matching_cols_7[0]}")
+                            for text in dataset[matching_cols_7[0]]:
+                                message_list = [{"role": "user", "content": "What in this images?"},
+                                                {"role":"assistant","content":text}]
+                                dict_list["conversations"].append(message_list)
+                        else:
+                            print(f"No matching columns found for irregular dataset")
+                            return
+                    # Handle multimodal columns with regex
+                    if mul_field and len(mul_field) > 0:
+                        print(f"Irregular dataset found multimodal column: {mul_field}")
+                        for mul in mul_field:
+                            dict_list[mul] = []
+                            data_list = []
+                            for idx,data in enumerate(dataset[mul]):
+                                if data is not None:
+                                    data_list.append(data)
+                                    dict_list['conversations'][idx][0]['content'] += f" <images>{data}</images>"
+                                    
+                            dict_list[mul] = data_list
+                    # Create dataset with both conversations and multimodal data
+                    print(f"Creating dataset with fields: {list(dict_list.keys())}")
+                    dataset_maker = Dataset.from_dict(dict_list)
+                    return self.process_dataset(dataset_name=dataset_name,dataset=dataset_maker,is_conversation=False,is_check=False,mul_field=mul_field,Tokenizing=Tokenizing)
+                except Exception as e:
+                    print(f"Error processing irregular dataset: {str(e)}")
+                    return None
         # If we reach here, return None to indicate no valid processing path was found
         print("Warning: No valid processing path found for the dataset")
         return None
@@ -824,6 +847,7 @@ class ChatTemplate:
             return None
     
     def format_message(self, message):
+        print(message)
         formatted_chat = self.template.render(messages=message)
         print(f"Formatted chat message:{formatted_chat}")
         return formatted_chat

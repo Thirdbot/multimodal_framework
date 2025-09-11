@@ -17,18 +17,8 @@ from modules.variable import Variable
 from peft import PeftModel, PeftConfig
 
 class InferenceManager:
-    """Manages inference with a language or multimodal model."""
 
-    
     def __init__(self, model_path: str, max_new_tokens: int = 1000, temperature: float = 0.7, top_p: float = 0.9):
-        """Initialize the inference manager.
-
-        Args:
-            model_path: Path to the model to load.
-            max_new_tokens: Maximum number of tokens to generate.
-            temperature: Sampling temperature for generation.
-            top_p: Top-p sampling parameter.
-        """
         self.model_path = model_path
         self.max_new_tokens = max_new_tokens
         self.temperature = temperature
@@ -41,13 +31,11 @@ class InferenceManager:
         
         self.chat_template = None
         
-
         self._setup_device()
         self._load_model_and_tokenizer()
         # self.setup_chatTemplate()
 
     def _setup_device(self):
-        """Set up the device for model execution."""
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
@@ -59,7 +47,6 @@ class InferenceManager:
    
 
     def _load_model_and_tokenizer(self):
-        """Load the model and tokenizer, and determine if it's multimodal."""
         try:
             # Load the model configuration
             config = AutoConfig.from_pretrained(self.model_path)
@@ -92,26 +79,13 @@ class InferenceManager:
                 raise ValueError("Chat template not found in tokenizer or config.")
             if self.tokenizer.pad_token is None:
                 self.tokenizer.pad_token = self.tokenizer.eos_token
-
+                
         except Exception as e:
             print(f"Error loading model: {str(e)}")
             raise
 
     
     def format_chat(self,messages: list, chat_template: str) -> str:
-        """
-        Format chat messages based on the provided chat template.
-
-        Args:
-            messages (list): A list of dictionaries representing the conversation. Each dictionary should have:
-                            - 'role': The role of the message sender ('system', 'user', or 'assistant').
-                            - 'content': The content of the message.
-                            - 'images' (optional): A list of images (only for 'user' role).
-            chat_template (str): The Jinja2 template string for formatting the messages.
-
-        Returns:
-            str: The formatted chat string.
-        """
         # Create a Jinja2 template from the provided chat_template
         template = Template(chat_template)
 
@@ -124,20 +98,11 @@ class InferenceManager:
 
         # # Ensure Assistant: marker exists at end
         if not re.search(r"Assistant:\s*$", formatted_chat):
-            formatted_chat = formatted_chat + "\n\nAssistant:"
+            formatted_chat = formatted_chat + "\n\n<|im_start|>assistant"
 
         return formatted_chat
 
     def generate_response(self, user_input: str, image_path: str = None) -> str:
-        """Generate a response from the model.
-
-        Args:
-            user_input: The input text from the user.
-            image_path: Optional path to an image for multimodal models.
-
-        Returns:
-            The generated response as a string.
-        """
         try:
             # Define the messages
             messages = [
@@ -189,22 +154,3 @@ class InferenceManager:
         except Exception as e:
             print(f"Error generating response: {str(e)}")
             return "An error occurred during inference."
-
-    # def _clean_response(self, response: str) -> str:
-    #     """Clean up repetitive patterns in the response."""
-    #     # Extract content after the last "Assistant:" if present
-    #     if "Assistant:" in response:
-    #         response = response.split("Assistant:")[-1].strip()
-        
-    #     # For simple factual questions, often just the first sentence is enough
-    #     if len(response) > 100 and "." in response[:100]:
-    #         first_sentence = response.split('.')[0] + '.'
-    #         return first_sentence
-        
-    #     # Remove repetitive country patterns
-    #     common_entities = ["France", "Germany", "Paris", "Berlin", "Europe"]
-    #     for entity in common_entities:
-    #         pattern = f"({entity})(,\\s*{entity})+\\b"
-    #         response = re.sub(pattern, r"\1", response)
-        
-    #     return response.strip()
