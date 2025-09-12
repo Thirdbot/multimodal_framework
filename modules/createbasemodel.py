@@ -593,6 +593,45 @@ class CreateModel:
             torch_dtype=self.dtype,
             low_cpu_mem_usage=True
         )
+         # Prepare model for k-bit training
+        self.model = prepare_model_for_kbit_training(self.model)
+        
+        # Get target modules based on model architecture
+        model_type = self.model.config.model_type.lower() if hasattr(self.model.config, 'model_type') else ""
+        target_modules_map = {
+            "gpt2": ["c_attn", "c_proj"],
+            "llama": ["q_proj", "k_proj", "v_proj", "o_proj"],
+            "mistral": ["q_proj", "k_proj", "v_proj", "o_proj"],
+            "opt": ["q_proj", "k_proj", "v_proj", "out_proj"],
+            "bloom": ["query_key_value", "dense"],
+            "t5": ["q", "k", "v", "o"],
+            "bert": ["query", "key", "value", "output.dense"],
+            "roberta": ["query", "key", "value", "output.dense"],
+            "gpt_neox": ["query_key_value", "dense"],
+            "falcon": ["query_key_value", "dense"],
+            "mpt": ["Wqkv", "out_proj"],
+            "baichuan": ["W_pack", "o_proj"],
+            "chatglm": ["query_key_value", "dense"],
+            "qwen": ["c_attn", "c_proj"],
+            "phi": ["Wqkv", "out_proj"],
+            "gemma": ["q_proj", "k_proj", "v_proj", "o_proj"],
+            "stablelm": ["q_proj", "k_proj", "v_proj", "o_proj"]
+        }
+        target_modules = target_modules_map.get(model_type, ["q_proj", "k_proj", "v_proj", "o_proj"])
+        print(f"Using target modules for {model_type}: {target_modules}")
+        
+        # Configure LoRA
+        lora_config = LoraConfig(
+            r=16,  # Rank
+            lora_alpha=32,  # Alpha scaling
+            target_modules=target_modules,
+            lora_dropout=0.05,
+            bias="none",
+            task_type="CAUSAL_LM"
+        )
+        
+        # Get PEFT model
+        self.model = get_peft_model(self.model, lora_config)
 
 
         self.vismodel = VisionModel(self.vision_config, self.vision_model, self.model)
