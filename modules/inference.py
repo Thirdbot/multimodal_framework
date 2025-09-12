@@ -59,6 +59,7 @@ class InferenceManager:
                 self.vision_processor = CLIPProcessor.from_pretrained("openai/clip-vit-large-patch14", use_fast=True)
                 self.lang_model = AutoModelForCausalLM.from_pretrained(self.lang_path, torch_dtype=self.dtype)
                 self.model = VisionModel(config,self.vision_model, self.lang_model).to(self.device)
+                self.tokenizer = AutoTokenizer.from_pretrained(self.lang_path, use_fast=True)
             else:
                 print("Detected text-only model. Loading ConversationModel...")
                 base_model = AutoModelForCausalLM.from_pretrained(
@@ -67,9 +68,10 @@ class InferenceManager:
                     device_map="auto"
                 )
                 self.model = ConversationModel(config, base_model).to(self.device)
+                self.tokenizer = AutoTokenizer.from_pretrained(self.model_path, use_fast=True)
 
             # Load the tokenizer
-            self.tokenizer = AutoTokenizer.from_pretrained(self.lang_path, use_fast=True)
+            
             # Ensure chat_template is loaded, fallback to config if not present
             if hasattr(self.tokenizer, "chat_template") and self.tokenizer.chat_template is not None:
                 self.chat_template = self.tokenizer.chat_template
@@ -97,8 +99,8 @@ class InferenceManager:
         formatted_chat = formatted_chat.strip()
 
         # # Ensure Assistant: marker exists at end
-        if not re.search(r"Assistant:\s*$", formatted_chat):
-            formatted_chat = formatted_chat + "\n\n<|im_start|>assistant"
+        if not re.search(r"<|im_start|>assistant:s*$", formatted_chat):
+            formatted_chat = formatted_chat + "\n<|im_start|>assistant"
 
         return formatted_chat
 
@@ -115,7 +117,7 @@ class InferenceManager:
 
             # Use tokenizer/template-aware formatter
             prompt = self.format_chat(messages, self.chat_template)
-            print(f"Formatted Prompt:\n{prompt}\n{'-'*50}")
+            # print(f"Formatted Prompt:\n{prompt}\n{'-'*50}")
             # Prepare inputs for the model
             inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
 
