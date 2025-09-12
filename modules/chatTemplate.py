@@ -216,7 +216,7 @@ class ChatTemplate:
                 # Format and tokenize text data
                 formatted_texts = []
                 for conversation in dataset[keys]:
-                    if isinstance(conversation, list):
+                    if isinstance(conversation, dict) or isinstance(conversation, list):
                         formatted_text = self.format_message(conversation)
                         formatted_texts.append(formatted_text)
                 
@@ -847,7 +847,6 @@ class ChatTemplate:
             return None
     
     def format_message(self, message):
-        print(message)
         formatted_chat = self.template.render(messages=message)
         print(f"Formatted chat message:{formatted_chat}")
         return formatted_chat
