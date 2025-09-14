@@ -97,13 +97,13 @@ class ChatTemplate:
         
         
         self.variable = Variable()
-        self.local_model_path = self.variable.LocalModel_DIR
-        self.template = self.load_template_from_model()
+        self.chat_template_path = self.variable.chat_template_path
+        self.template = self.load_template_from_folder()
         
-        self.tokenizer.chat_template = self.str_template(self.local_model_path / self.model_name)
+        self.tokenizer.chat_template = self.str_template(self.chat_template_path)
     
-    def str_template(self, model_path):
-        with open(model_path / "chat_template.jinja", "r", encoding="utf-8") as f:
+    def str_template(self, template_path):
+        with open(template_path / "chat_template_conversation.jinja", "r", encoding="utf-8") as f:
             template_str = f.read()
     
             image_logic = """
@@ -125,9 +125,9 @@ class ChatTemplate:
                 )
         return template_str
     
-    def load_template_from_model(self):
-        model_path = self.local_model_path / self.model_name
-        template_file = model_path / "chat_template.jinja"
+    def load_template_from_folder(self):
+        model_path = self.chat_template_path
+        template_file = model_path / "chat_template_conversation.jinja"
         with open(template_file, "r", encoding="utf-8") as f:
             template_str = f.read()
 
@@ -848,7 +848,7 @@ class ChatTemplate:
     
     def format_message(self, message):
         formatted_chat = self.template.render(messages=message)
-        print(f"Formatted chat message:{formatted_chat}")
+        # print(f"Formatted chat message:{formatted_chat}")
         return formatted_chat
     
     def prepare_dataset(self, dataset_name, dataset, max_length=1000,Tokenizing=False):

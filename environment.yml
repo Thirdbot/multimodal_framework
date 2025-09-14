@@ -112,8 +112,6 @@ dependencies:
       - sympy==1.14.0
       - threadpoolctl==3.6.0
       - tokenizers==0.21.4
-      - torch==2.8.0+cu126
-      - torchvision==0.23.0
       - tqdm==4.67.1
       - transformers==4.51.3
       - typing-extensions==4.15.0
