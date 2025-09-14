@@ -22,8 +22,8 @@ SavedConfigsfile.touch(exist_ok=True)
 
 setcard = ApiCardSetup()
 
-# list_models = api.list_models(model_name='Qwen/Qwen1.5-0.5B-Chat',limit=1,gated=False)
-list_models = api.list_models(model_name='RedHatAI/gemma-3n-E2B-it-FP8-dynamic',limit=1,gated=False)
+list_models = api.list_models(model_name='Qwen/Qwen1.5-0.5B-Chat',limit=1,gated=False)
+# list_models = api.list_models(model_name='Qwen/Qwen3-4B-Instruct-2507',limit=1,gated=False)
 # list_datasets = api.list_datasets(dataset_name='QHQK/conversation_hall_binary_v1',limit=1,gated=False)
 
 # list_datasets = api.list_datasets(dataset_name='ThucPD/coco-qa-vi',limit=1,gated=False)
