@@ -48,3 +48,5 @@ class Variable():
         self.training_config_path = self.CUTOM_MODEL_DIR / "training_config.json"
         self.DATASET_FORMATTED_DIR = self.CUTOM_MODEL_DIR / "formatted_datasets"
         self.DTYPE = torch.float32
+
+        self.chat_template_path = self.WORKSPACE / 'chat_template'
