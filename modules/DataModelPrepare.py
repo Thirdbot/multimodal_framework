@@ -60,6 +60,7 @@ class Manager:
         self.DATASET_FORMATTED_DIR = self.variable.DATASET_FORMATTED_DIR
         self.device_map = "cuda:0" if torch.cuda.is_available() else "cpu"
         self.chat_template_saved = None
+        self.chat_template_path = self.variable.chat_template_path
         os.makedirs(self.DATASET_FORMATTED_DIR, exist_ok=True)
 
     
@@ -407,7 +408,7 @@ class Manager:
                     create_model = CreateModel(modelname, "conversation-model")
                     create_model.add_conversation()
                     create_model.save_regular_model()
-                    with open(model_path / "chat_template.jinja", 'w') as f:
+                    with open(self.chat_template_path / "chat_template_conversation.jinja", 'w') as f:
                         f.write(self.chat_template_saved)
 
             #temporal fix this
@@ -421,7 +422,7 @@ class Manager:
                     create_model = CreateModel(modelname, "vision-model")
                     create_model.add_vision()
                     create_model.save_vision_model()
-                    with open(model_path / "chat_template.jinja", 'w') as f:
+                    with open(self.chat_template_path / "chat_template_vision.jinja", 'w') as f:
                         f.write(self.chat_template_saved)
 
         

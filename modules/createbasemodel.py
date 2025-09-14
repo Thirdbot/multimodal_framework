@@ -12,6 +12,15 @@ from peft import AutoPeftModelForCausalLM, LoraConfig, get_peft_model, prepare_m
 from jinja2 import Environment, FileSystemLoader
 from modules.variable import Variable
 
+
+def find_all_linear_names(model):
+    linear_names = []
+    for name, module in model.named_modules():
+        if isinstance(module, torch.nn.Linear):
+            linear_names.append(name)
+    return linear_names
+
+
 # Config classes
 class ConversationConfig(PretrainedConfig):
     model_type = "conversation-model"
@@ -464,27 +473,27 @@ class CreateModel:
             use_fast=True,
             trust_remote_code=True
         )
-        self.template = self.load_template_from_model()
+        # self.template = self.load_template_from_model()
         
-        self.tokenizer.chat_template = self.str_template(self.local_model_path / self.model_name)
+        # self.tokenizer.chat_template = self.str_template(self.local_model_path / self.model_name)
         
         self.clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-large-patch14", use_fast=True)
         self.vision_processor = VisionProcessor(self.clip_processor, self.tokenizer)
         
         self.vision_config = VisionConfig()
         
-    def str_template(self,model_path):
-        template_str = ""
-        with open(model_path / "chat_template.jinja", "r", encoding="utf-8") as f:
-            template_str = f.read()
-        return template_str
+    # def str_template(self,model_path):
+    #     template_str = ""
+    #     with open(model_path / "chat_template.jinja", "r", encoding="utf-8") as f:
+    #         template_str = f.read()
+    #     return template_str
         
-    def load_template_from_model(self):
-        model_path = self.local_model_path / self.model_name
-        template_loader = FileSystemLoader(searchpath=model_path)
-        envi = Environment(loader=template_loader)
-        template = envi.get_template("chat_template.jinja")
-        return template
+    # def load_template_from_model(self):
+    #     model_path = self.local_model_path / self.model_name
+    #     template_loader = FileSystemLoader(searchpath=model_path)
+    #     envi = Environment(loader=template_loader)
+    #     template = envi.get_template("chat_template.jinja")
+    #     return template
     
     def add_conversation(self):
         """Add conversation capability to the model."""
@@ -527,12 +536,13 @@ class CreateModel:
                 "stablelm": ["q_proj", "k_proj", "v_proj", "o_proj"]
             }
             target_modules = target_modules_map.get(model_type, ["q_proj", "k_proj", "v_proj", "o_proj"])
+            # target_modules = find_all_linear_names(self.model)
             print(f"Using target modules for {model_type}: {target_modules}")
             
             # Configure LoRA
             lora_config = LoraConfig(
-                r=16,  # Rank
-                lora_alpha=32,  # Alpha scaling
+                r=32,  # Rank
+                lora_alpha=64,  # Alpha scaling
                 target_modules=target_modules,
                 lora_dropout=0.05,
                 bias="none",
@@ -594,12 +604,13 @@ class CreateModel:
             "stablelm": ["q_proj", "k_proj", "v_proj", "o_proj"]
         }
         target_modules = target_modules_map.get(model_type, ["q_proj", "k_proj", "v_proj", "o_proj"])
+        # target_modules = find_all_linear_names(self.model)
         print(f"Using target modules for {model_type}: {target_modules}")
         
         # Configure LoRA
         lora_config = LoraConfig(
-            r=16,  # Rank
-            lora_alpha=32,  # Alpha scaling
+            r=32,  # Rank
+            lora_alpha=64,  # Alpha scaling
             target_modules=target_modules,
             lora_dropout=0.05,
             bias="none",
@@ -705,6 +716,7 @@ class CreateModel:
 #     return os.path.join(model_path, checkpoint_dirs[-1])
 
 # Load model and processor from demo_path
+
 def load_saved_model(model_path,checkpoint=False):
     target_modules_map = {
                 "gpt2": ["c_attn", "c_proj"],
@@ -756,12 +768,13 @@ def load_saved_model(model_path,checkpoint=False):
             model_type = lang_model.config.model_type.lower() if hasattr(lang_model.config, 'model_type') else ""
             
             target_modules = target_modules_map.get(model_type, ["q_proj", "k_proj", "v_proj", "o_proj"])
+            # target_modules = find_all_linear_names(lang_model)
             print(f"Using target modules for {model_type}: {target_modules}")
             
             # Configure LoRA
             lora_config = LoraConfig(
-                r=16,  # Rank
-                lora_alpha=32,  # Alpha scaling
+                r=32,  # Rank
+                lora_alpha=64,  # Alpha scaling
                 target_modules=target_modules,
                 lora_dropout=0.05,
                 bias="none",
@@ -795,11 +808,12 @@ def load_saved_model(model_path,checkpoint=False):
             model_type = base_model.config.model_type.lower() if hasattr(base_model.config, 'model_type') else ""
             
             target_modules = target_modules_map.get(model_type, ["q_proj", "k_proj", "v_proj", "o_proj"])
+            # target_modules = find_all_linear_names(base_model)
             print(f"Using target modules for {model_type}: {target_modules}")
 
             lora_config = LoraConfig(
-                r=16,  # Rank
-                lora_alpha=32,  # Alpha scaling
+                r=32,  # Rank
+                lora_alpha=64,  # Alpha scaling
                 target_modules=target_modules,
                 lora_dropout=0.05,
                 bias="none",
