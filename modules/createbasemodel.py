@@ -425,7 +425,7 @@ class CreateModel:
         self.model_path.mkdir(parents=True, exist_ok=True)
         
         # Load the original model and its config with more stable quantization
-        quantization_config = BitsAndBytesConfig(
+        self.quantization_config = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_compute_dtype=self.dtype,  # Use float32 for compute
             bnb_4bit_quant_type="fp4",  # Use fp4 instead of nf4 for more stability
@@ -438,7 +438,7 @@ class CreateModel:
             print(f"Loading model with stable quantization settings...")
             self.model = AutoModelForCausalLM.from_pretrained(
                 self.model_name,
-                quantization_config=quantization_config,
+                quantization_config=self.quantization_config,
                 device_map="auto",
                 torch_dtype=self.dtype,  # Use float32 instead of bfloat16
                 low_cpu_mem_usage=True,
@@ -490,12 +490,6 @@ class CreateModel:
         """Add conversation capability to the model."""
         try:
             # Configure quantization
-            bnb_config = BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_compute_dtype=self.dtype,
-                bnb_4bit_quant_type="fp4",
-                bnb_4bit_use_double_quant=False
-            )
             
             # Load base model with quantization
             if not isinstance(self.model, AutoModelForCausalLM):
@@ -504,7 +498,7 @@ class CreateModel:
                     self.model_name,
                     device_map="auto",
                     trust_remote_code=True,
-                    quantization_config=bnb_config,
+                    quantization_config=self.quantization_config,
                     torch_dtype=self.dtype
                 )
             
@@ -576,26 +570,8 @@ class CreateModel:
             raise
     
     def add_vision(self):
-        # Initialize models and processor with quantization
-        quantization_config = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_compute_dtype=self.dtype,
-            bnb_4bit_quant_type="nf4",
-            bnb_4bit_use_double_quant=True,
-            llm_int8_threshold=6.0,
-            llm_int8_has_fp16_weight=False,
-        )
-        
-        self.vision_model = CLIPVisionModel.from_pretrained(
-            "openai/clip-vit-large-patch14",
-            quantization_config=quantization_config,
-            device_map="auto",
-            torch_dtype=self.dtype,
-            low_cpu_mem_usage=True
-        )
-         # Prepare model for k-bit training
         self.model = prepare_model_for_kbit_training(self.model)
-        
+            
         # Get target modules based on model architecture
         model_type = self.model.config.model_type.lower() if hasattr(self.model.config, 'model_type') else ""
         target_modules_map = {
@@ -632,7 +608,14 @@ class CreateModel:
         
         # Get PEFT model
         self.model = get_peft_model(self.model, lora_config)
-
+        
+        self.vision_model = CLIPVisionModel.from_pretrained(
+            "openai/clip-vit-large-patch14",
+            quantization_config=self.quantization_config,
+            device_map="auto",
+            torch_dtype=self.dtype,
+            low_cpu_mem_usage=True
+        )
 
         self.vismodel = VisionModel(self.vision_config, self.vision_model, self.model)
         
@@ -723,6 +706,25 @@ class CreateModel:
 
 # Load model and processor from demo_path
 def load_saved_model(model_path,checkpoint=False):
+    target_modules_map = {
+                "gpt2": ["c_attn", "c_proj"],
+                "llama": ["q_proj", "k_proj", "v_proj", "o_proj"],
+                "mistral": ["q_proj", "k_proj", "v_proj", "o_proj"],
+                "opt": ["q_proj", "k_proj", "v_proj", "out_proj"],
+                "bloom": ["query_key_value", "dense"],
+                "t5": ["q", "k", "v", "o"],
+                "bert": ["query", "key", "value", "output.dense"],
+                "roberta": ["query", "key", "value", "output.dense"],
+                "gpt_neox": ["query_key_value", "dense"],
+                "falcon": ["query_key_value", "dense"],
+                "mpt": ["Wqkv", "out_proj"],
+                "baichuan": ["W_pack", "o_proj"],
+                "chatglm": ["query_key_value", "dense"],
+                "qwen": ["c_attn", "c_proj"],
+                "phi": ["Wqkv", "out_proj"],
+                "gemma": ["q_proj", "k_proj", "v_proj", "o_proj"],
+                "stablelm": ["q_proj", "k_proj", "v_proj", "o_proj"]
+            }
     variable = Variable()
     dtype = variable.DTYPE
     """Load a saved model and its processor."""    
@@ -748,6 +750,26 @@ def load_saved_model(model_path,checkpoint=False):
                   f"\nLocal checkpoint path: {local_checkpoint_path}")
             # Load components
             lang_model = AutoModelForCausalLM.from_pretrained(lang_model_path,torch_dtype=dtype)
+            lang_model = prepare_model_for_kbit_training(lang_model)
+            
+            # Get target modules based on model architecture
+            model_type = lang_model.config.model_type.lower() if hasattr(lang_model.config, 'model_type') else ""
+            
+            target_modules = target_modules_map.get(model_type, ["q_proj", "k_proj", "v_proj", "o_proj"])
+            print(f"Using target modules for {model_type}: {target_modules}")
+            
+            # Configure LoRA
+            lora_config = LoraConfig(
+                r=16,  # Rank
+                lora_alpha=32,  # Alpha scaling
+                target_modules=target_modules,
+                lora_dropout=0.05,
+                bias="none",
+                task_type="CAUSAL_LM"
+            )
+            
+            # Get PEFT model
+            lang_model = get_peft_model(lang_model, lora_config)
             vision_model = CLIPVisionModel.from_pretrained(vision_model_path)
             
             # Create model
@@ -767,6 +789,25 @@ def load_saved_model(model_path,checkpoint=False):
                 torch_dtype=dtype,
                 device_map=None
             )
+            base_model = prepare_model_for_kbit_training(base_model)
+            
+            # Get target modules based on model architecture
+            model_type = base_model.config.model_type.lower() if hasattr(base_model.config, 'model_type') else ""
+            
+            target_modules = target_modules_map.get(model_type, ["q_proj", "k_proj", "v_proj", "o_proj"])
+            print(f"Using target modules for {model_type}: {target_modules}")
+
+            lora_config = LoraConfig(
+                r=16,  # Rank
+                lora_alpha=32,  # Alpha scaling
+                target_modules=target_modules,
+                lora_dropout=0.05,
+                bias="none",
+                task_type="CAUSAL_LM"
+            )
+            
+            # Get PEFT model
+            base_model = get_peft_model(base_model, lora_config)
             
             # Create conversation model
             model = ConversationModel(config, base_model)

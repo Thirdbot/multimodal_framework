@@ -848,7 +848,7 @@ class ChatTemplate:
     
     def format_message(self, message):
         formatted_chat = self.template.render(messages=message)
-        print(f"Formatted chat message:{formatted_chat}")
+        # print(f"Formatted chat message:{formatted_chat}")
         return formatted_chat
     
     def prepare_dataset(self, dataset_name, dataset, max_length=1000,Tokenizing=False):
