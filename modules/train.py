@@ -45,7 +45,7 @@ class FinetuneModel:
         self.per_device_eval_batch_size = 1
         self.gradient_accumulation_steps = 1  # Reduced gradient accumulation
         self.learning_rate = 2e-4
-        self.num_train_epochs = 6
+        self.num_train_epochs = 1
         self.save_strategy = "best"
         self.training_config_path = self.variable.training_config_path
         
@@ -334,5 +334,9 @@ class FinetuneModel:
                         model, tokenizer = load_saved_model(self.vision_checkpoint,checkpoint=True)
                     else:
                         model, tokenizer = load_saved_model(model_path)
+                        
+                    for param in model.vision_adapter.parameters():
+                        param.requires_grad = True
+                        
                 print(f"{Fore.CYAN}Dataset loaded with {len(dataset)} records{Style.RESET_ALL}")
                 self.runtuning(model=model, tokenizer=tokenizer, dataset=dataset, modelname=modelname,task=model_task)
