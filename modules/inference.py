@@ -55,10 +55,10 @@ class InferenceManager:
             # Check if the model is multimodal
             if hasattr(config, "model_type") and config.model_type == "vision-model":
                 print("Detected multimodal model. Loading VisionModel...")
-                self.vision_model = CLIPVisionModel.from_pretrained(self.vision_path, torch_dtype=self.dtype)
+                # self.vision_model = CLIPVisionModel.from_pretrained(self.vision_path, torch_dtype=self.dtype)
                 self.vision_processor = CLIPProcessor.from_pretrained("openai/clip-vit-large-patch14", use_fast=True)
                 self.lang_model = AutoModelForCausalLM.from_pretrained(self.lang_path, torch_dtype=self.dtype)
-                self.model = VisionModel(config,self.vision_model, self.lang_model).to(self.device)
+                self.model = VisionModel(config, self.lang_model).to(self.device)
                 self.tokenizer = AutoTokenizer.from_pretrained(self.lang_path, use_fast=True)
             else:
                 print("Detected text-only model. Loading ConversationModel...")
