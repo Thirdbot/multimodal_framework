@@ -12,6 +12,15 @@ from peft import AutoPeftModelForCausalLM, LoraConfig, get_peft_model, prepare_m
 from jinja2 import Environment, FileSystemLoader
 from modules.variable import Variable
 
+def load_lora(r=32, lora_alpha=64):
+    return LoraConfig(
+        r=r,  # Rank
+        lora_alpha=lora_alpha,  # Alpha scaling
+        target_modules=None,
+        lora_dropout=0.05,
+        bias="none",
+        task_type="CAUSAL_LM"
+    )
 
 def find_all_linear_names(model):
     linear_names = []
@@ -547,15 +556,9 @@ class CreateModel:
             print(f"Using target modules for {model_type}: {target_modules}")
             
             # Configure LoRA
-            lora_config = LoraConfig(
-                r=128,  # Rank
-                lora_alpha=256,  # Alpha scaling
-                target_modules=target_modules,
-                lora_dropout=0.02,
-                bias="none",
-                task_type="CAUSAL_LM"
-            )
-            
+            lora_config = load_lora()
+            lora_config.target_modules = target_modules
+
             # Get PEFT model
             self.model = get_peft_model(self.model, lora_config)
             
@@ -568,7 +571,7 @@ class CreateModel:
             
             # Enable training mode and gradient checkpointing
             self.convomodel.train()
-            self.convomodel.gradient_checkpointing_enable()
+            # self.convomodel.gradient_checkpointing_enable()
             
             print(f"Successfully created conversation model with LoRA configuration")
             
@@ -615,14 +618,8 @@ class CreateModel:
         print(f"Using target modules for {model_type}: {target_modules}")
         
         # Configure LoRA
-        lora_config = LoraConfig(
-            r=128,  # Rank
-            lora_alpha=256,  # Alpha scaling
-            target_modules=target_modules,
-            lora_dropout=0.02,
-            bias="none",
-            task_type="CAUSAL_LM"
-        )
+        lora_config = load_lora()
+        lora_config.target_modules = target_modules
         
         # Get PEFT model
         self.model = get_peft_model(self.model, lora_config)
@@ -721,19 +718,6 @@ class CreateModel:
         except:
             print("Error:: Created Model not save.")
 
-# def find_checkpoint_folder(model_path):
-#     # Check for checkpoint folders in the model_path
-#     checkpoint_dirs = [d for d in os.listdir(model_path) if d.startswith("checkpoint-") and os.path.isdir(os.path.join(model_path, d))]
-#     if not checkpoint_dirs:
-#         return None
-#     # Sort directories by checkpoint number
-#     checkpoint_dirs.sort(key=lambda x: int(x.split("-")[-1]))
-#     print("using latest checkpoint:", checkpoint_dirs[-1])
-#     # Return the latest checkpoint directory
-#     return os.path.join(model_path, checkpoint_dirs[-1])
-
-# Load model and processor from demo_path
-
 def load_saved_model(model_path,checkpoint=False):
     target_modules_map = {
                 "gpt2": ["c_attn", "c_proj"],
@@ -790,14 +774,8 @@ def load_saved_model(model_path,checkpoint=False):
             print(f"Using target modules for {model_type}: {target_modules}")
             
             # # Configure LoRA
-            lora_config = LoraConfig(
-                r=128,  # Rank
-                lora_alpha=256,  # Alpha scaling
-                target_modules=target_modules,
-                lora_dropout=0.02,
-                bias="none",
-                task_type="CAUSAL_LM"
-            )
+            lora_config = load_lora()
+            lora_config.target_modules = target_modules
             
             # # Get PEFT model
             lang_model = get_peft_model(lang_model, lora_config)
@@ -809,13 +787,14 @@ def load_saved_model(model_path,checkpoint=False):
             # # Load processor
             # tokenizer = AutoTokenizer.from_pretrained(lang_model_path)
             config = VisionConfig()
-            # model = VisionModel(config)
-            model = VisionModel.from_pretrained(model_path, config=config)
-            model.vision_adapter.load_state_dict(torch.load(os.path.join(vision_adapter_path, "vision_adapter.pt")),strict=False)
+            model = VisionModel(config)
+            # model = VisionModel.from_pretrained(model_path, config=config)
+            model.vision_adapter.load_state_dict(torch.load(os.path.join(vision_adapter_path, "vision_adapter.pt")),strict=True)
             model.lang_model = lang_model
             tokenizer = AutoTokenizer.from_pretrained(lang_model_path)
             model.config.use_cache = False
             model.train()  # Ensure model is in training mode
+            model.gradient_checkpointing_enable()
             return model, tokenizer
         else:
             # For conversation models, use AutoModelForCausalLM
@@ -834,14 +813,9 @@ def load_saved_model(model_path,checkpoint=False):
             # target_modules = find_all_linear_names(base_model)
             print(f"Using target modules for {model_type}: {target_modules}")
 
-            lora_config = LoraConfig(
-                r=128,  # Rank
-                lora_alpha=256,  # Alpha scaling
-                target_modules=target_modules,
-                lora_dropout=0.02,
-                bias="none",
-                task_type="CAUSAL_LM"
-            )
+            lora_config = load_lora()
+            lora_config.target_modules = target_modules
+
             
             # Get PEFT model
             base_model = get_peft_model(base_model, lora_config)
@@ -851,7 +825,6 @@ def load_saved_model(model_path,checkpoint=False):
             model.config.use_cache = False
             model.train()  # Ensure model is in training mode
             model.gradient_checkpointing_enable()
-
             tokenizer = AutoTokenizer.from_pretrained(local_checkpoint_path)
 
             return model, tokenizer

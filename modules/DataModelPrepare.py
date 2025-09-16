@@ -129,7 +129,16 @@ class Manager:
             print(f"{Fore.RED}Error loading model {model_id}: {str(e)}{Style.RESET_ALL}")
             return None, None
     
-
+    def load_lora(self,r=32,lora_alpha=64):
+        return LoraConfig(
+                r=r,  # Rank
+                lora_alpha=lora_alpha,  # Alpha scaling
+                target_modules=None,
+                lora_dropout=0.05,
+                bias="none",
+                task_type="CAUSAL_LM"
+            )
+        
     def _load_from_scratch(self, model_id: str) -> Tuple[Optional[AutoModelForCausalLM], Optional[AutoTokenizer]]:
         model_path = self.variable.LocalModel_DIR / model_id
         try:
@@ -175,14 +184,8 @@ class Manager:
             model = prepare_model_for_kbit_training(model)
             
             # Configure LoRA
-            lora_config = LoraConfig(
-                r=128,  # Rank
-                lora_alpha=256,  # Alpha scaling
-                target_modules=target_modules,
-                lora_dropout=0.02,
-                bias="none",
-                task_type="CAUSAL_LM"
-            )
+            lora_config = self.load_lora()
+            lora_config.target_modules = target_modules
             
             # Get PEFT model
             model = get_peft_model(model, lora_config)

@@ -44,14 +44,10 @@ class FinetuneModel:
         self.per_device_train_batch_size = 1  # Reduced batch size
         self.per_device_eval_batch_size = 1
         self.gradient_accumulation_steps = 1  # Reduced gradient accumulation
-        self.learning_rate = 1e-7
-        self.num_train_epochs = 6
+        self.learning_rate = 2e-5
+        self.num_train_epochs = 1
         self.save_strategy = "best"
         self.training_config_path = self.variable.training_config_path
-        
-       
-        # Initialize paths and directories
-        self._setup_directories()
         
         # Initialize components
         self.device_map = "cuda:0" if torch.cuda.is_available() else "cpu"
@@ -76,15 +72,10 @@ class FinetuneModel:
         self.MODEL_LOCAL_DIR = self.variable.REPO_DIR
         
         self.dataset_formatted_dir = self.variable.DATASET_FORMATTED_DIR
-        
-
-    
-    def _setup_directories(self):
-        """Set up required directories."""        
+            
         self.CHECKPOINT_DIR = self.variable.CHECKPOINT_DIR
         
-        for directory in [self.CHECKPOINT_DIR]:
-            directory.mkdir(parents=True, exist_ok=True)
+        self.CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
     
     def train_args(self,task:str, modelname: str) -> TrainingArguments:
 
@@ -106,6 +97,7 @@ class FinetuneModel:
             num_train_epochs=self.num_train_epochs,
             weight_decay=0.01,
             save_strategy="steps",
+            metric_for_best_model="accuracy",
             save_steps=5,
             save_total_limit=1,
             logging_dir=str(output_dir),
@@ -341,7 +333,7 @@ class FinetuneModel:
                         model, tokenizer = load_saved_model(self.vision_checkpoint,checkpoint=True)
                     else:
                         model, tokenizer = load_saved_model(model_path)
-                        
+                
                     for param in model.vision_adapter.parameters():
                         param.requires_grad = True
                         
