@@ -45,7 +45,7 @@ class FinetuneModel:
         self.per_device_eval_batch_size = 1
         self.gradient_accumulation_steps = 1  # Reduced gradient accumulation
         self.learning_rate = 2e-4
-        self.num_train_epochs = 6
+        self.num_train_epochs = 2
         self.save_strategy = "best"
         self.training_config_path = self.variable.training_config_path
         
@@ -244,6 +244,7 @@ class FinetuneModel:
                 # Save the final model and adapter
                 trainer.save_model(str(model_save_path))
                 tokenizer.save_pretrained(str(model_save_path))
+                           
                 if hasattr(model, "lang_model"):
                     lang_model_path = model_save_path / "lang_model"
                     lang_model_path.mkdir(parents=True, exist_ok=True)
@@ -258,12 +259,18 @@ class FinetuneModel:
                     model.vision_model.save_pretrained(str(vision_model_path))
                     print(f"{Fore.GREEN}Vision model saved to: {vision_model_path}{Style.RESET_ALL}")
                 
-                if hasattr(model, "vision_processor"):
-                    vision_processor_path = model_save_path / "vision_processor"
-                    vision_processor_path.mkdir(parents=True, exist_ok=True)
-                    model.vision_processor.save_pretrained(str(vision_processor_path))
-                    print(f"{Fore.GREEN}Vision processor saved to: {vision_processor_path}{Style.RESET_ALL}")
+                # if hasattr(model, "vision_processor"):
+                #     vision_processor_path = model_save_path / "vision_processor"
+                #     vision_processor_path.mkdir(parents=True, exist_ok=True)
+                #     model.vision_processor.save_pretrained(str(vision_processor_path))
+                #     print(f"{Fore.GREEN}Vision processor saved to: {vision_processor_path}{Style.RESET_ALL}")
                 
+                if hasattr(model,'vision_adapter'):
+                    vision_adapter_path = model_save_path / "vision_adapter"
+                    vision_adapter_path.mkdir(parents=True, exist_ok=True)
+                    torch.save(model.vision_adapter.state_dict(), str(vision_adapter_path / "vision_adapter.pt"))
+                    print(f"{Fore.GREEN}Vision adapter saved to: {vision_adapter_path}{Style.RESET_ALL}")
+
             elif model_type == "conversation-model" or "ConversationModel" in model_type:
                 model_save_path = self.CHECKPOINT_DIR / 'text-generation' / modelname
                 model_save_path.mkdir(parents=True, exist_ok=True)
@@ -334,5 +341,9 @@ class FinetuneModel:
                         model, tokenizer = load_saved_model(self.vision_checkpoint,checkpoint=True)
                     else:
                         model, tokenizer = load_saved_model(model_path)
+                        
+                    for param in model.vision_adapter.parameters():
+                        param.requires_grad = True
+                        
                 print(f"{Fore.CYAN}Dataset loaded with {len(dataset)} records{Style.RESET_ALL}")
                 self.runtuning(model=model, tokenizer=tokenizer, dataset=dataset, modelname=modelname,task=model_task)

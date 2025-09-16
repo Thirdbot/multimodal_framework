@@ -15,7 +15,9 @@ from jinja2 import Template
 import re
 from modules.variable import Variable
 from peft import PeftModel, PeftConfig
-
+import requests
+from io import BytesIO
+from PIL import Image
 class InferenceManager:
 
     def __init__(self, model_path: str, max_new_tokens: int = 1000, temperature: float = 0.7, top_p: float = 0.9):
@@ -51,14 +53,18 @@ class InferenceManager:
             # Load the model configuration
             config = AutoConfig.from_pretrained(self.model_path)
             print(f"Loaded model configuration: {config.model_type}")
+            vision_adapter_path = Path(self.model_path) / "vision_adapter"
 
             # Check if the model is multimodal
             if hasattr(config, "model_type") and config.model_type == "vision-model":
                 print("Detected multimodal model. Loading VisionModel...")
-                self.vision_model = CLIPVisionModel.from_pretrained(self.vision_path, torch_dtype=self.dtype)
+                # self.vision_model = CLIPVisionModel.from_pretrained(self.vision_path, torch_dtype=self.dtype)
                 self.vision_processor = CLIPProcessor.from_pretrained("openai/clip-vit-large-patch14", use_fast=True)
                 self.lang_model = AutoModelForCausalLM.from_pretrained(self.lang_path, torch_dtype=self.dtype)
-                self.model = VisionModel(config,self.vision_model, self.lang_model).to(self.device)
+                self.model = VisionModel(config).to(self.device)
+                # self.model = VisionModel.from_pretrained(self.model_path, config=config)
+                self.model.lang_model = self.lang_model.to(self.device)
+                self.model.vision_adapter.load_state_dict(torch.load(vision_adapter_path / "vision_adapter.pt"))
                 self.tokenizer = AutoTokenizer.from_pretrained(self.lang_path, use_fast=True)
             else:
                 print("Detected text-only model. Loading ConversationModel...")
@@ -104,6 +110,14 @@ class InferenceManager:
 
         return formatted_chat
 
+    def load_images_url(self, image_path: str):
+        try:
+            url_content = requests.get(image_path).content
+            image = Image.open(BytesIO(url_content)).convert("RGB")
+            return image
+        except Exception as e:
+            print(f"Error loading image from {image_path}: {str(e)}")
+            return None
     def generate_response(self, user_input: str, image_path: str = None) -> str:
         try:
             # Define the messages
@@ -131,7 +145,7 @@ class InferenceManager:
 
             # Handle multimodal inputs if the model supports it
             if hasattr(self.model, "vision_model") and image_path:
-                image = load_image(image_path)
+                image = self.load_images_url(image_path)
                 pixel_values = self.vision_processor(images=image, return_tensors="pt")["pixel_values"].to(self.device)
                 inputs["pixel_values"] = pixel_values
 
