@@ -290,9 +290,9 @@ class Manager:
             #load model and dataset prepare for tuning
             for modelname,dict_dataset in list_model_data['model'].items():
 
-                model, tokenizer = self.load_model(modelname)
+                # model, tokenizer = self.load_model(modelname)
 
-                union_cols = None
+                union_cols = set()
                 saved_dataset = None
                 first_dataset = None
                 second_dataset = None
@@ -309,8 +309,53 @@ class Manager:
                     formatted_dataset_name = f"{dataset_name.replace('/', '_')}_formatted"
                     
                     if not (self.DATASET_FORMATTED_DIR / formatted_dataset_name).exists():
+                        
                         print(f"{Fore.CYAN}Formatting Dataset {dataset_name}{Style.RESET_ALL}")
                         try:
+                            
+                            #create if not exist sooner it exist
+                            #create model if not exist
+                            if "conversations" not in union_cols:
+                                #if model is not local and been createdd
+                                model_name_safe = modelname.replace("/","_")
+                                model_path = self.REGULAR_MODEL_DIR / model_name_safe
+
+                                if not (model_path).exists():
+                                    create_model = CreateModel(modelname, "conversation-model")
+                                    tokenizer = create_model.tokenizer
+                                    print(f"{Fore.GREEN}Creating conversation model...from {modelname}{Style.RESET_ALL}")
+                                    create_model.add_conversation()
+                                    create_model.save_regular_model()
+                                else:
+                                    create_model = CreateModel(modelname, "conversation-model")
+                                    tokenizer = create_model.tokenizer
+                                    # with open(self.chat_template_path / "chat_template_conversation.jinja", 'w') as f:
+                                    #     f.write(self.chat_template_saved)
+                                # else:
+                                #     #load every times as dataset goes
+                                #     # model,tokenizer = load_saved_model(model_path)
+                                    
+                            #temporal fix this modality
+                            if "image" not in union_cols or "images" not in union_cols:
+                                model_name_safe = modelname.replace("/","_")
+
+                                model_path = self.VISION_MODEL_DIR / model_name_safe                       
+
+                                if not (model_path).exists():
+                                    create_model = CreateModel(modelname, "vision-model")
+                                    tokenizer = create_model.vision_tokenizer
+                                    print(f"{Fore.GREEN}Creating vision model...from {modelname}{Style.RESET_ALL}")
+                                    create_model.add_vision()
+                                    create_model.save_vision_model()
+                                else:
+                                    create_model = CreateModel(modelname, "vision-model")
+                                    tokenizer = create_model.vision_tokenizer
+                                    # with open(self.chat_template_path / "chat_template_vision.jinja", 'w') as f:
+                                    #     f.write(self.chat_template_saved)
+                                # else:
+                                    #load every times as dataset goes
+                                    # model,tokenizer = load_saved_model(model_path)
+                                    
                             print(f"{Fore.CYAN}Loading dataset config: {dataset_name} {config.get(dataset_name, 'No config found')}{Style.RESET_ALL}")
                             
                             dataset = self.load_dataset(dataset_name, config.get(dataset_name, 'default'))
@@ -401,32 +446,6 @@ class Manager:
                         print(f"{Fore.GREEN}Formatted dataset already exists: {formatted_dataset_name}, loading...{Style.RESET_ALL}")
                         continue
                         
-                if "conversations" in union_cols:
-                    #if model is not local and been createdd
-                    model_name_safe = modelname.replace("/","_")
-                    model_path = self.REGULAR_MODEL_DIR / model_name_safe
-
-                    if not (model_path).exists():
-                        print(f"{Fore.GREEN}Creating conversation model...from {modelname}{Style.RESET_ALL}")
-                        create_model = CreateModel(modelname, "conversation-model")
-                        create_model.add_conversation()
-                        create_model.save_regular_model()
-                        with open(self.chat_template_path / "chat_template_conversation.jinja", 'w') as f:
-                            f.write(self.chat_template_saved)
-
-                #temporal fix this
-                if "image" in union_cols or "images" in union_cols:
-                    model_name_safe = modelname.replace("/","_")
-
-                    model_path = self.VISION_MODEL_DIR / model_name_safe                       
-
-                    if not (model_path).exists():
-                        print(f"{Fore.GREEN}Creating vision model...from {modelname}{Style.RESET_ALL}")
-                        create_model = CreateModel(modelname, "vision-model")
-                        create_model.add_vision()
-                        create_model.save_vision_model()
-                        with open(self.chat_template_path / "chat_template_vision.jinja", 'w') as f:
-                            f.write(self.chat_template_saved)
 
         
 

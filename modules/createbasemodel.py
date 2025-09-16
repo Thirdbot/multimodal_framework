@@ -489,12 +489,18 @@ class CreateModel:
             use_fast=True,
             trust_remote_code=True
         )
+        self.vision_tokenizer = AutoTokenizer.from_pretrained(
+            self.model_name,
+            use_fast=True,
+            trust_remote_code=True
+        )
+        self.vision_tokenizer.add_special_tokens({'additional_special_tokens': ['<image>', '</image>']})
         # self.template = self.load_template_from_model()
         
         # self.tokenizer.chat_template = self.str_template(self.local_model_path / self.model_name)
         
         self.clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-large-patch14", use_fast=True)
-        self.vision_processor = VisionProcessor(self.clip_processor, self.tokenizer)
+        self.vision_processor = VisionProcessor(self.clip_processor, self.vision_tokenizer)
         
         self.vision_config = VisionConfig()
         
@@ -528,6 +534,8 @@ class CreateModel:
                 )
             
             # Prepare model for k-bit training
+            self.model.tokenizer = self.tokenizer
+            self.model.resize_token_embeddings(len(self.tokenizer))
             self.model = prepare_model_for_kbit_training(self.model)
             
             # Get target modules based on model architecture
@@ -562,6 +570,7 @@ class CreateModel:
             # Get PEFT model
             self.model = get_peft_model(self.model, lora_config)
             
+            
             # Create conversation model
             self.convomodel = ConversationModel(self.original_config, self.model)
             
@@ -590,8 +599,9 @@ class CreateModel:
             raise
     
     def add_vision(self):
+        self.model.tokenizer = self.vision_tokenizer
+        self.model.resize_token_embeddings(len(self.vision_tokenizer))
         self.model = prepare_model_for_kbit_training(self.model)
-            
         # Get target modules based on model architecture
         model_type = self.model.config.model_type.lower() if hasattr(self.model.config, 'model_type') else ""
         target_modules_map = {
@@ -678,7 +688,7 @@ class CreateModel:
                 llm_int8_has_fp16_weight=False,
             )
             # Save tokenizer
-            self.tokenizer.save_pretrained(
+            self.vision_tokenizer.save_pretrained(
                 lang_model_path
             )
         
@@ -704,7 +714,11 @@ class CreateModel:
             #     os.path.join(self.model_path, "vision_processor"),
             #     safe_serialization=Trues
             # )
-            
+            # self.vision_processor.tokenizer.save_pretrained(
+            #     os.path.join(self.model_path, "vision_processor"),
+            #     safe_serialization=True
+            # )
+
             self.vismodel.save_pretrained(
                 os.path.join(self.model_path),
                 quantization_config=quantization_config,
@@ -752,7 +766,6 @@ def load_saved_model(model_path,checkpoint=False):
             hasattr(config, 'model_type') and config.model_type == "vision-model"
         )
         lang_model_path = os.path.join(model_path, "lang_model")
-        local_checkpoint_path = model_path
         vision_model_path = os.path.join(model_path, "vision_model")
         vision_adapter_path = os.path.join(model_path, "vision_adapter")
         
@@ -785,13 +798,12 @@ def load_saved_model(model_path,checkpoint=False):
             # model = VisionModel(config, vision_model, lang_model)
             
             # # Load processor
-            # tokenizer = AutoTokenizer.from_pretrained(lang_model_path)
+            tokenizer = AutoTokenizer.from_pretrained(lang_model_path)
             config = VisionConfig()
             model = VisionModel(config)
             # model = VisionModel.from_pretrained(model_path, config=config)
             model.vision_adapter.load_state_dict(torch.load(os.path.join(vision_adapter_path, "vision_adapter.pt")),strict=True)
             model.lang_model = lang_model
-            tokenizer = AutoTokenizer.from_pretrained(lang_model_path)
             model.config.use_cache = False
             model.train()  # Ensure model is in training mode
             model.gradient_checkpointing_enable()
@@ -800,7 +812,7 @@ def load_saved_model(model_path,checkpoint=False):
             # For conversation models, use AutoModelForCausalLM
             print("Loading conversation model...")
             base_model = AutoModelForCausalLM.from_pretrained(
-                local_checkpoint_path,
+                model_path,
                 torch_dtype=dtype,
                 device_map=None
             )
@@ -825,7 +837,7 @@ def load_saved_model(model_path,checkpoint=False):
             model.config.use_cache = False
             model.train()  # Ensure model is in training mode
             model.gradient_checkpointing_enable()
-            tokenizer = AutoTokenizer.from_pretrained(local_checkpoint_path)
+            tokenizer = AutoTokenizer.from_pretrained(model_path)
 
             return model, tokenizer
 
