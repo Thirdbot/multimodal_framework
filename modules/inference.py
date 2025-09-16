@@ -64,7 +64,7 @@ class InferenceManager:
                 self.model = VisionModel(config).to(self.device)
                 # self.model = VisionModel.from_pretrained(self.model_path, config=config)
                 self.model.lang_model = self.lang_model.to(self.device)
-                self.model.vision_adapter.load_state_dict(torch.load(vision_adapter_path / "vision_adapter.pt"))
+                self.model.vision_adapter.load_state_dict(torch.load(vision_adapter_path / "vision_adapter.pt"),strict=False)
                 self.tokenizer = AutoTokenizer.from_pretrained(self.lang_path, use_fast=True)
             else:
                 print("Detected text-only model. Loading ConversationModel...")

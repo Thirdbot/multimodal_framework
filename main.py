@@ -57,22 +57,22 @@ Ft.finetune_model()
 # model_path = Path(__file__).parent.absolute() / "repositories" / "models" / "Qwen" / "Qwen1.5-0.5B-Chat"
 model_path = Path(__file__).parent.absolute() / "checkpoints" / "text-vision-text-generation" / "Qwen_Qwen1.5-0.5B-Chat"
 # model_path = Path(__file__).parent.absolute() / "custom_models" / "conversation-model" / "Qwen_Qwen1.5-0.5B-Chat"
-# # model_path = Path(__file__).parent.absolute() / "custom_models" / "vision-model" / "Qwen_Qwen1.5-0.5B-Chat" / "lang_model"
-# inference_manager = InferenceManager(model_path)
+# model_path = Path(__file__).parent.absolute() / "custom_models" / "vision-model" / "Qwen_Qwen1.5-0.5B-Chat"
+inference_manager = InferenceManager(model_path)
 
-# # # # Example 1: Text-only inference
-# user_input = "who is spider gwen?"
+# # # Example 1: Text-only inference
+user_input = "who is spider gwen?"
 
-# # # # # # # Print the formatted chat
-# response = inference_manager.generate_response(user_input)
-# print(f"{response}")
+# # # # # # Print the formatted chat
+response = inference_manager.generate_response(user_input)
+print(f"{response}")
 
 # Example 2: Multimodal inference
 # model_path = Path(__file__).parent.absolute() / "custom_models" / "vision-model" / "Qwen_Qwen1.5-0.5B-Chat"
 inference_manager = InferenceManager(model_path)
 
-# image_path = "https://media.istockphoto.com/id/155439315/photo/passenger-airplane-flying-above-clouds-during-sunset.jpg?s=612x612&w=0&k=20&c=LJWadbs3B-jSGJBVy9s0f8gZMHi2NvWFXa3VJ2lFcL0="  # Replace with the actual path to your image
-image_path = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcThZJGbCDib3lJ4yPnBUSHgFawk_heC84NxGA&s"
-user_input = "who is in the image?"
+image_path = "https://media.istockphoto.com/id/155439315/photo/passenger-airplane-flying-above-clouds-during-sunset.jpg?s=612x612&w=0&k=20&c=LJWadbs3B-jSGJBVy9s0f8gZMHi2NvWFXa3VJ2lFcL0="  # Replace with the actual path to your image
+# image_path = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcThZJGbCDib3lJ4yPnBUSHgFawk_heC84NxGA&s"
+user_input = "can you show me link"
 response = inference_manager.generate_response(user_input, image_path=image_path)
 print(f"{response}")

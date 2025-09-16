@@ -548,10 +548,10 @@ class CreateModel:
             
             # Configure LoRA
             lora_config = LoraConfig(
-                r=32,  # Rank
-                lora_alpha=64,  # Alpha scaling
+                r=128,  # Rank
+                lora_alpha=256,  # Alpha scaling
                 target_modules=target_modules,
-                lora_dropout=0.05,
+                lora_dropout=0.02,
                 bias="none",
                 task_type="CAUSAL_LM"
             )
@@ -616,10 +616,10 @@ class CreateModel:
         
         # Configure LoRA
         lora_config = LoraConfig(
-            r=32,  # Rank
-            lora_alpha=64,  # Alpha scaling
+            r=128,  # Rank
+            lora_alpha=256,  # Alpha scaling
             target_modules=target_modules,
-            lora_dropout=0.05,
+            lora_dropout=0.02,
             bias="none",
             task_type="CAUSAL_LM"
         )
@@ -791,10 +791,10 @@ def load_saved_model(model_path,checkpoint=False):
             
             # # Configure LoRA
             lora_config = LoraConfig(
-                r=32,  # Rank
-                lora_alpha=64,  # Alpha scaling
+                r=128,  # Rank
+                lora_alpha=256,  # Alpha scaling
                 target_modules=target_modules,
-                lora_dropout=0.05,
+                lora_dropout=0.02,
                 bias="none",
                 task_type="CAUSAL_LM"
             )
@@ -811,7 +811,7 @@ def load_saved_model(model_path,checkpoint=False):
             config = VisionConfig()
             # model = VisionModel(config)
             model = VisionModel.from_pretrained(model_path, config=config)
-            model.vision_adapter.load_state_dict(torch.load(os.path.join(vision_adapter_path, "vision_adapter.pt")))
+            model.vision_adapter.load_state_dict(torch.load(os.path.join(vision_adapter_path, "vision_adapter.pt")),strict=False)
             model.lang_model = lang_model
             tokenizer = AutoTokenizer.from_pretrained(lang_model_path)
             model.config.use_cache = False
@@ -835,10 +835,10 @@ def load_saved_model(model_path,checkpoint=False):
             print(f"Using target modules for {model_type}: {target_modules}")
 
             lora_config = LoraConfig(
-                r=32,  # Rank
-                lora_alpha=64,  # Alpha scaling
+                r=128,  # Rank
+                lora_alpha=256,  # Alpha scaling
                 target_modules=target_modules,
-                lora_dropout=0.05,
+                lora_dropout=0.02,
                 bias="none",
                 task_type="CAUSAL_LM"
             )
@@ -850,7 +850,8 @@ def load_saved_model(model_path,checkpoint=False):
             model = ConversationModel(config, base_model)
             model.config.use_cache = False
             model.train()  # Ensure model is in training mode
-            
+            model.gradient_checkpointing_enable()
+
             tokenizer = AutoTokenizer.from_pretrained(local_checkpoint_path)
 
             return model, tokenizer
