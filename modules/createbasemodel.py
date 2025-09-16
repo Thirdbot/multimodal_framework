@@ -163,18 +163,25 @@ class VisionAdapter(torch.nn.Module):
 class VisionModel(PreTrainedModel):
     config_class = VisionConfig
 
-    def __init__(self, config, vision_model, lang_model):
+    def __init__(self,config, lang_model=None):
         super().__init__(config)
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.vision_model = vision_model.to(device)  # Move vision model to GPU
-        self.vision_adapter = VisionAdapter(1024, 1024).to(device)  # Move adapter to GPU
-        self.lang_model = lang_model.to(device)  # Move language model to GPU
+        self.variable = Variable()
+        self.vision_model = CLIPVisionModel.from_pretrained(
+            "openai/clip-vit-large-patch14"
+            )
+        self.vision_adapter = VisionAdapter(1024, 1024)
+        
+        # self.lang_model = lang_model.to(device)  # Move language model to GPU
+        self.lang_model = lang_model
+        
         self.supports_gradient_checkpointing = True
         self._is_gradient_checkpointing = False
+        
         self.config = config
 
-        embeddings = self.lang_model.get_input_embeddings()
-        self.text_adapter = torch.nn.Linear(embeddings.weight.shape[1], 1024).to(device)  # Move text adapter to GPU
+        # embeddings = self.lang_model.get_input_embeddings()
+        # self.text_adapter = torch.nn.Linear(embeddings.weight.shape[1], 1024).to(device)  # Move text adapter to GPU
 
     def forward(self, input_ids=None, attention_mask=None, pixel_values=None,
                 attend_to_img_tokens=True, labels=None, **kwargs):
@@ -620,15 +627,16 @@ class CreateModel:
         # Get PEFT model
         self.model = get_peft_model(self.model, lora_config)
         
-        self.vision_model = CLIPVisionModel.from_pretrained(
-            "openai/clip-vit-large-patch14",
-            quantization_config=self.quantization_config,
-            device_map="auto",
-            torch_dtype=self.dtype,
-            low_cpu_mem_usage=True
-        )
-
-        self.vismodel = VisionModel(self.vision_config, self.vision_model, self.model)
+        # self.vision_model = CLIPVisionModel.from_pretrained(
+        #     "openai/clip-vit-large-patch14",
+        #     quantization_config=self.quantization_config,
+        #     device_map="auto",
+        #     torch_dtype=self.dtype,
+        #     low_cpu_mem_usage=True
+        # )
+        config = VisionConfig()
+        self.vismodel = VisionModel(config)
+        self.vismodel.lang_model = self.model
         
     def save_regular_model(self):
         """Save the model and all its components with optimizations."""
@@ -658,9 +666,9 @@ class CreateModel:
         """Save the model and all its components with optimizations."""
         try:
             # Create necessary directories
-            vision_model_path = os.path.join(self.model_path, "vision_model")
+            # vision_model_path = os.path.join(self.model_path, "vision_model")
             lang_model_path = os.path.join(self.model_path, "lang_model")
-            os.makedirs(vision_model_path, exist_ok=True)
+            # os.makedirs(vision_model_path, exist_ok=True)
             os.makedirs(lang_model_path, exist_ok=True)
             
             # Save base model first with quantization
@@ -676,17 +684,15 @@ class CreateModel:
             self.tokenizer.save_pretrained(
                 lang_model_path
             )
-            
-
         
             
             # Save vision model with quantization
-            self.vision_model.save_pretrained(
-                vision_model_path,
-                quantization_config=quantization_config,
-                torch_dtype=self.dtype,
-                safe_serialization=True
-            )
+            # self.vision_model.save_pretrained(
+            #     vision_model_path,
+            #     quantization_config=quantization_config,
+            #     torch_dtype=self.dtype,
+            #     safe_serialization=True
+            # )
             
             # Save language model with quantization
             self.model.save_pretrained(
@@ -697,10 +703,21 @@ class CreateModel:
             )
             
             # Save vision processor
-            self.vision_processor.save_pretrained(
-                os.path.join(self.model_path, "vision_processor"),
+            # self.vision_processor.save_pretrained(
+            #     os.path.join(self.model_path, "vision_processor"),
+            #     safe_serialization=Trues
+            # )
+            
+            self.vismodel.save_pretrained(
+                os.path.join(self.model_path),
+                quantization_config=quantization_config,
+                torch_dtype=self.dtype,
                 safe_serialization=True
             )
+            
+            vision_adapter_path = os.path.join(self.model_path, "vision_adapter")
+            os.makedirs(vision_adapter_path, exist_ok=True)
+            torch.save(self.vismodel.vision_adapter.state_dict(), os.path.join(vision_adapter_path, "vision_adapter.pt"))
         except:
             print("Error:: Created Model not save.")
 
@@ -753,14 +770,15 @@ def load_saved_model(model_path,checkpoint=False):
         lang_model_path = os.path.join(model_path, "lang_model")
         local_checkpoint_path = model_path
         vision_model_path = os.path.join(model_path, "vision_model")
+        vision_adapter_path = os.path.join(model_path, "vision_adapter")
         
         
         if is_vision_model:
-            print("Loading vision model...")
-            print(f"Vision model path: {vision_model_path}"
-                  f"\nLanguage model path: {lang_model_path}"
-                  f"\nLocal checkpoint path: {local_checkpoint_path}")
-            # Load components
+            # print("Loading vision model...")
+            # print(f"Vision model path: {vision_model_path}"
+            #       f"\nLanguage model path: {lang_model_path}"
+            #       f"\nLocal checkpoint path: {local_checkpoint_path}")
+            # # Load components
             lang_model = AutoModelForCausalLM.from_pretrained(lang_model_path,torch_dtype=dtype)
             lang_model = prepare_model_for_kbit_training(lang_model)
             
@@ -771,7 +789,7 @@ def load_saved_model(model_path,checkpoint=False):
             # target_modules = find_all_linear_names(lang_model)
             print(f"Using target modules for {model_type}: {target_modules}")
             
-            # Configure LoRA
+            # # Configure LoRA
             lora_config = LoraConfig(
                 r=32,  # Rank
                 lora_alpha=64,  # Alpha scaling
@@ -781,16 +799,21 @@ def load_saved_model(model_path,checkpoint=False):
                 task_type="CAUSAL_LM"
             )
             
-            # Get PEFT model
+            # # Get PEFT model
             lang_model = get_peft_model(lang_model, lora_config)
-            vision_model = CLIPVisionModel.from_pretrained(vision_model_path)
+            # vision_model = CLIPVisionModel.from_pretrained(vision_model_path)
             
-            # Create model
-            model = VisionModel(config, vision_model, lang_model)
+            # # Create model
+            # model = VisionModel(config, vision_model, lang_model)
             
-            # Load processor
+            # # Load processor
+            # tokenizer = AutoTokenizer.from_pretrained(lang_model_path)
+            config = VisionConfig()
+            # model = VisionModel(config)
+            model = VisionModel.from_pretrained(model_path, config=config)
+            model.vision_adapter.load_state_dict(torch.load(os.path.join(vision_adapter_path, "vision_adapter.pt")))
+            model.lang_model = lang_model
             tokenizer = AutoTokenizer.from_pretrained(lang_model_path)
-            
             model.config.use_cache = False
             model.train()  # Ensure model is in training mode
             return model, tokenizer
@@ -830,7 +853,7 @@ def load_saved_model(model_path,checkpoint=False):
             
             tokenizer = AutoTokenizer.from_pretrained(local_checkpoint_path)
 
-        return model, tokenizer
+            return model, tokenizer
 
         
     except Exception as e:

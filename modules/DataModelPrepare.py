@@ -398,32 +398,32 @@ class Manager:
                         print(f"{Fore.GREEN}Formatted dataset already exists: {formatted_dataset_name}, loading...{Style.RESET_ALL}")
                         continue
                         
-            if "conversations" in union_cols:
-                #if model is not local and been createdd
-                model_name_safe = modelname.replace("/","_")
-                model_path = self.REGULAR_MODEL_DIR / model_name_safe
+                if "conversations" in union_cols:
+                    #if model is not local and been createdd
+                    model_name_safe = modelname.replace("/","_")
+                    model_path = self.REGULAR_MODEL_DIR / model_name_safe
 
-                if not (model_path).exists():
-                    print(f"{Fore.GREEN}Creating conversation model...from {modelname}{Style.RESET_ALL}")
-                    create_model = CreateModel(modelname, "conversation-model")
-                    create_model.add_conversation()
-                    create_model.save_regular_model()
-                    with open(self.chat_template_path / "chat_template_conversation.jinja", 'w') as f:
-                        f.write(self.chat_template_saved)
+                    if not (model_path).exists():
+                        print(f"{Fore.GREEN}Creating conversation model...from {modelname}{Style.RESET_ALL}")
+                        create_model = CreateModel(modelname, "conversation-model")
+                        create_model.add_conversation()
+                        create_model.save_regular_model()
+                        with open(self.chat_template_path / "chat_template_conversation.jinja", 'w') as f:
+                            f.write(self.chat_template_saved)
 
-            #temporal fix this
-            if "image" in union_cols or "images" in union_cols:
-                model_name_safe = modelname.replace("/","_")
+                #temporal fix this
+                if "image" in union_cols or "images" in union_cols:
+                    model_name_safe = modelname.replace("/","_")
 
-                model_path = self.VISION_MODEL_DIR / model_name_safe                       
+                    model_path = self.VISION_MODEL_DIR / model_name_safe                       
 
-                if not (model_path).exists():
-                    print(f"{Fore.GREEN}Creating vision model...from {modelname}{Style.RESET_ALL}")
-                    create_model = CreateModel(modelname, "vision-model")
-                    create_model.add_vision()
-                    create_model.save_vision_model()
-                    with open(self.chat_template_path / "chat_template_vision.jinja", 'w') as f:
-                        f.write(self.chat_template_saved)
+                    if not (model_path).exists():
+                        print(f"{Fore.GREEN}Creating vision model...from {modelname}{Style.RESET_ALL}")
+                        create_model = CreateModel(modelname, "vision-model")
+                        create_model.add_vision()
+                        create_model.save_vision_model()
+                        with open(self.chat_template_path / "chat_template_vision.jinja", 'w') as f:
+                            f.write(self.chat_template_saved)
 
         
 
