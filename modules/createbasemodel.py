@@ -163,7 +163,7 @@ class VisionAdapter(torch.nn.Module):
 class VisionModel(PreTrainedModel):
     config_class = VisionConfig
 
-    def __init__(self,config, lang_model):
+    def __init__(self,config, lang_model=None):
         super().__init__(config)
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.variable = Variable()
@@ -172,7 +172,8 @@ class VisionModel(PreTrainedModel):
             )
         self.vision_adapter = VisionAdapter(1024, 1024)
         
-        self.lang_model = lang_model.to(device)  # Move language model to GPU
+        # self.lang_model = lang_model.to(device)  # Move language model to GPU
+        self.lang_model = lang_model
         
         self.supports_gradient_checkpointing = True
         self._is_gradient_checkpointing = False
@@ -634,7 +635,8 @@ class CreateModel:
         #     low_cpu_mem_usage=True
         # )
         config = VisionConfig()
-        self.vismodel = VisionModel(config,self.model)
+        self.vismodel = VisionModel(config)
+        self.vismodel.lang_model = self.model
         
     def save_regular_model(self):
         """Save the model and all its components with optimizations."""
@@ -682,8 +684,6 @@ class CreateModel:
             self.tokenizer.save_pretrained(
                 lang_model_path
             )
-            
-
         
             
             # Save vision model with quantization
@@ -705,7 +705,7 @@ class CreateModel:
             # Save vision processor
             # self.vision_processor.save_pretrained(
             #     os.path.join(self.model_path, "vision_processor"),
-            #     safe_serialization=True
+            #     safe_serialization=Trues
             # )
             
             self.vismodel.save_pretrained(
@@ -714,6 +714,10 @@ class CreateModel:
                 torch_dtype=self.dtype,
                 safe_serialization=True
             )
+            
+            vision_adapter_path = os.path.join(self.model_path, "vision_adapter")
+            os.makedirs(vision_adapter_path, exist_ok=True)
+            torch.save(self.vismodel.vision_adapter.state_dict(), os.path.join(vision_adapter_path, "vision_adapter.pt"))
         except:
             print("Error:: Created Model not save.")
 
@@ -766,6 +770,7 @@ def load_saved_model(model_path,checkpoint=False):
         lang_model_path = os.path.join(model_path, "lang_model")
         local_checkpoint_path = model_path
         vision_model_path = os.path.join(model_path, "vision_model")
+        vision_adapter_path = os.path.join(model_path, "vision_adapter")
         
         
         if is_vision_model:
@@ -804,7 +809,10 @@ def load_saved_model(model_path,checkpoint=False):
             # # Load processor
             # tokenizer = AutoTokenizer.from_pretrained(lang_model_path)
             config = VisionConfig()
-            model = VisionModel(config, lang_model)
+            # model = VisionModel(config)
+            model = VisionModel.from_pretrained(model_path, config=config)
+            model.vision_adapter.load_state_dict(torch.load(os.path.join(vision_adapter_path, "vision_adapter.pt")))
+            model.lang_model = lang_model
             tokenizer = AutoTokenizer.from_pretrained(lang_model_path)
             model.config.use_cache = False
             model.train()  # Ensure model is in training mode
