@@ -71,9 +71,9 @@ class InferenceManager:
                 base_model = AutoModelForCausalLM.from_pretrained(
                     self.model_path,
                     torch_dtype=self.dtype,
-                    device_map="auto"
                 )
-                self.model = ConversationModel(config, base_model).to(self.device)
+                self.model = ConversationModel(config).to(self.device)
+                self.model.lang_model = base_model.to(self.device)
                 self.tokenizer = AutoTokenizer.from_pretrained(self.model_path, use_fast=True)
 
             # Load the tokenizer
@@ -134,8 +134,6 @@ class InferenceManager:
             # print(f"Formatted Prompt:\n{prompt}\n{'-'*50}")
             # Prepare inputs for the model
             inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
-
-            # model_dtype = next(self.model.parameters()).dtype
 
             # For attention_mask and pixel_values (if present)
             if "attention_mask" in inputs:

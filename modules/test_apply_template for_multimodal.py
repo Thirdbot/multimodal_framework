@@ -16,29 +16,6 @@ from io import BytesIO
 import base64
 
 
-# model_path = Path(__file__).parent.parent.absolute() / "models" /"text-generation"/ "kyutai_helium-1-2b"
-# print(f"Loading model from :{model_path}")
-
-# model_name = "llava-hf/llava-onevision-qwen2-0.5b-si-hf"
-# model = AutoModelForImageTextToText.from_pretrained(model_name)
-# tokenizer = AutoTokenizer.from_pretrained(model_name)
-# processor = AutoProcessor.from_pretrained(model_name)
-
-# # Print model configuration and information
-# print("\nModel Information:")
-# print(f"\t{model}")
-# print("\nTokenizer Information:") 
-# print(f"Tokenizer Type: {type(tokenizer).__name__}")
-# print(f"Vocabulary Size: {tokenizer.vocab_size}")
-# print(f"Model Max Length: {tokenizer.model_max_length}")
-# print(f"Padding Token: {tokenizer.pad_token}")
-# print(f"UNK Token: {tokenizer.unk_token}")
-
-# print("\nProcessor Information:")
-# print(f"Processor Type: {type(processor).__name__}")
-# print(f"Processor Config: {processor.config if hasattr(processor, 'config') else 'No config attribute'}")
-
-
 class VisionProcessor(ProcessorMixin):
     attributes = ['image_processor','tokenizer']
     

@@ -270,8 +270,6 @@ class Manager:
         
         datamodel_file = datamodel_file.as_posix()
         
-        self.training_config_path.touch(exist_ok=True)
-        
         
         try:
             with open(datamodel_file, 'r') as f:
@@ -329,11 +327,7 @@ class Manager:
                                 else:
                                     create_model = CreateModel(modelname, "conversation-model")
                                     tokenizer = create_model.tokenizer
-                                    # with open(self.chat_template_path / "chat_template_conversation.jinja", 'w') as f:
-                                    #     f.write(self.chat_template_saved)
-                                # else:
-                                #     #load every times as dataset goes
-                                #     # model,tokenizer = load_saved_model(model_path)
+                        
                                     
                             #temporal fix this modality
                             if "image" not in union_cols or "images" not in union_cols:
@@ -350,11 +344,7 @@ class Manager:
                                 else:
                                     create_model = CreateModel(modelname, "vision-model")
                                     tokenizer = create_model.vision_tokenizer
-                                    # with open(self.chat_template_path / "chat_template_vision.jinja", 'w') as f:
-                                    #     f.write(self.chat_template_saved)
-                                # else:
-                                    #load every times as dataset goes
-                                    # model,tokenizer = load_saved_model(model_path)
+                                  
                                     
                             print(f"{Fore.CYAN}Loading dataset config: {dataset_name} {config.get(dataset_name, 'No config found')}{Style.RESET_ALL}")
                             
@@ -450,7 +440,7 @@ class Manager:
         
 
                    
-
+            self.training_config_path.touch(exist_ok=True)
             with open(self.training_config_path, 'w') as f:
                 json.dump(model_training_data, f, indent=4)
             

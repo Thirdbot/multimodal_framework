@@ -8,7 +8,7 @@ from pathlib import Path
 import json
 from transformers.image_utils import load_image
 from transformers import BitsAndBytesConfig
-from peft import AutoPeftModelForCausalLM, LoraConfig, get_peft_model, prepare_model_for_kbit_training
+from peft import AutoPeftModelForCausalLM, LoraConfig, get_peft_model, prepare_model_for_kbit_training,PeftConfig
 from jinja2 import Environment, FileSystemLoader
 from modules.variable import Variable
 
@@ -45,61 +45,33 @@ class VisionConfig(PretrainedConfig):
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        # self.lang_embed_dim = lang_embed_dim
-        # self.clip_dim = clip_dim
+
 
 # Model classes
 class ConversationModel(PreTrainedModel):
     config_class = ConversationConfig
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    def __init__(self, config, base_model):
+    def __init__(self, config):
         super().__init__(config)
-        self.model = base_model.to(self.device)  # Move base model to GPU
+        self.lang_model = None
         self.config = config
         
         # Copy PEFT attributes from base model
-        if hasattr(base_model, 'peft_config'):
-            self.peft_config = base_model.peft_config
-        if hasattr(base_model, 'active_adapter'):
-            self.active_adapter = base_model.active_adapter
-        if hasattr(base_model, 'base_model'):
-            self.base_model = base_model.base_model
+        if hasattr(self.lang_model, 'peft_config'):
+            self.peft_config = self.lang_model.peft_config
+        if hasattr(self.lang_model, 'active_adapter'):
+            self.active_adapter = self.lang_model.active_adapter
+        if hasattr(self.lang_model, 'base_model'):
+            self.base_model = self.lang_model.base_model
         
         # Enable gradient checkpointing for memory efficiency
         self.supports_gradient_checkpointing = True
         self._is_gradient_checkpointing = False
     
-    def get_target_modules(self):
-        if hasattr(self.model, 'get_target_modules'):
-            return self.model.get_target_modules()
-            
-        model_type = self.config.model_type.lower() if hasattr(self.config, 'model_type') else ""
-        
-        target_modules_map = {
-            "gpt2": ["c_attn", "c_proj"],
-            "llama": ["q_proj", "k_proj", "v_proj", "o_proj"],
-            "mistral": ["q_proj", "k_proj", "v_proj", "o_proj"],
-            "opt": ["q_proj", "k_proj", "v_proj", "out_proj"],
-            "bloom": ["query_key_value", "dense"],
-            "t5": ["q", "k", "v", "o"],
-            "bert": ["query", "key", "value", "output.dense"],
-            "roberta": ["query", "key", "value", "output.dense"],
-            "gpt_neox": ["query_key_value", "dense"],
-            "falcon": ["query_key_value", "dense"],
-            "mpt": ["Wqkv", "out_proj"],
-            "baichuan": ["W_pack", "o_proj"],
-            "chatglm": ["query_key_value", "dense"],
-            "qwen": ["c_attn", "c_proj"],
-            "phi": ["Wqkv", "out_proj"],
-            "gemma": ["q_proj", "k_proj", "v_proj", "o_proj"],
-            "stablelm": ["q_proj", "k_proj", "v_proj", "o_proj"]
-        }
-        
-        return target_modules_map.get(model_type, ["q_proj", "k_proj", "v_proj", "o_proj"])
     
     def forward(self, input_ids=None, attention_mask=None, labels=None, **kwargs):
         """Forward pass for conversation model."""
-        outputs = self.model(
+        outputs = self.lang_model(
             input_ids=input_ids.to(self.device),  # Move input_ids to GPU
             attention_mask=attention_mask.to(self.device),  # Move attention_mask to GPU
             labels=labels.to(self.device) if labels is not None else None,  # Move labels to GPU
@@ -108,7 +80,7 @@ class ConversationModel(PreTrainedModel):
         return outputs
     
     def generate(self, *args, **kwargs):
-        return self.model.generate(*args, **kwargs)
+        return self.lang_model.generate(*args, **kwargs)
     
     @property
     def is_gradient_checkpointing(self) -> bool:
@@ -122,14 +94,14 @@ class ConversationModel(PreTrainedModel):
         
     def gradient_checkpointing_enable(self, gradient_checkpointing_kwargs=None):
         """Enable gradient checkpointing for the model."""
-        if hasattr(self.model, "gradient_checkpointing_enable"):
-            self.model.gradient_checkpointing_enable(gradient_checkpointing_kwargs=gradient_checkpointing_kwargs)
+        if hasattr(self.lang_model, "gradient_checkpointing_enable"):
+            self.lang_model.gradient_checkpointing_enable(gradient_checkpointing_kwargs=gradient_checkpointing_kwargs)
         self.is_gradient_checkpointing = True
         
     def gradient_checkpointing_disable(self):
         """Disable gradient checkpointing for the model."""
-        if hasattr(self.model, "gradient_checkpointing_disable"):
-            self.model.gradient_checkpointing_disable()
+        if hasattr(self.lang_model, "gradient_checkpointing_disable"):
+            self.lang_model.gradient_checkpointing_disable()
         self.is_gradient_checkpointing = False
         
     def _set_gradient_checkpointing(self, module, value=False):
@@ -139,14 +111,14 @@ class ConversationModel(PreTrainedModel):
             
     def enable_input_require_grads(self):
         """Enable input gradients - required for gradient checkpointing."""
-        if hasattr(self.model, "enable_input_require_grads"):
-            self.model.enable_input_require_grads()
-            
+        if hasattr(self.lang_model, "enable_input_require_grads"):
+            self.lang_model.enable_input_require_grads()
+
     def save_pretrained(self, save_directory, **kwargs):
         """Save the model."""
         # Save PEFT configuration if it exists
-        if hasattr(self.model, 'peft_config'):
-            self.model.save_pretrained(save_directory, **kwargs)
+        if hasattr(self.lang_model, 'peft_config'):
+            self.lang_model.save_pretrained(save_directory, **kwargs)
         else:
             super().save_pretrained(save_directory, **kwargs)
 
@@ -459,29 +431,8 @@ class CreateModel:
             llm_int8_has_fp16_weight=False,
         )
         
-        try:
-            print(f"Loading model with stable quantization settings...")
-            self.model = AutoModelForCausalLM.from_pretrained(
-                self.model_name,
-                quantization_config=self.quantization_config,
-                device_map="auto",
-                torch_dtype=self.dtype,  # Use float32 instead of bfloat16
-                low_cpu_mem_usage=True,
-                trust_remote_code=True
-            )
-            print(f"Model loaded successfully")
-        except Exception as e:
-            print(f"Error loading model with quantization: {str(e)}")
-            print(f"Attempting to load without quantization...")
-            self.model = AutoModelForCausalLM.from_pretrained(
-                self.model_name,
-                device_map="auto",
-                torch_dtype=self.dtype,
-                low_cpu_mem_usage=True,
-                trust_remote_code=True
-            )
         
-        self.original_config = ConversationConfig()
+        
         
         # First load the tokenizer to get the correct vocab size
         self.tokenizer = AutoTokenizer.from_pretrained(
@@ -503,35 +454,39 @@ class CreateModel:
         self.vision_processor = VisionProcessor(self.clip_processor, self.vision_tokenizer)
         
         self.vision_config = VisionConfig()
-        
-    # def str_template(self,model_path):
-    #     template_str = ""
-    #     with open(model_path / "chat_template.jinja", "r", encoding="utf-8") as f:
-    #         template_str = f.read()
-    #     return template_str
-        
-    # def load_template_from_model(self):
-    #     model_path = self.local_model_path / self.model_name
-    #     template_loader = FileSystemLoader(searchpath=model_path)
-    #     envi = Environment(loader=template_loader)
-    #     template = envi.get_template("chat_template.jinja")
-    #     return template
+       
+        self.original_config = ConversationConfig()
+        self.original_config.hidden_size = 4096
+        self.original_config.num_attention_heads = 32
+        self.original_config.num_hidden_layers = 48
+        self.original_config.dropout = 0.1
+
+        try:
+            print(f"Loading model with stable quantization settings...")
+            self.model = AutoModelForCausalLM.from_pretrained(
+                self.model_name,
+                quantization_config=self.quantization_config,
+                device_map="auto",
+                torch_dtype=self.dtype,  # Use float32 instead of bfloat16
+                low_cpu_mem_usage=True,
+                trust_remote_code=True
+            )
+            print(f"Model loaded successfully")
+        except Exception as e:
+            print(f"Error loading model with quantization: {str(e)}")
+            print(f"Attempting to load without quantization...")
+            self.model = AutoModelForCausalLM.from_pretrained(
+                self.model_name,
+                device_map="auto",
+                torch_dtype=self.dtype,
+                low_cpu_mem_usage=True,
+                trust_remote_code=True
+            )
+    
     
     def add_conversation(self):
         """Add conversation capability to the model."""
         try:
-            # Configure quantization
-            
-            # Load base model with quantization
-            if not isinstance(self.model, AutoModelForCausalLM):
-                print(f"Converting model to AutoModelForCausalLM")
-                self.model = AutoModelForCausalLM.from_pretrained(
-                    self.model_name,
-                    device_map="auto",
-                    trust_remote_code=True,
-                    quantization_config=self.quantization_config,
-                    torch_dtype=self.dtype
-                )
             
             # Prepare model for k-bit training
             self.model.tokenizer = self.tokenizer
@@ -565,14 +520,17 @@ class CreateModel:
             
             # Configure LoRA
             lora_config = load_lora()
-            lora_config.target_modules = target_modules
+            lora_config.target_modules = list(target_modules)
 
             # Get PEFT model
             self.model = get_peft_model(self.model, lora_config)
             
+
+            
             
             # Create conversation model
-            self.convomodel = ConversationModel(self.original_config, self.model)
+            self.convomodel = ConversationModel(self.original_config)
+            self.convomodel.lang_model = self.model
             
             # Disable caching for gradient checkpointing
             self.model.config.use_cache = False
@@ -629,7 +587,7 @@ class CreateModel:
         
         # Configure LoRA
         lora_config = load_lora()
-        lora_config.target_modules = target_modules
+        lora_config.target_modules = list(target_modules)
         
         # Get PEFT model
         self.model = get_peft_model(self.model, lora_config)
@@ -641,8 +599,7 @@ class CreateModel:
         #     torch_dtype=self.dtype,
         #     low_cpu_mem_usage=True
         # )
-        config = VisionConfig()
-        self.vismodel = VisionModel(config)
+        self.vismodel = VisionModel(self.vision_config)
         self.vismodel.lang_model = self.model
         
     def save_regular_model(self):
@@ -650,15 +607,19 @@ class CreateModel:
         try:
             # Create necessary directories
             os.makedirs(self.model_path, exist_ok=True)
+            lang_model_path = os.path.join(self.model_path, "lang_model")
+            os.makedirs(lang_model_path, exist_ok=True)
             
             # Save the model with safe serialization
             self.convomodel.save_pretrained(
                 self.model_path,
                 safe_serialization=True
             )
+            self.model.save_pretrained(lang_model_path)
             
             # Save tokenizer
             self.tokenizer.save_pretrained(self.model_path)
+            self.tokenizer.save_vocabulary(lang_model_path)
             
             # Save config
             self.original_config.save_pretrained(self.model_path)
@@ -692,15 +653,7 @@ class CreateModel:
                 lang_model_path
             )
         
-            
-            # Save vision model with quantization
-            # self.vision_model.save_pretrained(
-            #     vision_model_path,
-            #     quantization_config=quantization_config,
-            #     torch_dtype=self.dtype,
-            #     safe_serialization=True
-            # )
-            
+    
             # Save language model with quantization
             self.model.save_pretrained(
                 lang_model_path,
@@ -708,17 +661,7 @@ class CreateModel:
                 torch_dtype=self.dtype,
                 safe_serialization=True
             )
-            
-            # Save vision processor
-            # self.vision_processor.save_pretrained(
-            #     os.path.join(self.model_path, "vision_processor"),
-            #     safe_serialization=Trues
-            # )
-            # self.vision_processor.tokenizer.save_pretrained(
-            #     os.path.join(self.model_path, "vision_processor"),
-            #     safe_serialization=True
-            # )
-
+      
             self.vismodel.save_pretrained(
                 os.path.join(self.model_path),
                 quantization_config=quantization_config,
@@ -734,30 +677,35 @@ class CreateModel:
 
 def load_saved_model(model_path,checkpoint=False):
     target_modules_map = {
-                "gpt2": ["c_attn", "c_proj"],
-                "llama": ["q_proj", "k_proj", "v_proj", "o_proj"],
-                "mistral": ["q_proj", "k_proj", "v_proj", "o_proj"],
-                "opt": ["q_proj", "k_proj", "v_proj", "out_proj"],
-                "bloom": ["query_key_value", "dense"],
-                "t5": ["q", "k", "v", "o"],
-                "bert": ["query", "key", "value", "output.dense"],
-                "roberta": ["query", "key", "value", "output.dense"],
-                "gpt_neox": ["query_key_value", "dense"],
-                "falcon": ["query_key_value", "dense"],
-                "mpt": ["Wqkv", "out_proj"],
-                "baichuan": ["W_pack", "o_proj"],
-                "chatglm": ["query_key_value", "dense"],
-                "qwen": ["c_attn", "c_proj"],
-                "phi": ["Wqkv", "out_proj"],
-                "gemma": ["q_proj", "k_proj", "v_proj", "o_proj"],
-                "stablelm": ["q_proj", "k_proj", "v_proj", "o_proj"]
-            }
+        "gpt2": ["c_attn", "c_proj"],
+        "llama": ["q_proj", "k_proj", "v_proj", "o_proj"],
+        "mistral": ["q_proj", "k_proj", "v_proj", "o_proj"],
+        "opt": ["q_proj", "k_proj", "v_proj", "out_proj"],
+        "bloom": ["query_key_value", "dense"],
+        "t5": ["q", "k", "v", "o"],
+        "bert": ["query", "key", "value", "output.dense"],
+        "roberta": ["query", "key", "value", "output.dense"],
+        "gpt_neox": ["query_key_value", "dense"],
+        "falcon": ["query_key_value", "dense"],
+        "mpt": ["Wqkv", "out_proj"],
+        "baichuan": ["W_pack", "o_proj"],
+        "chatglm": ["query_key_value", "dense"],
+        "qwen": ["c_attn", "c_proj"],
+        "phi": ["Wqkv", "out_proj"],
+        "gemma": ["q_proj", "k_proj", "v_proj", "o_proj"],
+        "stablelm": ["q_proj", "k_proj", "v_proj", "o_proj"]
+    }
     variable = Variable()
     dtype = variable.DTYPE
     """Load a saved model and its processor."""    
     try:
         # Load the config
         config = AutoConfig.from_pretrained(model_path)
+        config.hidden_size = 1028
+        config.num_attention_heads = 6
+        config.num_hidden_layers = 1
+        config.dropout = 0.1        
+        
         print(f"Loaded config with model type: {config.model_type}")
         print(f"Model architecture: {config.architectures}")
         
@@ -766,7 +714,6 @@ def load_saved_model(model_path,checkpoint=False):
             hasattr(config, 'model_type') and config.model_type == "vision-model"
         )
         lang_model_path = os.path.join(model_path, "lang_model")
-        vision_model_path = os.path.join(model_path, "vision_model")
         vision_adapter_path = os.path.join(model_path, "vision_adapter")
         
         
@@ -776,7 +723,18 @@ def load_saved_model(model_path,checkpoint=False):
             #       f"\nLanguage model path: {lang_model_path}"
             #       f"\nLocal checkpoint path: {local_checkpoint_path}")
             # # Load components
-            lang_model = AutoModelForCausalLM.from_pretrained(lang_model_path,torch_dtype=dtype)
+            config = PeftConfig.from_pretrained(lang_model_path)
+            config.target_modules = list(config.target_modules)  
+            config.inference_mode = False
+   
+                    
+            lang_model = AutoModelForCausalLM.from_pretrained(
+                pretrained_model_name_or_path=lang_model_path,
+                config=config,
+                torch_dtype=dtype,
+                device_map=None
+            )
+
             lang_model = prepare_model_for_kbit_training(lang_model)
             
             # Get target modules based on model architecture
@@ -788,7 +746,7 @@ def load_saved_model(model_path,checkpoint=False):
             
             # # Configure LoRA
             lora_config = load_lora()
-            lora_config.target_modules = target_modules
+            lora_config.target_modules = list(target_modules)
             
             # # Get PEFT model
             lang_model = get_peft_model(lang_model, lora_config)
@@ -809,36 +767,45 @@ def load_saved_model(model_path,checkpoint=False):
             model.gradient_checkpointing_enable()
             return model, tokenizer
         else:
-            # For conversation models, use AutoModelForCausalLM
+            # For conversation models
             print("Loading conversation model...")
-            base_model = AutoModelForCausalLM.from_pretrained(
-                model_path,
+            
+            config = PeftConfig.from_pretrained(lang_model_path) 
+            config.target_modules = list(config.target_modules)  
+            config.inference_mode = False    
+
+            lang_model = AutoModelForCausalLM.from_pretrained(
+                pretrained_model_name_or_path=lang_model_path,
+                config=config,
                 torch_dtype=dtype,
                 device_map=None
             )
-            base_model = prepare_model_for_kbit_training(base_model)
-            
+            lang_model = prepare_model_for_kbit_training(lang_model)
+
             # Get target modules based on model architecture
-            model_type = base_model.config.model_type.lower() if hasattr(base_model.config, 'model_type') else ""
-            
+            model_type = lang_model.config.model_type.lower() if hasattr(lang_model.config, 'model_type') else ""
             target_modules = target_modules_map.get(model_type, ["q_proj", "k_proj", "v_proj", "o_proj"])
-            # target_modules = find_all_linear_names(base_model)
             print(f"Using target modules for {model_type}: {target_modules}")
 
+            # Configure LoRA
             lora_config = load_lora()
-            lora_config.target_modules = target_modules
+            lora_config.target_modules = list(target_modules)
 
-            
             # Get PEFT model
-            base_model = get_peft_model(base_model, lora_config)
-            
-            # Create conversation model
-            model = ConversationModel(config, base_model)
+            lang_model = get_peft_model(lang_model, lora_config)
+
+            # Create ConversationModel instance
+            config = ConversationConfig()
+            model = ConversationModel(config)
+            model.lang_model = lang_model
+
+            # Load processor
+            tokenizer = AutoTokenizer.from_pretrained(model_path)
+
+            # Set config and training options
             model.config.use_cache = False
             model.train()  # Ensure model is in training mode
             model.gradient_checkpointing_enable()
-            tokenizer = AutoTokenizer.from_pretrained(model_path)
-
             return model, tokenizer
 
         
@@ -846,83 +813,3 @@ def load_saved_model(model_path,checkpoint=False):
         print(f"Error loading model: {str(e)}")
         raise
     
-# Example usage:
-
-
-# Load the model and tokenizer
-
-# Load the model and tokenizer
-# path = Path(__file__).parent.parent.absolute() / "custom_models" / "vision-model" / "Qwen_Qwen1.5-0.5B-Chat"
-# model, tokenizer = load_saved_model(path.as_posix())
-
-# # Get the device and dtype of the model
-# device = next(model.parameters()).device
-# dtype = next(model.parameters()).dtype
-
-# Load the image
-# image_url = "https://media.istockphoto.com/id/155439315/photo/passenger-airplane-flying-above-clouds-during-sunset.jpg?s=612x612&w=0&k=20&c=LJWadbs3B-jSGJBVy9s0f8gZMHi2NvWFXa3VJ2lFcL0="
-# image = load_image(image_url)
-
-# # Initialize the processor
-# clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-large-patch14", use_fast=True)
-# processor = VisionProcessor(image_processor=clip_processor, tokenizer=tokenizer)
-
-# # Tokenize the text
-# text_input = processor.tokenizer("What do you see in this image?", return_tensors="pt")
-
-# # Preprocess the image
-# pixel_values = processor.image_processor(images=image, return_tensors="pt")["pixel_values"]
-
-# # Move inputs to the model's device and dtype
-# inputs = {
-#     "input_ids": text_input["input_ids"].to(device),  # Keep input_ids as integers
-#     "attention_mask": text_input["attention_mask"].to(device).to(dtype),
-#     "pixel_values": pixel_values.to(device).to(dtype)
-# }
-
-# # Generate outputs
-# outputs = model.generate(
-#     input_ids=inputs["input_ids"],
-#     attention_mask=inputs["attention_mask"],
-#     pixel_values=inputs["pixel_values"],
-#     max_new_tokens=50,  # Limit the number of tokens to generate
-#     num_beams=4,        # Use beam search for better results
-#     temperature=0.7,    # Sampling temperature
-#     do_sample=True      # Enable sampling
-# )
-
-# # Decode and print the outputs
-# decoded_outputs = processor.tokenizer.batch_decode(outputs, skip_special_tokens=True)
-# print(decoded_outputs)
-
-
-
-
-# # Working Good
-# # Load the model and tokenizer
-# # path = Path(__file__).parent.parent.absolute() / "custom_models" / "conversation-model" / "Qwen_Qwen1.5-0.5B-Chat"
-# # model, tokenizer = load_saved_model(path.as_posix())
-
-# # Move the model to the appropriate device
-# # device = next(model.parameters()).device
-
-# # Define the text input
-# text_prompt = "Hello"
-
-# # Tokenize the text input
-# text_input = tokenizer(text_prompt, return_tensors="pt").to(device)
-
-# # Generate outputs
-# outputs = model.generate(
-#     input_ids=text_input["input_ids"],
-#     attention_mask=text_input["attention_mask"],
-#     max_new_tokens=50,  # Limit the number of tokens to generate
-#     num_beams=4,        # Use beam search for better results
-#     temperature=0.7,    # Sampling temperature
-#     do_sample=True      # Enable sampling
-# )
-
-# # Decode and print the outputs
-# decoded_outputs = tokenizer.batch_decode(outputs, skip_special_tokens=True)
-# print(decoded_outputs)
-

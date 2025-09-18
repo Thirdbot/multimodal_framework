@@ -53,9 +53,9 @@ Ft.finetune_model()
 
 # Inference setup
 # print("\n--- Starting Inference ---\n")
-# model_path = Path(__file__).parent.absolute() / "checkpoints" / "text-generation" / "Qwen_Qwen1.5-0.5B-Chat"
+model_path = Path(__file__).parent.absolute() / "checkpoints" / "text-generation" / "Qwen_Qwen1.5-0.5B-Chat"
 # model_path = Path(__file__).parent.absolute() / "repositories" / "models" / "Qwen" / "Qwen1.5-0.5B-Chat"
-model_path = Path(__file__).parent.absolute() / "checkpoints" / "text-vision-text-generation" / "Qwen_Qwen1.5-0.5B-Chat"
+# model_path = Path(__file__).parent.absolute() / "checkpoints" / "text-vision-text-generation" / "Qwen_Qwen1.5-0.5B-Chat"
 # model_path = Path(__file__).parent.absolute() / "custom_models" / "conversation-model" / "Qwen_Qwen1.5-0.5B-Chat"
 # model_path = Path(__file__).parent.absolute() / "custom_models" / "vision-model" / "Qwen_Qwen1.5-0.5B-Chat"
 inference_manager = InferenceManager(model_path)

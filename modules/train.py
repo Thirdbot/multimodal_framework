@@ -45,16 +45,14 @@ class FinetuneModel:
         self.per_device_eval_batch_size = 1
         self.gradient_accumulation_steps = 1  # Reduced gradient accumulation
         self.learning_rate = 2e-5
-        self.num_train_epochs = 2
+        self.num_train_epochs = 0.01
         self.save_strategy = "best"
         self.training_config_path = self.variable.training_config_path
         
         # Initialize components
         self.device_map = "cuda:0" if torch.cuda.is_available() else "cpu"
         self.metric = evaluate.load("accuracy")
-        # self.chainpipe = Chainpipe()
-        
-        
+                
         # Clear CUDA cache
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
@@ -77,8 +75,10 @@ class FinetuneModel:
         
         self.CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
     
+    
     def train_args(self,task:str, modelname: str) -> TrainingArguments:
 
+        
         model_folder = self.CHECKPOINT_DIR / task
 
         if "custom_models" in modelname.split("\\"):
@@ -89,14 +89,14 @@ class FinetuneModel:
         output_dir.mkdir(parents=True, exist_ok=True)
         
         cuda_available = torch.cuda.is_available()
-        
+                
         return TrainingArguments(
             output_dir=str(output_dir),
             learning_rate=self.learning_rate,
             per_device_train_batch_size=self.per_device_train_batch_size,
             num_train_epochs=self.num_train_epochs,
             weight_decay=0.01,
-            save_strategy="steps",
+            save_strategy="epoch",
             metric_for_best_model="accuracy",
             save_steps=5,
             save_total_limit=1,
@@ -122,10 +122,9 @@ class FinetuneModel:
             group_by_length=True,
             length_column_name="length",
             report_to="none",
-            resume_from_checkpoint=True,
             save_safetensors=True,
             save_only_model=False,  # Changed to False to save optimizer state
-            overwrite_output_dir=True,
+            overwrite_output_dir=False,
             torch_compile=False,
             use_mps_device=False,
             eval_strategy="no",  # Disable evaluation completely
@@ -195,24 +194,21 @@ class FinetuneModel:
         except Exception as e:
             print(f"{Fore.RED}Error creating trainer: {str(e)}{Style.RESET_ALL}")
             return None
-        
+    
+      
+    
     def runtuning(self, model: AutoModelForCausalLM, tokenizer: AutoTokenizer, 
-
-                 dataset: DatasetDict, modelname: str,task:str) -> None:
+              dataset: DatasetDict, modelname: str, task: str) -> None:
         try:
             if "custom_models" in modelname.split("/"):
                 modelname = modelname.split("/")
                 modelname = modelname[-1]
 
-            trainer = self.Trainer(model=model, dataset=dataset, tokenizer=tokenizer, modelname=modelname,task=task)
+            trainer = self.Trainer(model=model, dataset=dataset, tokenizer=tokenizer, modelname=modelname, task=task)
             
-            # Save the initial LoRA config
-            # model.save_pretrained(trainer.args.output_dir)
-            # print("Saving model...")
-            
-            # Start training
             trainer.train()
 
+            # Identify model type for saving
             if hasattr(model, "config"):
                 if hasattr(model.config, "model_type"):
                     model_type = model.config.model_type
@@ -224,61 +220,63 @@ class FinetuneModel:
                 model.config.model_type = "conversation-model"
 
             print(f"{Fore.CYAN}Identified model type to save: {model_type}{Style.RESET_ALL}")
-            
-            
+
             modelname = modelname.replace('/', '_') if '/' in modelname else modelname
-            
-            
-            #save model needed outside checkpoints
+
+            # Save model and submodules
             if model_type == "vision-model" or "VisionModel" in model_type:
                 model_save_path = self.CHECKPOINT_DIR / 'text-vision-text-generation' / modelname
                 model_save_path.mkdir(parents=True, exist_ok=True)
-                # Save the final model and adapter
                 trainer.save_model(str(model_save_path))
                 tokenizer.save_pretrained(str(model_save_path))
-                           
+
                 if hasattr(model, "lang_model"):
                     lang_model_path = model_save_path / "lang_model"
                     lang_model_path.mkdir(parents=True, exist_ok=True)
-                    
                     model.lang_model.save_pretrained(str(lang_model_path))
                     tokenizer.save_pretrained(str(lang_model_path))
                     print(f"{Fore.GREEN}Language model saved to: {lang_model_path}{Style.RESET_ALL}")
-                
+
                 if hasattr(model, "vision_model"):
                     vision_model_path = model_save_path / "vision_model"
                     vision_model_path.mkdir(parents=True, exist_ok=True)
                     model.vision_model.save_pretrained(str(vision_model_path))
                     print(f"{Fore.GREEN}Vision model saved to: {vision_model_path}{Style.RESET_ALL}")
-                
-                # if hasattr(model, "vision_processor"):
-                #     vision_processor_path = model_save_path / "vision_processor"
-                #     vision_processor_path.mkdir(parents=True, exist_ok=True)
-                #     model.vision_processor.save_pretrained(str(vision_processor_path))
-                #     print(f"{Fore.GREEN}Vision processor saved to: {vision_processor_path}{Style.RESET_ALL}")
-                
-                if hasattr(model,'vision_adapter'):
+
+                if hasattr(model, 'vision_adapter'):
                     vision_adapter_path = model_save_path / "vision_adapter"
                     vision_adapter_path.mkdir(parents=True, exist_ok=True)
-                    torch.save(model.vision_adapter.state_dict(), str(vision_adapter_path / "vision_adapter.pt"))
+                    torch.save(model.vision_adapter.state_dict(), vision_adapter_path / "vision_adapter.pt")
                     print(f"{Fore.GREEN}Vision adapter saved to: {vision_adapter_path}{Style.RESET_ALL}")
 
             elif model_type == "conversation-model" or "ConversationModel" in model_type:
                 model_save_path = self.CHECKPOINT_DIR / 'text-generation' / modelname
                 model_save_path.mkdir(parents=True, exist_ok=True)
-                # Save the final model and adapter
                 trainer.save_model(str(model_save_path))
                 tokenizer.save_pretrained(str(model_save_path))
                 model.config.save_pretrained(str(model_save_path))
+                
+                if hasattr(model, "lang_model"):
+                    lang_model_path = model_save_path / "lang_model"
+                    lang_model_path.mkdir(parents=True, exist_ok=True)
+                    model.lang_model.save_pretrained(str(lang_model_path))
+                    tokenizer.save_pretrained(str(lang_model_path))
+                    print(f"{Fore.GREEN}Language model saved to: {lang_model_path}{Style.RESET_ALL}")
             else:
                 model_save_path = self.CHECKPOINT_DIR / 'text-generation' / modelname
                 model_save_path.mkdir(parents=True, exist_ok=True)
                 trainer.save_model(str(model_save_path))
                 tokenizer.save_pretrained(str(model_save_path))
                 model.config.save_pretrained(str(model_save_path))
+                if hasattr(model, "lang_model"):
+                    lang_model_path = model_save_path / "lang_model"
+                    lang_model_path.mkdir(parents=True, exist_ok=True)
+                    model.lang_model.save_pretrained(str(lang_model_path))
+                    tokenizer.save_pretrained(str(lang_model_path))
+                    print(f"{Fore.GREEN}Language model saved to: {lang_model_path}{Style.RESET_ALL}")
 
             print(f"{Fore.GREEN}Model saved to: {model_save_path}{Style.RESET_ALL}")
-            
+
         except Exception as e:
             print(f"{Fore.RED}Error running tuning: {str(e)}{Style.RESET_ALL}")
     
@@ -314,7 +312,7 @@ class FinetuneModel:
                     # load from checkpoint if exists for training only
                     if Path(self.conversation_checkpoint).exists():
                         print(f"{Fore.GREEN}Loading conversation model from checkpoint...{Style.RESET_ALL}")
-                        model, tokenizer = load_saved_model(self.conversation_checkpoint,checkpoint=True)
+                        model, tokenizer = load_saved_model(self.conversation_checkpoint)
                     else:
                         model, tokenizer = load_saved_model(model_path)
 
@@ -330,7 +328,7 @@ class FinetuneModel:
 
                     if Path(self.vision_checkpoint).exists():
                         print(f"{Fore.GREEN}Loading vision model from checkpoint...{Style.RESET_ALL}")
-                        model, tokenizer = load_saved_model(self.vision_checkpoint,checkpoint=True)
+                        model, tokenizer = load_saved_model(self.vision_checkpoint)
                     else:
                         model, tokenizer = load_saved_model(model_path)
                 
