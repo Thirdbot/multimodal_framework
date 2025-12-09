@@ -36,8 +36,6 @@ import pandas as pd
 
 class FinetuneModel:
     """Class for handling model fine-tuning operations."""
-    torch.cuda.empty_cache()
-    torch.cuda.reset_peak_memory_stats()
     def __init__(self):
         """Initialize the FinetuneModel with default parameters."""
         # Training parameters
@@ -46,7 +44,7 @@ class FinetuneModel:
         self.per_device_eval_batch_size = 1
         self.gradient_accumulation_steps = 4  # Accumulate to simulate larger batch
         self.learning_rate = 2e-4
-        self.num_train_epochs = 0.01
+        self.num_train_epochs = 3
         self.save_strategy = "best"
         self.training_config_path = self.variable.training_config_path
         
@@ -64,10 +62,6 @@ class FinetuneModel:
         # self.chainpipe = Chainpipe()
         
         
-        # Clear CUDA cache
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-            torch.cuda.reset_peak_memory_stats()
         
         # Initialize state variables
         self.model_id = None
@@ -142,7 +136,7 @@ class FinetuneModel:
             use_mps_device=False,
             eval_strategy="no",
             do_eval=False,
-            max_steps=50,  # Limit steps for memory safety
+            # max_steps=50,  # Limit steps for memory safety
             auto_find_batch_size=False,  # Manual control
             dataloader_prefetch_factor=None,  # Disable prefetching
         )
@@ -353,7 +347,7 @@ class FinetuneModel:
                         param.requires_grad = True
                         
                 print(f"{Fore.CYAN}Dataset loaded with {len(dataset)} records{Style.RESET_ALL}")
-                
+
                 # Clear CUDA cache before training
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
