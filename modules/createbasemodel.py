@@ -170,6 +170,11 @@ class VisionModel(PreTrainedModel):
         self.vision_model = CLIPVisionModel.from_pretrained(
             "openai/clip-vit-large-patch14"
             )
+        
+        # Freeze the CLIP vision encoder - we only want to train the adapter
+        for param in self.vision_model.parameters():
+            param.requires_grad = False
+        
         self.vision_adapter = VisionAdapter(1024, 1024)
         
         # self.lang_model = lang_model.to(device)  # Move language model to GPU
@@ -548,8 +553,8 @@ class CreateModel:
             
             # Configure LoRA
             lora_config = LoraConfig(
-                r=32,  # Rank
-                lora_alpha=64,  # Alpha scaling
+                r=8,  # Rank
+                lora_alpha=8,  # Alpha scaling
                 target_modules=target_modules,
                 lora_dropout=0.05,
                 bias="none",
@@ -616,8 +621,8 @@ class CreateModel:
         
         # Configure LoRA
         lora_config = LoraConfig(
-            r=32,  # Rank
-            lora_alpha=64,  # Alpha scaling
+            r=8,  # Rank
+            lora_alpha=8,  # Alpha scaling
             target_modules=target_modules,
             lora_dropout=0.05,
             bias="none",
@@ -637,6 +642,16 @@ class CreateModel:
         config = VisionConfig()
         self.vismodel = VisionModel(config)
         self.vismodel.lang_model = self.model
+        
+        # Print trainable parameters
+        trainable_params = 0
+        all_param = 0
+        for _, param in self.vismodel.named_parameters():
+            all_param += param.numel()
+            if param.requires_grad:
+                trainable_params += param.numel()
+        print(f"Trainable params: {trainable_params:,} ({100 * trainable_params / all_param:.2f}%)")
+        print(f"All params: {all_param:,}")
         
     def save_regular_model(self):
         """Save the model and all its components with optimizations."""
@@ -791,8 +806,8 @@ def load_saved_model(model_path,checkpoint=False):
             
             # # Configure LoRA
             lora_config = LoraConfig(
-                r=32,  # Rank
-                lora_alpha=64,  # Alpha scaling
+                r=8,  # Rank
+                lora_alpha=8,  # Alpha scaling
                 target_modules=target_modules,
                 lora_dropout=0.05,
                 bias="none",
@@ -835,8 +850,8 @@ def load_saved_model(model_path,checkpoint=False):
             print(f"Using target modules for {model_type}: {target_modules}")
 
             lora_config = LoraConfig(
-                r=32,  # Rank
-                lora_alpha=64,  # Alpha scaling
+                r=8,  # Rank
+                lora_alpha=8,  # Alpha scaling
                 target_modules=target_modules,
                 lora_dropout=0.05,
                 bias="none",
