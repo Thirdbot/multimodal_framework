@@ -45,8 +45,8 @@ from pathlib import Path
 
 # finetune.dataset_prepare(list_download)
 
-Ft = FinetuneModel()
-Ft.finetune_model()
+# Ft = FinetuneModel()
+# Ft.finetune_model()
 
 
 
@@ -71,7 +71,7 @@ model_path = Path(__file__).parent.absolute() / "checkpoints" / "text-vision-tex
 # model_path = Path(__file__).parent.absolute() / "custom_models" / "vision-model" / "Qwen_Qwen1.5-0.5B-Chat"
 inference_manager = InferenceManager(model_path)
 
-# # image_path = "https://media.istockphoto.com/id/155439315/photo/passenger-airplane-flying-above-clouds-during-sunset.jpg?s=612x612&w=0&k=20&c=LJWadbs3B-jSGJBVy9s0f8gZMHi2NvWFXa3VJ2lFcL0="  # Replace with the actual path to your image
+# image_path = "https://media.istockphoto.com/id/155439315/photo/passenger-airplane-flying-above-clouds-during-sunset.jpg?s=612x612&w=0&k=20&c=LJWadbs3B-jSGJBVy9s0f8gZMHi2NvWFXa3VJ2lFcL0="  # Replace with the actual path to your image
 image_path = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcThZJGbCDib3lJ4yPnBUSHgFawk_heC84NxGA&s"
 user_input = "who is in the image?"
 response = inference_manager.generate_response(user_input, image_path=image_path)
