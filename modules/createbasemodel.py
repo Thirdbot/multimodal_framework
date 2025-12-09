@@ -170,13 +170,12 @@ class VisionModel(PreTrainedModel):
         self.vision_model = CLIPVisionModel.from_pretrained(
             "openai/clip-vit-large-patch14"
             )
-        
-        # Freeze the CLIP vision encoder - we only want to train the adapter
-        for param in self.vision_model.parameters():
-            param.requires_grad = False
-        
         self.vision_adapter = VisionAdapter(1024, 1024)
         
+        #freeze vision model
+        for param in self.vision_model.parameters():
+            param.requires_grad = False
+
         # self.lang_model = lang_model.to(device)  # Move language model to GPU
         self.lang_model = lang_model
         
@@ -553,8 +552,8 @@ class CreateModel:
             
             # Configure LoRA
             lora_config = LoraConfig(
-                r=8,  # Rank
-                lora_alpha=8,  # Alpha scaling
+                r=8,  # Lower rank to cut trainable params
+                lora_alpha=16,  # Scale matches reduced rank
                 target_modules=target_modules,
                 lora_dropout=0.05,
                 bias="none",
@@ -621,8 +620,8 @@ class CreateModel:
         
         # Configure LoRA
         lora_config = LoraConfig(
-            r=8,  # Rank
-            lora_alpha=8,  # Alpha scaling
+            r=8,  # Lower rank to cut trainable params
+            lora_alpha=16,  # Scale matches reduced rank
             target_modules=target_modules,
             lora_dropout=0.05,
             bias="none",
@@ -641,17 +640,10 @@ class CreateModel:
         # )
         config = VisionConfig()
         self.vismodel = VisionModel(config)
+        # Enable training mode and gradient checkpointing
+        self.vismodel.train()
+        self.vismodel.gradient_checkpointing_enable()
         self.vismodel.lang_model = self.model
-        
-        # Print trainable parameters
-        trainable_params = 0
-        all_param = 0
-        for _, param in self.vismodel.named_parameters():
-            all_param += param.numel()
-            if param.requires_grad:
-                trainable_params += param.numel()
-        print(f"Trainable params: {trainable_params:,} ({100 * trainable_params / all_param:.2f}%)")
-        print(f"All params: {all_param:,}")
         
     def save_regular_model(self):
         """Save the model and all its components with optimizations."""
@@ -804,17 +796,17 @@ def load_saved_model(model_path,checkpoint=False):
             # target_modules = find_all_linear_names(lang_model)
             print(f"Using target modules for {model_type}: {target_modules}")
             
-            # # Configure LoRA
+            # Configure LoRA (lower rank to reduce trainable params)
             lora_config = LoraConfig(
-                r=8,  # Rank
-                lora_alpha=8,  # Alpha scaling
+                r=8,
+                lora_alpha=16,
                 target_modules=target_modules,
                 lora_dropout=0.05,
                 bias="none",
                 task_type="CAUSAL_LM"
             )
             
-            # # Get PEFT model
+            # Get PEFT model
             lang_model = get_peft_model(lang_model, lora_config)
             # vision_model = CLIPVisionModel.from_pretrained(vision_model_path)
             
@@ -850,8 +842,8 @@ def load_saved_model(model_path,checkpoint=False):
             print(f"Using target modules for {model_type}: {target_modules}")
 
             lora_config = LoraConfig(
-                r=8,  # Rank
-                lora_alpha=8,  # Alpha scaling
+                r=32,  # Rank
+                lora_alpha=64,  # Alpha scaling
                 target_modules=target_modules,
                 lora_dropout=0.05,
                 bias="none",
@@ -954,4 +946,3 @@ def load_saved_model(model_path,checkpoint=False):
 # # Decode and print the outputs
 # decoded_outputs = tokenizer.batch_decode(outputs, skip_special_tokens=True)
 # print(decoded_outputs)
-

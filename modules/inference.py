@@ -60,13 +60,31 @@ class InferenceManager:
             # Check if the model is multimodal
             if hasattr(config, "model_type") and config.model_type == "vision-model":
                 print("Detected multimodal model. Loading VisionModel...")
-                # self.vision_model = CLIPVisionModel.from_pretrained(self.vision_path, torch_dtype=self.dtype)
+                # Clear cache before loading
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                
+                # Load components without moving to device yet
                 self.vision_processor = CLIPProcessor.from_pretrained("openai/clip-vit-large-patch14", use_fast=True)
-                self.lang_model = AutoModelForCausalLM.from_pretrained(self.lang_path, torch_dtype=self.dtype)
-                self.model = VisionModel(config).to(self.device)
-                # self.model = VisionModel.from_pretrained(self.model_path, config=config)
-                self.model.lang_model = self.lang_model.to(self.device)
-                self.model.vision_adapter.load_state_dict(torch.load(vision_adapter_path / "vision_adapter.pt"))
+                self.lang_model = AutoModelForCausalLM.from_pretrained(
+                    self.lang_path, 
+                    torch_dtype=self.dtype,
+                    device_map="auto",  # Let it handle device placement
+                    low_cpu_mem_usage=True
+                )
+                
+                # Create VisionModel without moving to device
+                self.model = VisionModel(config)
+                self.model.lang_model = self.lang_model  # Already on device from device_map
+                
+                # Load vision adapter with proper device and dtype handling
+                adapter_state_dict = torch.load(vision_adapter_path / "vision_adapter.pt", map_location='cpu', weights_only=True)
+                self.model.vision_adapter.load_state_dict(adapter_state_dict)
+                self.model.vision_adapter = self.model.vision_adapter.to(self.device).to(self.dtype)
+                
+                # Also move vision model to device with correct dtype
+                self.model.vision_model = self.model.vision_model.to(self.device).to(self.dtype)
+                
                 self.tokenizer = AutoTokenizer.from_pretrained(self.lang_path, use_fast=True)
             else:
                 print("Detected text-only model. Loading ConversationModel...")

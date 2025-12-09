@@ -238,7 +238,7 @@ class Manager:
             return None
     
     def map_tokenizer(self, dataset_name: str, model_name: str, tokenizer: AutoTokenizer, dataset: DatasetDict, 
-                     max_length: int = 384, Tokenizing: bool = False) -> Optional[DatasetDict]:
+                     max_length: int = 1000, Tokenizing: bool = False) -> Optional[DatasetDict]:
 
         print(f"{Fore.CYAN}Processing dataset with max length: {max_length}{Style.RESET_ALL}")
         
