@@ -42,20 +42,16 @@ class InferenceManager:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
+            torch.cuda.reset_peak_memory_stats()
+            print(f"{Fore.CYAN}GPU Memory before training: {torch.cuda.memory_allocated()/1e9:.2f} GB{Style.RESET_ALL}")
             torch.backends.cuda.matmul.allow_tf32 = True
             torch.backends.cudnn.allow_tf32 = True
             torch.backends.cudnn.benchmark = True
         else:
             print("Warning: Running on CPU. Performance will be slower.")
-   
-
+            
     def _load_model_and_tokenizer(self):
         try:
-            # Clear CUDA cache before training
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-                torch.cuda.reset_peak_memory_stats()
-                print(f"{Fore.CYAN}GPU Memory before training: {torch.cuda.memory_allocated()/1e9:.2f} GB{Style.RESET_ALL}")
             # Load the model configuration
             config = AutoConfig.from_pretrained(self.model_path)
             print(f"Loaded model configuration: {config.model_type}")
