@@ -177,7 +177,7 @@ class ChatTemplate:
                     formatted_texts,
                     padding=True,
                     truncation=True,
-                    max_length=384,  # Reduced max length for better stability
+                    max_length=1000,  # Reduced max length for better stability
                     return_tensors="pt",
                     return_attention_mask=True,
                     return_special_tokens_mask=True

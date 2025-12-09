@@ -1,4 +1,5 @@
 import os
+from colorama import Fore,Style
 import torch
 from pathlib import Path
 from transformers import (
@@ -50,6 +51,11 @@ class InferenceManager:
 
     def _load_model_and_tokenizer(self):
         try:
+            # Clear CUDA cache before training
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                torch.cuda.reset_peak_memory_stats()
+                print(f"{Fore.CYAN}GPU Memory before training: {torch.cuda.memory_allocated()/1e9:.2f} GB{Style.RESET_ALL}")
             # Load the model configuration
             config = AutoConfig.from_pretrained(self.model_path)
             print(f"Loaded model configuration: {config.model_type}")
