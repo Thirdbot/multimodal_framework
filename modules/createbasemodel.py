@@ -552,8 +552,8 @@ class CreateModel:
             
             # Configure LoRA
             lora_config = LoraConfig(
-                r=8,  # Lower rank to cut trainable params
-                lora_alpha=16,  # Scale matches reduced rank
+                r=32,  # Lower rank to cut trainable params
+                lora_alpha=64,  # Scale matches reduced rank
                 target_modules=target_modules,
                 lora_dropout=0.05,
                 bias="none",
@@ -620,8 +620,8 @@ class CreateModel:
         
         # Configure LoRA
         lora_config = LoraConfig(
-            r=8,  # Lower rank to cut trainable params
-            lora_alpha=16,  # Scale matches reduced rank
+            r=32,  # Lower rank to cut trainable params
+            lora_alpha=64,  # Scale matches reduced rank
             target_modules=target_modules,
             lora_dropout=0.05,
             bias="none",
@@ -798,8 +798,8 @@ def load_saved_model(model_path,checkpoint=False):
             
             # Configure LoRA (lower rank to reduce trainable params)
             lora_config = LoraConfig(
-                r=8,
-                lora_alpha=16,
+                r=32,
+                lora_alpha=64,
                 target_modules=target_modules,
                 lora_dropout=0.05,
                 bias="none",
