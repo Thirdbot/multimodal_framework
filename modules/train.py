@@ -42,9 +42,9 @@ class FinetuneModel:
         self.variable = Variable()
         self.per_device_train_batch_size = 1  # Minimal batch size for 6GB GPU
         self.per_device_eval_batch_size = 1
-        self.gradient_accumulation_steps = 4  # Accumulate to simulate larger batch
+        self.gradient_accumulation_steps = 8  # Accumulate to simulate larger batch
         self.learning_rate = 2e-4
-        self.num_train_epochs = 3
+        self.num_train_epochs = 30
         self.save_strategy = "best"
         self.training_config_path = self.variable.training_config_path
         
@@ -136,7 +136,6 @@ class FinetuneModel:
             use_mps_device=False,
             eval_strategy="no",
             do_eval=False,
-            # max_steps=50,  # Limit steps for memory safety
             auto_find_batch_size=False,  # Manual control
             dataloader_prefetch_factor=None,  # Disable prefetching
         )
@@ -288,8 +287,19 @@ class FinetuneModel:
 
             print(f"{Fore.GREEN}Model saved to: {model_save_path}{Style.RESET_ALL}")
             
+            # Clean up memory after training
+            del trainer
+            del model
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                torch.cuda.synchronize()
+                print(f"{Fore.CYAN}GPU memory cleaned after training{Style.RESET_ALL}")
+            
         except Exception as e:
             print(f"{Fore.RED}Error running tuning: {str(e)}{Style.RESET_ALL}")
+            # Clean up on error too
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
     
     def load_for_tuning(self):
         try:
