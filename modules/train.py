@@ -36,18 +36,23 @@ import pandas as pd
 
 class FinetuneModel:
     """Class for handling model fine-tuning operations."""
-    
+    torch.cuda.empty_cache()
+    torch.cuda.reset_peak_memory_stats()
     def __init__(self):
         """Initialize the FinetuneModel with default parameters."""
         # Training parameters
         self.variable = Variable()
-        self.per_device_train_batch_size = 1  # Reduced batch size
+        self.per_device_train_batch_size = 1  # Minimal batch size for 6GB GPU
         self.per_device_eval_batch_size = 1
-        self.gradient_accumulation_steps = 1  # Reduced gradient accumulation
+        self.gradient_accumulation_steps = 4  # Accumulate to simulate larger batch
         self.learning_rate = 2e-4
-        self.num_train_epochs = 2
+        self.num_train_epochs = 0.01
         self.save_strategy = "best"
         self.training_config_path = self.variable.training_config_path
+        
+        # Set memory optimization environment variables
+        os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
+        os.environ['CUDA_LAUNCH_BLOCKING'] = '0'
         
        
         # Initialize paths and directories
@@ -106,7 +111,7 @@ class FinetuneModel:
             num_train_epochs=self.num_train_epochs,
             weight_decay=0.01,
             save_strategy="steps",
-            save_steps=5,
+            save_steps=10,
             save_total_limit=1,
             logging_dir=str(output_dir),
             logging_strategy="steps",
@@ -114,8 +119,8 @@ class FinetuneModel:
             logging_first_step=True,
             gradient_accumulation_steps=self.gradient_accumulation_steps,
             fp16=False,  
-            bf16=True,  
-            optim="adamw_torch_fused" if cuda_available else "adamw_torch",
+            bf16=True if cuda_available else False,
+            optim="adamw_8bit" if cuda_available else "adamw_torch",  # Use 8-bit optimizer
             lr_scheduler_type="cosine",
             warmup_ratio=0.01,
             remove_unused_columns=False,
@@ -123,21 +128,23 @@ class FinetuneModel:
             gradient_checkpointing=True,
             gradient_checkpointing_kwargs={"use_reentrant": False},
             ddp_find_unused_parameters=False,
-            ddp_bucket_cap_mb=200,
-            dataloader_pin_memory=cuda_available,
+            ddp_bucket_cap_mb=50,  # Reduced from 200
+            dataloader_pin_memory=False,  # Disable to save memory
             dataloader_num_workers=0,
-            max_grad_norm=1.0,
-            group_by_length=True,
-            length_column_name="length",
+            max_grad_norm=0.5,  # Reduced for stability
+            group_by_length=False,  # Disable to save memory
             report_to="none",
             resume_from_checkpoint=True,
             save_safetensors=True,
-            save_only_model=False,  # Changed to False to save optimizer state
+            save_only_model=True,  # Don't save optimizer state to save memory
             overwrite_output_dir=True,
             torch_compile=False,
             use_mps_device=False,
-            eval_strategy="no",  # Disable evaluation completely
-            do_eval=False  # Ensure evaluation is disabled
+            eval_strategy="no",
+            do_eval=False,
+            max_steps=50,  # Limit steps for memory safety
+            auto_find_batch_size=False,  # Manual control
+            dataloader_prefetch_factor=None,  # Disable prefetching
         )
     
     def compute_metrics(self, eval_pred: Tuple[np.ndarray, np.ndarray]) -> Dict[str, float]:
@@ -346,4 +353,11 @@ class FinetuneModel:
                         param.requires_grad = True
                         
                 print(f"{Fore.CYAN}Dataset loaded with {len(dataset)} records{Style.RESET_ALL}")
+                
+                # Clear CUDA cache before training
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                    torch.cuda.reset_peak_memory_stats()
+                    print(f"{Fore.CYAN}GPU Memory before training: {torch.cuda.memory_allocated()/1e9:.2f} GB{Style.RESET_ALL}")
+                
                 self.runtuning(model=model, tokenizer=tokenizer, dataset=dataset, modelname=modelname,task=model_task)

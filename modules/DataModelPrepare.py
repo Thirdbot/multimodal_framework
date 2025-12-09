@@ -176,8 +176,8 @@ class Manager:
             
             # Configure LoRA
             lora_config = LoraConfig(
-                r=32,  # Rank
-                lora_alpha=64,  # Alpha scaling
+                r=8,  # Rank
+                lora_alpha=8,  # Alpha scaling
                 target_modules=target_modules,
                 lora_dropout=0.05,
                 bias="none",
