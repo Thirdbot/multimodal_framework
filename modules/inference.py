@@ -146,8 +146,9 @@ class InferenceManager:
                 {"role": "user", "content": user_input}
             ]
             # If image is provided, add a special token to the user message
-            if image_path:
-                messages[-1]["content"] += f" <images>{image_path}</images>"
+            
+            # if image_path:
+            #     messages[-1]["content"] += f" <images>{image_path}</images>"
 
             # Use tokenizer/template-aware formatter
             prompt = self.format_chat(messages, self.chat_template)

@@ -42,9 +42,9 @@ class FinetuneModel:
         self.variable = Variable()
         self.per_device_train_batch_size = 1  # Minimal batch size for 6GB GPU
         self.per_device_eval_batch_size = 1
-        self.gradient_accumulation_steps = 8  # Accumulate to simulate larger batch
-        self.learning_rate = 2e-4
-        self.num_train_epochs = 30
+        self.gradient_accumulation_steps = 10  # Accumulate to simulate larger batch
+        self.learning_rate = 1e-3
+        self.num_train_epochs = 40
         self.save_strategy = "best"
         self.training_config_path = self.variable.training_config_path
         
