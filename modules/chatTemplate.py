@@ -56,7 +56,8 @@ class ChatTemplate:
          r'^(?:rejected)$',
          r'^(?:role)$',
          r'^(?:text)$',
-         r'^(?:caption)$')
+         r'^(?:caption)$',
+         r'^(?:label)$')
     ]
     
     # Role patterns and mappings
@@ -738,6 +739,7 @@ class ChatTemplate:
                         matching_cols_5 = [key for key in dataset_keys if re.search(patterns[5], key, re.IGNORECASE)]
                         matching_cols_6 = [key for key in dataset_keys if re.search(patterns[6], key, re.IGNORECASE)]
                         matching_cols_7 = [key for key in dataset_keys if re.search(patterns[7], key, re.IGNORECASE)]
+                        matching_cols_8 = [key for key in dataset_keys if re.search(patterns[8], key, re.IGNORECASE)]
                         
                         # print(f"matching_cols_0: {matching_cols_0}, matching_cols_1: {matching_cols_1}, matching_cols_2: {matching_cols_2}, matching_cols_3: {matching_cols_3}, matching_cols_4: {matching_cols_4}, matching_cols_5: {matching_cols_5}, matching_cols_6: {matching_cols_6}, matching_cols_7: {matching_cols_7}")
 
@@ -785,6 +787,13 @@ class ChatTemplate:
                                 message_list = [{"role": "user", "content": "What in this images?"},
                                                 {"role":"assistant","content":text}]
                                 dict_list["conversations"].append(message_list)
+                        elif matching_cols_8:
+                            #single text instruction
+                            print(f"found {matching_cols_8[0]}")
+                            for text in dataset[matching_cols_8[0]]:
+                                message_list = [{"role": "user", "content": "What in this images?"},
+                                                {"role":"assistant","content":text}]
+                                dict_list["conversations"].append(message_list)
                         else:
                             print(f"No matching columns found for irregular dataset")
                             return
@@ -797,7 +806,7 @@ class ChatTemplate:
                             for idx,data in enumerate(dataset[mul]):
                                 if data is not None:
                                     data_list.append(data)
-                                    dict_list['conversations'][idx][0]['content'] += f" <images>{data}</images>"
+                                    # dict_list['conversations'][idx][0]['content'] += f" <images>{data}</images>"
                                     
                             dict_list[mul] = data_list
                     # Create dataset with both conversations and multimodal data

@@ -146,8 +146,8 @@ class VisionAdapter(torch.nn.Module):
         super().__init__()
         self.activation = torch.nn.ReLU()
         self.layer1 = torch.nn.Linear(clip_dim, 500)
-        self.layer2 = torch.nn.Linear(500, 500)
-        self.layer3 = torch.nn.Linear(500, lang_embed_dim)
+        self.layer2 = torch.nn.Linear(500, 1024)
+        self.layer3 = torch.nn.Linear(1024, lang_embed_dim)
 
     def forward(self, x):
         # Ensure the input tensor matches the model's dtype
