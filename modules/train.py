@@ -324,11 +324,12 @@ class FinetuneModel:
                 #create model as design
                 if "conversations" in dataset_info:
                     #if model is not local and been createdd
-                    model_name_safe = modelname.replace("/","_")
-                    model_path = self.REGULAR_MODEL_DIR / model_name_safe
+                    model_name_checkpoint = modelname.replace("/","_")
+                    model_name_path = modelname.split("/")[-1]
+                    model_path = self.REGULAR_MODEL_DIR / model_name_path
                     model_task = "text-generation"
 
-                    self.conversation_checkpoint = self.CHECKPOINT_DIR / model_task / model_name_safe
+                    self.conversation_checkpoint = self.CHECKPOINT_DIR / model_task / model_name_checkpoint
 
                     # load from checkpoint if exists for training only
                     if Path(self.conversation_checkpoint).exists():
@@ -340,11 +341,12 @@ class FinetuneModel:
 
                 #temporal fix this
                 if "image" in dataset_info or "images" in dataset_info:
-                    model_name_safe = modelname.replace("/","_")
+                    model_name_checkpoint = modelname.replace("/","_")
+                    model_name_path = modelname.split("/")[-1]
 
-                    model_path = self.VISION_MODEL_DIR / model_name_safe                       
+                    model_path = self.VISION_MODEL_DIR / model_name_path                       
                     model_task = "text-vision-text-generation"
-                    self.vision_checkpoint = self.CHECKPOINT_DIR / model_task / model_name_safe
+                    self.vision_checkpoint = self.CHECKPOINT_DIR / model_task / model_name_checkpoint
                         
 
                     if Path(self.vision_checkpoint).exists():
