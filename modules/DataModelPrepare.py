@@ -287,7 +287,8 @@ class Manager:
             #load model and dataset prepare for tuning
             for modelname,dict_dataset in list_model_data['model'].items():
 
-                model, tokenizer = self.load_model(modelname)
+                model_repo = self.variable.REPO_DIR / "models" / modelname
+                model, tokenizer = self.load_model(model_repo)
 
                 union_cols = None
                 saved_dataset = None
@@ -318,7 +319,7 @@ class Manager:
                                 
                                 #return processed True make it return text
                                 first_dataset = self.map_tokenizer(dataset_name,
-                                                                   modelname,
+                                                                   model_repo,
                                                                     tokenizer, dataset, 
                                                                     Tokenizing=False)
                                 if first_dataset is None:
@@ -335,7 +336,7 @@ class Manager:
                                 
                                 #return processed True make it return text
                                 second_dataset = self.map_tokenizer(dataset_name,
-                                                                    modelname,
+                                                                    model_repo,
                                                                     tokenizer, 
                                                                     dataset, 
                                                                     Tokenizing=False)
@@ -358,7 +359,7 @@ class Manager:
                             #after formatted to right format it use it to embedding
                             #after getting concatenate dataset return it to embedding formatted with return both false since the model going to tokenized it anyways
                             saved_dataset = self.map_tokenizer(dataset_name,
-                                                               modelname,
+                                                               model_repo,
                                                                 tokenizer, 
                                                                 concat_dataset,
                                                                 Tokenizing=True)
@@ -383,7 +384,7 @@ class Manager:
                                 #after getting concatenate dataset return it to embedding formatted with return both false since the model going to tokenized it anyways
                                 saved_dataset = self.map_tokenizer(dataset_name, 
                                                                     tokenizer,
-                                                                    modelname,
+                                                                    model_repo,
                                                                     concat_dataset,
                                                                                 Tokenizing=True)
                                 
@@ -404,8 +405,8 @@ class Manager:
                     model_path = self.REGULAR_MODEL_DIR / model_name_safe
 
                     if not (model_path).exists():
-                        print(f"{Fore.GREEN}Creating conversation model...from {modelname}{Style.RESET_ALL}")
-                        create_model = CreateModel(modelname, "conversation-model")
+                        print(f"{Fore.GREEN}Creating conversation model...from {model_repo}{Style.RESET_ALL}")
+                        create_model = CreateModel(model_repo, "conversation-model")
                         create_model.add_conversation()
                         create_model.save_regular_model()
                         with open(self.chat_template_path / "chat_template_conversation.jinja", 'w') as f:
@@ -418,8 +419,8 @@ class Manager:
                     model_path = self.VISION_MODEL_DIR / model_name_safe                       
 
                     if not (model_path).exists():
-                        print(f"{Fore.GREEN}Creating vision model...from {modelname}{Style.RESET_ALL}")
-                        create_model = CreateModel(modelname, "vision-model")
+                        print(f"{Fore.GREEN}Creating vision model...from {model_repo}{Style.RESET_ALL}")
+                        create_model = CreateModel(model_repo, "vision-model")
                         create_model.add_vision()
                         create_model.save_vision_model()
                         with open(self.chat_template_path / "chat_template_vision.jinja", 'w') as f:
