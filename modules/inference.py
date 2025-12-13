@@ -1,91 +1,107 @@
-import os
-from colorama import Fore,Style
-import torch
+from dataclasses import dataclass
 from pathlib import Path
+from io import BytesIO
+import re
+
+import torch
+from colorama import Fore, Style
+from jinja2 import Template
+from PIL import Image
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
     AutoConfig,
-    CLIPVisionModel,
     CLIPProcessor,
 )
+import requests
+
 from modules.chatTemplate import ChatTemplate
 from modules.createbasemodel import VisionModel, ConversationModel
-from transformers.image_utils import load_image
-from jinja2 import Template
-import re
 from modules.variable import Variable
-from peft import PeftModel, PeftConfig
-import requests
-from io import BytesIO
-from PIL import Image
-class InferenceManager:
 
-    def __init__(self, model_path: str, max_new_tokens: int = 1000, temperature: float = 0.7, top_p: float = 0.9):
-        self.model_path = model_path
-        self.max_new_tokens = max_new_tokens
-        self.temperature = temperature
-        self.top_p = top_p
-        self.vision_path = Path(model_path ) / "vision_model"
-        self.vision_processor_path = Path(model_path ) / "vision_processor"
-        self.lang_path = Path(model_path ) / "lang_model"
+from peft import PeftModel
+
+
+@dataclass
+class InferenceConfig:
+    """Configuration for inference manager."""
+    max_new_tokens: int = 1000
+    temperature: float = 0.7
+    top_p: float = 0.9
+    vision_processor_name: str = "openai/clip-vit-large-patch14"
+    use_fast_tokenizer: bool = True
+    torch_dtype: str = "auto"
+    device_override: str | None = None
+    repetition_penalty: float = 1.2
+    no_repeat_ngram_size: int = 3
+    use_tf32: bool = True
+
+
+class InferenceManager:
+    def __init__(self, model_path: str, config: InferenceConfig | None = None):
+        self.config = config or InferenceConfig()
+        self.model_path = Path(model_path)
+        self.vision_path = self.model_path / "vision_model"
+        self.lang_path = self.model_path / "lang_model"
+        self.vision_adapter_path = self.model_path / "vision_adapter"
         self.variable = Variable()
-        self.dtype = self.variable.DTYPE
-        
+        self.dtype = torch.float32 if self.config.torch_dtype == "auto" else getattr(torch, self.config.torch_dtype)
         self.chat_template = None
         
         self._setup_device()
         self._load_model_and_tokenizer()
-        # self.setup_chatTemplate()
 
     def _setup_device(self):
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        device_str = self.config.device_override or ("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device(device_str)
+        
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
             torch.cuda.reset_peak_memory_stats()
-            print(f"{Fore.CYAN}GPU Memory before training: {torch.cuda.memory_allocated()/1e9:.2f} GB{Style.RESET_ALL}")
-            torch.backends.cuda.matmul.allow_tf32 = True
-            torch.backends.cudnn.allow_tf32 = True
-            torch.backends.cudnn.benchmark = True
+            print(f"{Fore.CYAN}GPU Memory allocated: {torch.cuda.memory_allocated()/1e9:.2f} GB{Style.RESET_ALL}")
+            if self.config.use_tf32:
+                torch.backends.cuda.matmul.allow_tf32 = True
+                torch.backends.cudnn.allow_tf32 = True
+                torch.backends.cudnn.benchmark = True
         else:
             print("Warning: Running on CPU. Performance will be slower.")
             
     def _load_model_and_tokenizer(self):
         try:
-            # Load the model configuration
             config = AutoConfig.from_pretrained(self.model_path)
             print(f"Loaded model configuration: {config.model_type}")
-            vision_adapter_path = Path(self.model_path) / "vision_adapter"
 
-            # Check if the model is multimodal
             if hasattr(config, "model_type") and config.model_type == "vision-model":
                 print("Detected multimodal model. Loading VisionModel...")
-                # Clear cache before loading
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
                 
-                # Load components without moving to device yet
-                self.vision_processor = CLIPProcessor.from_pretrained("openai/clip-vit-large-patch14", use_fast=True)
-                self.lang_model = AutoModelForCausalLM.from_pretrained(
-                    self.lang_path, 
-                    torch_dtype=self.dtype,
-                    device_map="auto",  # Let it handle device placement
-                    low_cpu_mem_usage=True
+                self.vision_processor = CLIPProcessor.from_pretrained(
+                    self.config.vision_processor_name,
+                    use_fast=self.config.use_fast_tokenizer
                 )
-                
-                # Create VisionModel without moving to device
-                self.model = VisionModel(config)
-                self.model.lang_model = self.lang_model  # Already on device from device_map
-                
-                # Load vision adapter with proper device and dtype handling
-                adapter_state_dict = torch.load(vision_adapter_path / "vision_adapter.pt", map_location='cpu', weights_only=True)
+
+                pefted_lang_model = AutoModelForCausalLM.from_pretrained(
+                    self.lang_path,
+                    torch_dtype=self.dtype,
+                    device_map="auto"
+                )
+                pefted_lang_model = PeftModel.from_pretrained(pefted_lang_model, self.lang_path)
+                pefted_lang_model = pefted_lang_model.to(self.device)
+
+                self.model = VisionModel(config, lang_model=pefted_lang_model)
+        
+                adapter_state_dict = torch.load(
+                    self.vision_adapter_path / "vision_adapter.pt",
+                    map_location=self.device,
+                    weights_only=True
+                )
                 self.model.vision_adapter.load_state_dict(adapter_state_dict)
                 self.model.vision_adapter = self.model.vision_adapter.to(self.device).to(self.dtype)
-                
-                # Also move vision model to device with correct dtype
                 self.model.vision_model = self.model.vision_model.to(self.device).to(self.dtype)
-                
-                self.tokenizer = AutoTokenizer.from_pretrained(self.lang_path, use_fast=True)
+
+                self.tokenizer = AutoTokenizer.from_pretrained(
+                    self.lang_path,
+                    use_fast=self.config.use_fast_tokenizer
+                )
             else:
                 print("Detected text-only model. Loading ConversationModel...")
                 base_model = AutoModelForCausalLM.from_pretrained(
@@ -94,11 +110,12 @@ class InferenceManager:
                     device_map="auto"
                 )
                 self.model = ConversationModel(config, base_model).to(self.device)
-                self.tokenizer = AutoTokenizer.from_pretrained(self.model_path, use_fast=True)
+                self.tokenizer = AutoTokenizer.from_pretrained(
+                    self.model_path,
+                    use_fast=self.config.use_fast_tokenizer
+                )
 
-            # Load the tokenizer
-            
-            # Ensure chat_template is loaded, fallback to config if not present
+            # Ensure chat_template is loaded
             if hasattr(self.tokenizer, "chat_template") and self.tokenizer.chat_template is not None:
                 self.chat_template = self.tokenizer.chat_template
             elif hasattr(config, "chat_template") and config.chat_template is not None:
@@ -113,18 +130,15 @@ class InferenceManager:
             raise
 
     
-    def format_chat(self,messages: list, chat_template: str) -> str:
-        # Create a Jinja2 template from the provided chat_template
+    def format_chat(self, messages: list, chat_template: str) -> str:
         template = Template(chat_template)
-
-        # Render the template with the messages
-        formatted_chat = template.render(messages=messages)        
-        # Normalize whitespace: strip leading/trailing, collapse multiple blank lines and indent
-        formatted_chat = re.sub(r"[ \t]+$", "", formatted_chat, flags=re.MULTILINE)   
-        formatted_chat = re.sub(r"\n\s*\n+", "\n\n", formatted_chat)                 
+        formatted_chat = template.render(messages=messages)
+        
+        # Normalize whitespace
+        formatted_chat = re.sub(r"[ \t]+$", "", formatted_chat, flags=re.MULTILINE)
+        formatted_chat = re.sub(r"\n\s*\n+", "\n\n", formatted_chat)
         formatted_chat = formatted_chat.strip()
 
-        # # Ensure Assistant: marker exists at end
         if not re.search(r"<|im_start|>assistant:s*$", formatted_chat):
             formatted_chat = formatted_chat + "\n<|im_start|>assistant"
 
@@ -140,52 +154,37 @@ class InferenceManager:
             return None
     def generate_response(self, user_input: str, image_path: str = None) -> str:
         try:
-            # Define the messages
             messages = [
                 {"role": "system", "content": "You are a helpful assistant. Answer questions based on the image if provided."},
                 {"role": "user", "content": user_input}
             ]
-            # If image is provided, add a special token to the user message
-            
-            # if image_path:
-            #     messages[-1]["content"] += f" <images>{image_path}</images>"
 
-            # Use tokenizer/template-aware formatter
             prompt = self.format_chat(messages, self.chat_template)
-            # print(f"Formatted Prompt:\n{prompt}\n{'-'*50}")
-            # Prepare inputs for the model
             inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
 
-            # model_dtype = next(self.model.parameters()).dtype
-
-            # For attention_mask and pixel_values (if present)
             if "attention_mask" in inputs:
                 inputs["attention_mask"] = inputs["attention_mask"].to(self.dtype)
             if "pixel_values" in inputs:
                 inputs["pixel_values"] = inputs["pixel_values"].to(self.device).to(self.dtype)
 
-            # Handle multimodal inputs if the model supports it
             if hasattr(self.model, "vision_model") and image_path:
                 image = self.load_images_url(image_path)
                 pixel_values = self.vision_processor(images=image, return_tensors="pt")["pixel_values"].to(self.device)
                 inputs["pixel_values"] = pixel_values
 
-            # Generate outputs
             outputs = self.model.generate(
                 input_ids=inputs["input_ids"],
                 attention_mask=inputs.get("attention_mask"),
                 pixel_values=inputs.get("pixel_values"),
-                max_new_tokens=self.max_new_tokens,
-                temperature=self.temperature,
-                top_p=self.top_p,
+                max_new_tokens=self.config.max_new_tokens,
+                temperature=self.config.temperature,
+                top_p=self.config.top_p,
                 do_sample=True,
-                repetition_penalty=1.2,
-                no_repeat_ngram_size=3
+                repetition_penalty=self.config.repetition_penalty,
+                no_repeat_ngram_size=self.config.no_repeat_ngram_size
             )
 
-            # Decode the response
             response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
-            # response = self._clean_response(response)
             return response
 
         except Exception as e:

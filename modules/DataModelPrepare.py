@@ -1,38 +1,18 @@
 import os
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Union, Tuple
+
 import torch
-import numpy as np
 from colorama import Fore, Style, init
-from datasets import load_dataset, concatenate_datasets, DatasetDict,get_dataset_config_info,get_dataset_split_names,get_dataset_config_names
-from transformers import (
-    AutoModelForCausalLM,
-    AutoTokenizer,
-    AutoConfig,
-    BitsAndBytesConfig,
-    DataCollatorForLanguageModeling,
-    Trainer,
-    TrainingArguments
-)
-from peft import (
-    LoraConfig,
-    get_peft_model,
-    PeftModel,
-    AutoPeftModelForCausalLM,
-    prepare_model_for_kbit_training
-)
-# from trl import SFTTrainer
-import evaluate
-from huggingface_hub import HfApi
+from datasets import load_dataset, concatenate_datasets, DatasetDict, get_dataset_split_names, get_dataset_config_names
+from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig, BitsAndBytesConfig
+from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 
 from modules.chatTemplate import ChatTemplate
-# from modules.chainpipe import Chainpipe
-from modules.createbasemodel import load_saved_model, CreateModel, VisionConfig, VisionModel
-
+from modules.createbasemodel import CreateModel
 from modules.variable import Variable
-
-import pandas as pd
 
 # Initialize colorama
 init(autoreset=True)
@@ -44,29 +24,46 @@ os.environ['OMP_NUM_THREADS'] = '1'
 os.environ["CUDA_LAUNCH_BLOCKING"] = "0"
 
 
+@dataclass
+class ManagerConfig:
+    device: Optional[str] = None  # e.g., "cuda:0" or "cpu"
+    lora_r: int = 8
+    lora_alpha: int = 8
+    lora_dropout: float = 0.05
+    lora_target_modules: Optional[List[str]] = None
+    load_in_4bit: bool = True
+    bnb_compute_dtype: torch.dtype = torch.float32
+    bnb_quant_type: str = "fp4"
+    bnb_use_double_quant: bool = False
+    max_length: int = 1000
+
+
     
     
 class Manager:
     """Manager class for handling fine-tuning operations."""
     
-    def __init__(self):
-        self.variable = Variable()        
-        self.repository = self.variable.REPO_DIR
-        self.CUTOM_MODEL_DIR = self.variable.CUTOM_MODEL_DIR
+    def __init__(self, config: ManagerConfig | None = None):
+        self.variable = Variable()
+        self.config = config or ManagerConfig()
         self.VISION_MODEL_DIR = self.variable.VISION_MODEL_DIR
         self.REGULAR_MODEL_DIR = self.variable.REGULAR_MODEL_DIR
-        self.MODEL_LOCAL_DIR = self.variable.REPO_DIR
         self.training_config_path = self.variable.training_config_path
         self.DATASET_FORMATTED_DIR = self.variable.DATASET_FORMATTED_DIR
-        self.device_map = "cuda:0" if torch.cuda.is_available() else "cpu"
         self.chat_template_saved = None
         self.chat_template_path = self.variable.chat_template_path
+
+        # Device selection
+        default_device = "cuda:0" if torch.cuda.is_available() else "cpu"
+        self.device_map = self.config.device or default_device
+
         os.makedirs(self.DATASET_FORMATTED_DIR, exist_ok=True)
 
     
-    def get_model_architecture(self, model_id: str) -> List[str]:
+    def get_model_architecture(self, model_id: Union[str, Path]) -> List[str]:
         try:
-            config = AutoConfig.from_pretrained(model_id)
+            model_path = Path(model_id)
+            config = AutoConfig.from_pretrained(model_path if model_path.exists() else str(model_id))
             model_type = config.model_type.lower()
             
             target_modules_map = {
@@ -99,39 +96,19 @@ class Manager:
             print(f"{Fore.YELLOW}Warning: Could not detect model architecture, using default target modules: {str(e)}{Style.RESET_ALL}")
             return ["q_proj", "k_proj", "v_proj", "o_proj"]
     
-    def get_model_task(self, model_name: str) -> str:
-        try:
-            api = HfApi()
-            models = api.list_models(search=model_name)
-            for model in models:
-                if model.id.startswith(model_name):
-                    return model.pipeline_tag
-            return "text-generation"
-        except Exception as e:
-            print(f"{Fore.YELLOW}Warning: Could not determine model task, using default: {str(e)}{Style.RESET_ALL}")
-            return "text-generation"
-    
-
-    def load_model(self, model_id: str) -> Tuple[Optional[AutoModelForCausalLM], Optional[AutoTokenizer]]:
-       
+    def load_model(self, model_id: Union[str, Path]) -> Tuple[Optional[AutoModelForCausalLM], Optional[AutoTokenizer]]:
         print(f"{Fore.CYAN}Retrieving model {model_id}{Style.RESET_ALL}")
 
-        
         try:
-
-            self.model_task = self.get_model_task(model_id)
-            print(f"{Fore.CYAN}Model task detected: {self.model_task}{Style.RESET_ALL}")
-            
             return self._load_from_scratch(model_id)
-
-
         except Exception as e:
             print(f"{Fore.RED}Error loading model {model_id}: {str(e)}{Style.RESET_ALL}")
             return None, None
     
 
-    def _load_from_scratch(self, model_id: str) -> Tuple[Optional[AutoModelForCausalLM], Optional[AutoTokenizer]]:
-        model_path = self.variable.LocalModel_DIR / model_id
+    def _load_from_scratch(self, model_id: Union[str, Path]) -> Tuple[Optional[AutoModelForCausalLM], Optional[AutoTokenizer]]:
+        potential_path = Path(model_id)
+        model_path = potential_path if potential_path.exists() else (self.variable.LocalModel_DIR / str(model_id))
         try:
             print(f"{Fore.CYAN}Downloading and loading model: {model_path}{Style.RESET_ALL}")
             
@@ -145,20 +122,22 @@ class Manager:
             
             
             config = AutoConfig.from_pretrained(
-                model_id,
+                model_path,
                 trust_remote_code=True,
                 use_cache=False  # Disable cache for gradient checkpointing compatibility
             )
             
             # Get target modules for LoRA based on model architecture
-            target_modules = self.get_model_architecture(model_id)
+            target_modules = self.get_model_architecture(model_path)
+            if self.config.lora_target_modules:
+                target_modules = self.config.lora_target_modules
             
             # Configure quantization
             bnb_config = BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_compute_dtype=torch.float32,
-                bnb_4bit_quant_type="fp4",
-                bnb_4bit_use_double_quant=False
+                load_in_4bit=self.config.load_in_4bit,
+                bnb_4bit_compute_dtype=self.config.bnb_compute_dtype,
+                bnb_4bit_quant_type=self.config.bnb_quant_type,
+                bnb_4bit_use_double_quant=self.config.bnb_use_double_quant,
             )
             
             # Load base model with quantization
@@ -176,10 +155,10 @@ class Manager:
             
             # Configure LoRA
             lora_config = LoraConfig(
-                r=8,  # Rank
-                lora_alpha=8,  # Alpha scaling
+                r=self.config.lora_r,
+                lora_alpha=self.config.lora_alpha,
                 target_modules=target_modules,
-                lora_dropout=0.05,
+                lora_dropout=self.config.lora_dropout,
                 bias="none",
                 task_type="CAUSAL_LM"
             )
@@ -199,48 +178,31 @@ class Manager:
             print(f"{Fore.RED}Error loading model from scratch: {str(e)}{Style.RESET_ALL} from {model_path}")
             return None, None
     
-    def load_dataset(self, dataset_name: str, config: Optional[Dict] = None) -> Optional[DatasetDict]:
-        
+    def load_dataset(self, dataset_name: str, config_name: Optional[str] = None) -> Optional[DatasetDict]:
         print(f"{Fore.CYAN}Retrieving dataset {dataset_name}{Style.RESET_ALL}")
-        
-        valid_sep = ['train' if 'train' in get_dataset_split_names(dataset_name, config) else 'test' for config in get_dataset_config_names(dataset_name)]
-        split = valid_sep[0] if valid_sep else 'train'
-        
-        
-            
+
         try:
-            self.dataset_name = dataset_name
-            
-            if config is not None:
-                try:
-                    print(f"{Fore.YELLOW}Attempting to load dataset with config: {config}{Style.RESET_ALL}")
-                    dataset = load_dataset(dataset_name, config, split=split)
-                    print(f"{Fore.GREEN}Successfully loaded dataset with config{Style.RESET_ALL}")
-                except Exception as e:
-                    print(f"{Fore.RED}Error loading dataset with config: {str(e)}{Style.RESET_ALL}")
-                    print(f"{Fore.YELLOW}Trying to load dataset without config...{Style.RESET_ALL}")
-                    try:
-                        dataset = load_dataset(dataset_name, split=split)
-                        print(f"{Fore.GREEN}Successfully loaded dataset without config{Style.RESET_ALL}")
-                    except Exception as e2:
-                        print(f"{Fore.RED}Error loading dataset without config: {str(e2)}{Style.RESET_ALL}")
-                        return None
-            else:
-                try:
-                    dataset = load_dataset(dataset_name, split=split)
-                    print(f"{Fore.GREEN}Successfully loaded dataset without config{Style.RESET_ALL}")
-                except Exception as e:
-                    print(f"{Fore.RED}Error loading dataset: {str(e)}{Style.RESET_ALL}")
-                    return None
-            return dataset
+            splits = get_dataset_split_names(dataset_name, config_name)
+            split = 'train' if 'train' in splits else ('test' if 'test' in splits else 'train')
+        except Exception:
+            split = 'train'
+
+        try:
+            if config_name is not None:
+                print(f"{Fore.YELLOW}Attempting to load dataset with config: {config_name}{Style.RESET_ALL}")
+                return load_dataset(dataset_name, config_name, split=split)
+
+            print(f"{Fore.YELLOW}Loading dataset without config...{Style.RESET_ALL}")
+            return load_dataset(dataset_name, split=split)
         except Exception as e:
-            print(f"{Fore.RED}Unexpected error loading dataset {dataset_name}: {str(e)}{Style.RESET_ALL}")
+            print(f"{Fore.RED}Error loading dataset {dataset_name}: {str(e)}{Style.RESET_ALL}")
             return None
     
     def map_tokenizer(self, dataset_name: str, model_name: str, tokenizer: AutoTokenizer, dataset: DatasetDict, 
-                     max_length: int = 1000, Tokenizing: bool = False) -> Optional[DatasetDict]:
+                     max_length: Optional[int] = None, Tokenizing: bool = False) -> Optional[DatasetDict]:
 
-        print(f"{Fore.CYAN}Processing dataset with max length: {max_length}{Style.RESET_ALL}")
+        max_len = max_length or self.config.max_length
+        print(f"{Fore.CYAN}Processing dataset with max length: {max_len}{Style.RESET_ALL}")
         
         # Ensure tokenizer has padding token
         if tokenizer.pad_token is None:
@@ -253,7 +215,7 @@ class Manager:
             tokenized_dataset = self.chat_template.prepare_dataset(
                 dataset_name,
                 dataset,
-                max_length=max_length,
+                max_length=max_len,
                 Tokenizing=Tokenizing
             )
             print(f"{Fore.GREEN}Successfully prepared chat dataset{Style.RESET_ALL}")
@@ -261,7 +223,7 @@ class Manager:
         except Exception as e:
             print(f"{Fore.RED}Error tokenizing dataset: {str(e)}{Style.RESET_ALL}")
             return None
-    def dataset_prepare(self, list_model_data: List[Dict[str, Any]]) -> Tuple[Optional[AutoModelForCausalLM], Optional[DatasetDict]]:
+    def dataset_prepare(self, list_model_data: Dict[str, Any]) -> Tuple[Optional[AutoModelForCausalLM], Optional[DatasetDict]]:
         
         datamodel_file = self.variable.SAVED_CONFIG_Path
         
@@ -273,8 +235,9 @@ class Manager:
         try:
             with open(datamodel_file, 'r') as f:
                 config = json.load(f)
-        except:
+        except Exception:
             print(f"error config file not found {datamodel_file}")
+            config = {}
             
         try:
             # combined_dataset = None
@@ -285,7 +248,7 @@ class Manager:
             model_training_data = {'model':dict()}
             
             #load model and dataset prepare for tuning
-            for modelname,dict_dataset in list_model_data['model'].items():
+            for modelname,dict_dataset in list_model_data.get('model', {}).items():
 
                 model_repo = self.variable.REPO_DIR / "models" / modelname
                 model, tokenizer = self.load_model(model_repo)
@@ -297,7 +260,7 @@ class Manager:
                 
                 first_cols = set()
                 second_cols = set()
-                concat_dataset = set()
+                concat_dataset = None
 
                 model_training_data['model'][modelname] = dict()
 
@@ -311,7 +274,7 @@ class Manager:
                         try:
                             print(f"{Fore.CYAN}Loading dataset config: {dataset_name} {config.get(dataset_name, 'No config found')}{Style.RESET_ALL}")
                             
-                            dataset = self.load_dataset(dataset_name, config.get(dataset_name, 'default'))
+                            dataset = self.load_dataset(dataset_name, config.get(dataset_name))
                         
                             
                             if first_dataset is None:
@@ -360,9 +323,9 @@ class Manager:
                             #after getting concatenate dataset return it to embedding formatted with return both false since the model going to tokenized it anyways
                             saved_dataset = self.map_tokenizer(dataset_name,
                                                                model_repo,
-                                                                tokenizer, 
-                                                                concat_dataset,
-                                                                Tokenizing=True)
+                                                               tokenizer, 
+                                                               concat_dataset,
+                                                               Tokenizing=True)
                             
                             os.makedirs(self.DATASET_FORMATTED_DIR  / formatted_dataset_name, exist_ok=True)
                             saved_dataset.save_to_disk(self.DATASET_FORMATTED_DIR / formatted_dataset_name)
@@ -382,11 +345,11 @@ class Manager:
                                 formatted_dataset_name = f"concat_{formatted_dataset_name}"
                                 #after formatted to right format it use it to embedding
                                 #after getting concatenate dataset return it to embedding formatted with return both false since the model going to tokenized it anyways
-                                saved_dataset = self.map_tokenizer(dataset_name, 
-                                                                    tokenizer,
+                                saved_dataset = self.map_tokenizer(dataset_name,
                                                                     model_repo,
+                                                                    tokenizer,
                                                                     concat_dataset,
-                                                                                Tokenizing=True)
+                                                                    Tokenizing=True)
                                 
                                 
                                 os.makedirs(self.DATASET_FORMATTED_DIR  / formatted_dataset_name, exist_ok=True)
@@ -399,7 +362,7 @@ class Manager:
                         print(f"{Fore.GREEN}Formatted dataset already exists: {formatted_dataset_name}, loading...{Style.RESET_ALL}")
                         continue
                         
-                if "conversations" in union_cols:
+                if union_cols and "conversations" in union_cols:
                     #if model is not local and been createdd
                     model_name_safe = modelname.replace("/","_")
                     model_path = self.REGULAR_MODEL_DIR / model_name_safe
@@ -413,7 +376,7 @@ class Manager:
                             f.write(self.chat_template_saved)
 
                 #temporal fix this
-                if "image" in union_cols or "images" in union_cols:
+                if union_cols and ("image" in union_cols or "images" in union_cols):
                     model_name_safe = modelname.replace("/","_")
 
                     model_path = self.VISION_MODEL_DIR / model_name_safe                       
