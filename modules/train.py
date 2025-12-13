@@ -242,7 +242,7 @@ class FinetuneModel:
                 model_save_path = self.CHECKPOINT_DIR / 'text-vision-text-generation' / modelname
                 model_save_path.mkdir(parents=True, exist_ok=True)
                 # Save the final model and adapter
-                
+
                 trainer.save_model(str(model_save_path))
                 tokenizer.save_pretrained(str(model_save_path))
                            

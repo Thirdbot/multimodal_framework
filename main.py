@@ -27,7 +27,7 @@ setcard = ApiCardSetup()
 
 #set lists of models and datasets in config files
 list_models = api.list_models(model_name='Qwen/Qwen1.5-0.5B-Chat',limit=1,gated=False)
-list_datasets = api.list_datasets(dataset_name='waltsun/MOAT',limit=1,gated=False)
+list_datasets = api.list_datasets(dataset_name='laolao77/MMDU',limit=1,gated=False)
 
 #set new list to download
 list_download = setcard.set(list_models,list_datasets)
@@ -41,15 +41,16 @@ Ft.finetune_model()
 
 
 
-model_path = Path(__file__).parent.absolute() / "checkpoints" / "text-vision-text-generation" / "Qwen_Qwen1.5-0.5B-Chat"
-inference_manager = InferenceManager(model_path)
+# model_path = Path(__file__).parent.absolute() / "checkpoints" / "text-vision-text-generation" / "Qwen_Qwen1.5-0.5B-Chat"
+# inference_manager = InferenceManager(model_path)
+# image_path = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcStFEnMosKZV8Y5Dy23L_kjxg7Jup75XA3Cpg&s"
 
-user_input = "hello"
+# user_input = ""
 
-response = inference_manager.generate_response(user_input)
-print(f"{response}")
+# response = inference_manager.generate_response(user_input,image_path=image_path)
+# print(f"{response}")
 
-image_path = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTiiZyiJG5uo_GflSgl9CS_6gfy3l3FfV0l5P5dXMBQIDFClkiTpc228D6mJXdh2Hcv_yo&usqp=CAU"
-user_input = " what in this image?"
-response = inference_manager.generate_response(user_input,image_path=image_path)
-print(f"{response}")
+# image_path = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRngDpJnVUWLRj3Vs5HEmhuzCgK0w5SEN0Mgg&s"
+# user_input = ""
+# response = inference_manager.generate_response(user_input,image_path=image_path)
+# print(f"{response}")
