@@ -1,6 +1,15 @@
-{% for message in messages %}{% if loop.first and messages[0]['role'] != 'system' %}{{ '<|im_start|>system
+{% for message in messages %}
+{% set role_key = 'role' if 'role' in message else ('from' if 'from' in message else 'user') %}
+{% set content_key = 'content' if 'content' in message else ('value' if 'value' in message else 'content') %}
+{% set first_role = messages[0]['role'] if 'role' in messages[0] else (messages[0]['from'] if 'from' in messages[0] else 'user') %}
+{% if loop.first and first_role != 'system' %}
+{{ '<|im_start|>system
 You are a helpful assistant.<|im_end|>
-' }}{% endif %}{{'<|im_start|>' + message['role'] + '
-' + message['content'] + '<|im_end|>' + '
-'}}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant
+' }}
+{% endif %}
+{{ '<|im_start|>' + message[role_key] + '
+' + message[content_key] + '<|im_end|>
+' }}
+{% endfor %}
+{% if add_generation_prompt %}{{ '<|im_start|>assistant
 ' }}{% endif %}
