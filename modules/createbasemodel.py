@@ -1,24 +1,71 @@
 import os
-os.environ['KMP_DUPLICATE_LIB_OK']='True'
-from transformers import LlamaModel, LlamaConfig, AutoTokenizer, AutoConfig,ProcessorMixin,PretrainedConfig,PreTrainedModel,CLIPVisionModel,CLIPProcessor,AutoModelForCausalLM,AutoModel
-from transformers import AutoProcessor
-from transformers.modeling_outputs import CausalLMOutputWithCrossAttentions
 import torch
-from pathlib import Path
 import json
-from transformers.image_utils import load_image
-from transformers import BitsAndBytesConfig
-from peft import AutoPeftModelForCausalLM, LoraConfig, get_peft_model, prepare_model_for_kbit_training
-from jinja2 import Environment, FileSystemLoader
+from pathlib import Path
+from dataclasses import dataclass
+
+from transformers import (
+    AutoTokenizer, AutoConfig, ProcessorMixin, PretrainedConfig, PreTrainedModel,
+    CLIPProcessor, AutoModelForCausalLM, BitsAndBytesConfig
+)
+from transformers.modeling_outputs import CausalLMOutputWithCrossAttentions
+from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training,PeftModel
+from transformers import CLIPVisionModel
+
 from modules.variable import Variable
 
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 
-def find_all_linear_names(model):
-    linear_names = []
-    for name, module in model.named_modules():
-        if isinstance(module, torch.nn.Linear):
-            linear_names.append(name)
-    return linear_names
+
+# =============================================================================
+# CONFIGURATION AND UTILITY CONSTANTS
+# =============================================================================
+
+TARGET_MODULES_MAP = {
+    "gpt2": ["c_attn", "c_proj"],
+    "llama": ["q_proj", "k_proj", "v_proj", "o_proj"],
+    "mistral": ["q_proj", "k_proj", "v_proj", "o_proj"],
+    "opt": ["q_proj", "k_proj", "v_proj", "out_proj"],
+    "bloom": ["query_key_value", "dense"],
+    "t5": ["q", "k", "v", "o"],
+    "bert": ["query", "key", "value", "output.dense"],
+    "roberta": ["query", "key", "value", "output.dense"],
+    "gpt_neox": ["query_key_value", "dense"],
+    "falcon": ["query_key_value", "dense"],
+    "mpt": ["Wqkv", "out_proj"],
+    "baichuan": ["W_pack", "o_proj"],
+    "chatglm": ["query_key_value", "dense"],
+    "qwen": ["c_attn", "c_proj"],
+    "phi": ["Wqkv", "out_proj"],
+    "gemma": ["q_proj", "k_proj", "v_proj", "o_proj"],
+    "stablelm": ["q_proj", "k_proj", "v_proj", "o_proj"]
+}
+
+
+def get_target_modules(model_type: str) -> list:
+    """Get target modules for LoRA based on model type."""
+    return TARGET_MODULES_MAP.get(model_type.lower(), ["q_proj", "k_proj", "v_proj", "o_proj"])
+
+
+@dataclass
+class QuantizationConfig:
+    """Configuration for model quantization."""
+    load_in_4bit: bool = True
+    compute_dtype: torch.dtype = torch.float32
+    quant_type: str = "fp4"
+    use_double_quant: bool = False
+    llm_int8_threshold: float = 0.0
+    llm_int8_has_fp16_weight: bool = False
+
+
+@dataclass
+class ModelConfig:
+    """General model configuration."""
+    clip_processor_name: str = "openai/clip-vit-large-patch14"
+    use_fast_tokenizer: bool = True
+    use_cache: bool = False
+    gradient_checkpointing: bool = True
+    quantization: QuantizationConfig | None = None
 
 
 # Config classes
@@ -39,16 +86,20 @@ class VisionConfig(PretrainedConfig):
         # self.lang_embed_dim = lang_embed_dim
         # self.clip_dim = clip_dim
 
-# Model classes
+
+# =============================================================================
+# MODEL CLASSES
+# =============================================================================
+
 class ConversationModel(PreTrainedModel):
     config_class = ConversationConfig
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
     def __init__(self, config, base_model):
         super().__init__(config)
-        self.model = base_model.to(self.device)  # Move base model to GPU
+        self.model = base_model.to(self.device)
         self.config = config
         
-        # Copy PEFT attributes from base model
         if hasattr(base_model, 'peft_config'):
             self.peft_config = base_model.peft_config
         if hasattr(base_model, 'active_adapter'):
@@ -56,80 +107,50 @@ class ConversationModel(PreTrainedModel):
         if hasattr(base_model, 'base_model'):
             self.base_model = base_model.base_model
         
-        # Enable gradient checkpointing for memory efficiency
         self.supports_gradient_checkpointing = True
         self._is_gradient_checkpointing = False
-    
+
     def get_target_modules(self):
         if hasattr(self.model, 'get_target_modules'):
             return self.model.get_target_modules()
-            
         model_type = self.config.model_type.lower() if hasattr(self.config, 'model_type') else ""
-        
-        target_modules_map = {
-            "gpt2": ["c_attn", "c_proj"],
-            "llama": ["q_proj", "k_proj", "v_proj", "o_proj"],
-            "mistral": ["q_proj", "k_proj", "v_proj", "o_proj"],
-            "opt": ["q_proj", "k_proj", "v_proj", "out_proj"],
-            "bloom": ["query_key_value", "dense"],
-            "t5": ["q", "k", "v", "o"],
-            "bert": ["query", "key", "value", "output.dense"],
-            "roberta": ["query", "key", "value", "output.dense"],
-            "gpt_neox": ["query_key_value", "dense"],
-            "falcon": ["query_key_value", "dense"],
-            "mpt": ["Wqkv", "out_proj"],
-            "baichuan": ["W_pack", "o_proj"],
-            "chatglm": ["query_key_value", "dense"],
-            "qwen": ["c_attn", "c_proj"],
-            "phi": ["Wqkv", "out_proj"],
-            "gemma": ["q_proj", "k_proj", "v_proj", "o_proj"],
-            "stablelm": ["q_proj", "k_proj", "v_proj", "o_proj"]
-        }
-        
-        return target_modules_map.get(model_type, ["q_proj", "k_proj", "v_proj", "o_proj"])
+        return get_target_modules(model_type)
     
     def forward(self, input_ids=None, attention_mask=None, labels=None, **kwargs):
-        """Forward pass for conversation model."""
         outputs = self.model(
-            input_ids=input_ids.to(self.device),  # Move input_ids to GPU
-            attention_mask=attention_mask.to(self.device),  # Move attention_mask to GPU
-            labels=labels.to(self.device) if labels is not None else None,  # Move labels to GPU
+            input_ids=input_ids.to(self.device),
+            attention_mask=attention_mask.to(self.device),
+            labels=labels.to(self.device) if labels is not None else None,
             **kwargs
         )
         return outputs
-    
+
     def generate(self, *args, **kwargs):
         return self.model.generate(*args, **kwargs)
-    
+
     @property
     def is_gradient_checkpointing(self) -> bool:
-        """Whether gradient checkpointing is enabled."""
         return self._is_gradient_checkpointing
-    
+
     @is_gradient_checkpointing.setter
     def is_gradient_checkpointing(self, value: bool):
-        """Set gradient checkpointing state."""
         self._is_gradient_checkpointing = value
-        
+
     def gradient_checkpointing_enable(self, gradient_checkpointing_kwargs=None):
-        """Enable gradient checkpointing for the model."""
         if hasattr(self.model, "gradient_checkpointing_enable"):
             self.model.gradient_checkpointing_enable(gradient_checkpointing_kwargs=gradient_checkpointing_kwargs)
         self.is_gradient_checkpointing = True
-        
+
     def gradient_checkpointing_disable(self):
-        """Disable gradient checkpointing for the model."""
         if hasattr(self.model, "gradient_checkpointing_disable"):
             self.model.gradient_checkpointing_disable()
         self.is_gradient_checkpointing = False
-        
+
     def _set_gradient_checkpointing(self, module, value=False):
-        """Set gradient checkpointing for a specific module."""
         if hasattr(module, "gradient_checkpointing"):
             module.gradient_checkpointing = value
-            
+
     def enable_input_require_grads(self):
-        """Enable input gradients - required for gradient checkpointing."""
         if hasattr(self.model, "enable_input_require_grads"):
             self.model.enable_input_require_grads()
             
@@ -163,29 +184,25 @@ class VisionAdapter(torch.nn.Module):
 class VisionModel(PreTrainedModel):
     config_class = VisionConfig
 
-    def __init__(self,config, lang_model=None):
+    def __init__(self, config, lang_model=None, model_config: ModelConfig | None = None):
         super().__init__(config)
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.variable = Variable()
-        self.vision_model = CLIPVisionModel.from_pretrained(
-            "openai/clip-vit-large-patch14"
-            )
+        self.model_config = model_config or ModelConfig()
+        self.vision_model = CLIPVisionModel.from_pretrained(self.model_config.clip_processor_name)
         self.vision_adapter = VisionAdapter(1024, 1024)
         
-        #freeze vision model
         for param in self.vision_model.parameters():
             param.requires_grad = False
 
-        # self.lang_model = lang_model.to(device)  # Move language model to GPU
         self.lang_model = lang_model
-        
         self.supports_gradient_checkpointing = True
         self._is_gradient_checkpointing = False
-        
         self.config = config
-
-        # embeddings = self.lang_model.get_input_embeddings()
-        # self.text_adapter = torch.nn.Linear(embeddings.weight.shape[1], 1024).to(device)  # Move text adapter to GPU
+        
+        # Ensure all components are on the same device as language model
+        if self.lang_model is not None:
+            device = next(self.lang_model.parameters()).device
+            self.vision_model = self.vision_model.to(device)
+            self.vision_adapter = self.vision_adapter.to(device)
 
     def forward(self, input_ids=None, attention_mask=None, pixel_values=None,
                 attend_to_img_tokens=True, labels=None, **kwargs):
@@ -269,33 +286,27 @@ class VisionModel(PreTrainedModel):
     
     @property
     def is_gradient_checkpointing(self) -> bool:
-        """Whether gradient checkpointing is enabled."""
         return self._is_gradient_checkpointing
-    
+
     @is_gradient_checkpointing.setter
     def is_gradient_checkpointing(self, value: bool):
-        """Set gradient checkpointing state."""
         self._is_gradient_checkpointing = value
-        
+
     def gradient_checkpointing_enable(self, gradient_checkpointing_kwargs=None):
-        """Enable gradient checkpointing for the model."""
         if hasattr(self.vision_model, "gradient_checkpointing_enable"):
             self.vision_model.gradient_checkpointing_enable(gradient_checkpointing_kwargs=gradient_checkpointing_kwargs)
         self.is_gradient_checkpointing = True
-        
+
     def gradient_checkpointing_disable(self):
-        """Disable gradient checkpointing for the model."""
         if hasattr(self.vision_model, "gradient_checkpointing_disable"):
             self.vision_model.gradient_checkpointing_disable()
         self.is_gradient_checkpointing = False
-        
+
     def _set_gradient_checkpointing(self, module, value=False):
-        """Set gradient checkpointing for a specific module."""
         if hasattr(module, "gradient_checkpointing"):
             module.gradient_checkpointing = value
-            
+
     def enable_input_require_grads(self):
-        """Enable input gradients - required for gradient checkpointing."""
         if hasattr(self.vision_model, "enable_input_require_grads"):
             self.vision_model.enable_input_require_grads()
 
@@ -307,16 +318,11 @@ class VisionModel(PreTrainedModel):
 
         embeddings, attention_mask = self.process_inputs(input_ids, attention_mask, pixel_values, attend_to_img_tokens)
 
-        if "max_new_tokens" not in kwargs:
-            kwargs["max_new_tokens"] = 100
-        if "min_length" not in kwargs:
-            kwargs["min_length"] = 1
-        if "num_beams" not in kwargs:
-            kwargs["num_beams"] = 4
-        if "temperature" not in kwargs:
-            kwargs["temperature"] = 0.7
-        if "do_sample" not in kwargs:
-            kwargs["do_sample"] = True
+        kwargs.setdefault("max_new_tokens", 100)
+        kwargs.setdefault("min_length", 1)
+        kwargs.setdefault("num_beams", 4)
+        kwargs.setdefault("temperature", 0.7)
+        kwargs.setdefault("do_sample", True)
 
         return self.lang_model.generate(
             inputs_embeds=embeddings,
@@ -329,13 +335,24 @@ class VisionModel(PreTrainedModel):
         device = next(self.lang_model.parameters()).device
         dtype = next(self.lang_model.parameters()).dtype
 
+        # Move all inputs to the correct device
+        if input_ids is not None:
+            input_ids = input_ids.to(device)
+        if attention_mask is not None:
+            attention_mask = attention_mask.to(device)
+        
         # Move embeddings and attention mask to the correct device and dtype
         embeddings = self.lang_model.get_input_embeddings()(input_ids)
+        embeddings = embeddings.to(device).to(dtype)
         attention_mask = attention_mask.to(device).to(dtype)
 
         if pixel_values is not None:
             pixel_values = pixel_values.to(device).to(dtype)
-            image_embeddings = self.vision_model(pixel_values).last_hidden_state.to(dtype)
+            # Ensure vision model is on the correct device
+            self.vision_model = self.vision_model.to(device)
+            self.vision_adapter = self.vision_adapter.to(device)
+            
+            image_embeddings = self.vision_model(pixel_values).last_hidden_state.to(dtype).to(device)
 
             # Adapt image embeddings to match language embeddings
             adapted_embeddings = self.vision_adapter(image_embeddings)
@@ -355,19 +372,15 @@ class VisionModel(PreTrainedModel):
         return mask
 
         
-# Processor class
 class VisionProcessor(ProcessorMixin):
-    #added audio cause error needed audio
-    attributes = ['image_processor','tokenizer','audio_tokenizer']
+    attributes = ['image_processor', 'tokenizer']
 
-    def __init__(self,image_processor,tokenizer,audio_tokenizer=None):
+    def __init__(self, image_processor, tokenizer):
         self.image_processor = image_processor
         self.tokenizer = tokenizer
         self.tokenizer.pad_token = self.tokenizer.eos_token
         self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
         self.chat_template = self.tokenizer.chat_template
-        self.audio_tokenizer = audio_tokenizer
-        self.current_processor = self
     
     def add_label(self, inputs):
         num_images_tokens = 257  # Number of image tokens
@@ -420,54 +433,41 @@ AutoModelForCausalLM.register(ConversationConfig, ConversationModel)
 AutoModelForCausalLM.register(VisionConfig, VisionModel)
     
 class CreateModel:
-    def __init__(self, model_repo_path, model_category):
+    def __init__(self, model_repo_path, model_category, model_config: ModelConfig | None = None):
+        self.model_config = model_config or ModelConfig()
         self.model_repo_path = model_repo_path
-        self.save_name = self.model_repo_path.name.replace("/","_")
+        self.save_name = self.model_repo_path.name.replace("/", "_")
         self.model_category = model_category
         self.variable = Variable()
         self.dtype = self.variable.DTYPE
-        
-        self.chat_template = """{% for message in messages %}
-        {% if message['role'] == 'system' %}
-        {{ message['content'] }}
-        {% elif message['role'] == 'user' %}
-        Human: {% if message.get('images') %}
-        [Images: {{ message['images']|length }}]
-        {% endif %}
-        {{ message['content'] }}
-        {% elif message['role'] == 'assistant' %}
-        Assistant: {{ message['content'] }}
-        {% endif %}
-        {% endfor %}
-        Assistant:"""
-        self.local_model_path = self.variable.LocalModel_DIR
         self.model_path = Path(__file__).parent.parent.absolute() / "custom_models" / self.model_category / self.save_name
         self.model_path.mkdir(parents=True, exist_ok=True)
-        
-        # Load the original model and its config with more stable quantization
+
+        # Use configurable quantization
+        quant_cfg = self.model_config.quantization or QuantizationConfig()
         self.quantization_config = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_compute_dtype=self.dtype,  # Use float32 for compute
-            bnb_4bit_quant_type="fp4",  # Use fp4 instead of nf4 for more stability
-            bnb_4bit_use_double_quant=False,  # Disable double quantization
-            llm_int8_threshold=0.0,  # Disable int8 threshold
-            llm_int8_has_fp16_weight=False,
+            load_in_4bit=quant_cfg.load_in_4bit,
+            bnb_4bit_compute_dtype=quant_cfg.compute_dtype,
+            bnb_4bit_quant_type=quant_cfg.quant_type,
+            bnb_4bit_use_double_quant=quant_cfg.use_double_quant,
+            llm_int8_threshold=quant_cfg.llm_int8_threshold,
+            llm_int8_has_fp16_weight=quant_cfg.llm_int8_has_fp16_weight,
         )
-        
+
         try:
-            print(f"Loading model with stable quantization settings...")
+            print("Loading model with quantization settings...")
             self.model = AutoModelForCausalLM.from_pretrained(
                 self.model_repo_path,
                 quantization_config=self.quantization_config,
                 device_map="auto",
-                torch_dtype=self.dtype,  # Use float32 instead of bfloat16
+                torch_dtype=self.dtype,
                 low_cpu_mem_usage=True,
                 trust_remote_code=True
             )
-            print(f"Model loaded successfully")
+            print("Model loaded successfully")
         except Exception as e:
             print(f"Error loading model with quantization: {str(e)}")
-            print(f"Attempting to load without quantization...")
+            print("Attempting to load without quantization...")
             self.model = AutoModelForCausalLM.from_pretrained(
                 self.model_repo_path,
                 device_map="auto",
@@ -475,32 +475,19 @@ class CreateModel:
                 low_cpu_mem_usage=True,
                 trust_remote_code=True
             )
-        
+
         self.original_config = ConversationConfig()
-        
-        # First load the tokenizer to get the correct vocab size
         self.tokenizer = AutoTokenizer.from_pretrained(
             self.model_repo_path,
-            use_fast=True,
+            use_fast=self.model_config.use_fast_tokenizer,
             trust_remote_code=True
         )
-        # self.template = self.load_template_from_model()
-        
-        # self.tokenizer.chat_template = self.str_template(self.local_model_path / self.model_repo_path)
-        
-        self.clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-large-patch14", use_fast=True)
+        self.clip_processor = CLIPProcessor.from_pretrained(
+            self.model_config.clip_processor_name,
+            use_fast=self.model_config.use_fast_tokenizer
+        )
         self.vision_processor = VisionProcessor(self.clip_processor, self.tokenizer)
-        
         self.vision_config = VisionConfig()
-        
-    # def str_template(self,model_path):
-    #     template_str = ""
-    #     with open(model_path / "chat_template.jinja", "r", encoding="utf-8") as f:
-    #         template_str = f.read()
-    #     return template_str
-        
-    # def load_template_from_model(self):
-    #     model_path = self.local_model_path / self.model_repo_path
     #     template_loader = FileSystemLoader(searchpath=model_path)
     #     envi = Environment(loader=template_loader)
     #     template = envi.get_template("chat_template.jinja")
@@ -509,11 +496,8 @@ class CreateModel:
     def add_conversation(self):
         """Add conversation capability to the model."""
         try:
-            # Configure quantization
-            
-            # Load base model with quantization
             if not isinstance(self.model, AutoModelForCausalLM):
-                print(f"Converting model to AutoModelForCausalLM")
+                print("Converting model to AutoModelForCausalLM")
                 self.model = AutoModelForCausalLM.from_pretrained(
                     self.model_repo_path,
                     device_map="auto",
@@ -522,61 +506,31 @@ class CreateModel:
                     torch_dtype=self.dtype
                 )
             
-            # Prepare model for k-bit training
             self.model = prepare_model_for_kbit_training(self.model)
             
-            # Get target modules based on model architecture
             model_type = self.model.config.model_type.lower() if hasattr(self.model.config, 'model_type') else ""
-            target_modules_map = {
-                "gpt2": ["c_attn", "c_proj"],
-                "llama": ["q_proj", "k_proj", "v_proj", "o_proj"],
-                "mistral": ["q_proj", "k_proj", "v_proj", "o_proj"],
-                "opt": ["q_proj", "k_proj", "v_proj", "out_proj"],
-                "bloom": ["query_key_value", "dense"],
-                "t5": ["q", "k", "v", "o"],
-                "bert": ["query", "key", "value", "output.dense"],
-                "roberta": ["query", "key", "value", "output.dense"],
-                "gpt_neox": ["query_key_value", "dense"],
-                "falcon": ["query_key_value", "dense"],
-                "mpt": ["Wqkv", "out_proj"],
-                "baichuan": ["W_pack", "o_proj"],
-                "chatglm": ["query_key_value", "dense"],
-                "qwen": ["c_attn", "c_proj"],
-                "phi": ["Wqkv", "out_proj"],
-                "gemma": ["q_proj", "k_proj", "v_proj", "o_proj"],
-                "stablelm": ["q_proj", "k_proj", "v_proj", "o_proj"]
-            }
-            target_modules = target_modules_map.get(model_type, ["q_proj", "k_proj", "v_proj", "o_proj"])
-            # target_modules = find_all_linear_names(self.model)
+            target_modules = get_target_modules(model_type)
             print(f"Using target modules for {model_type}: {target_modules}")
             
-            # Configure LoRA
             lora_config = LoraConfig(
-                r=32,  # Lower rank to cut trainable params
-                lora_alpha=64,  # Scale matches reduced rank
+                r=32,
+                lora_alpha=64,
                 target_modules=target_modules,
                 lora_dropout=0.05,
                 bias="none",
                 task_type="CAUSAL_LM"
             )
             
-            # Get PEFT model
             self.model = get_peft_model(self.model, lora_config)
-            
-            # Create conversation model
             self.convomodel = ConversationModel(self.original_config, self.model)
             
-            # Disable caching for gradient checkpointing
             self.model.config.use_cache = False
             self.convomodel.config.use_cache = False
             
-            # Enable training mode and gradient checkpointing
             self.convomodel.train()
             self.convomodel.gradient_checkpointing_enable()
             
-            print(f"Successfully created conversation model with LoRA configuration")
-            
-            # Print trainable parameters
+            print("Successfully created conversation model with LoRA configuration")
             trainable_params = 0
             all_param = 0
             for _, param in self.convomodel.named_parameters():
@@ -592,75 +546,38 @@ class CreateModel:
     
     def add_vision(self):
         self.model = prepare_model_for_kbit_training(self.model)
-            
-        # Get target modules based on model architecture
+        
         model_type = self.model.config.model_type.lower() if hasattr(self.model.config, 'model_type') else ""
-        target_modules_map = {
-            "gpt2": ["c_attn", "c_proj"],
-            "llama": ["q_proj", "k_proj", "v_proj", "o_proj"],
-            "mistral": ["q_proj", "k_proj", "v_proj", "o_proj"],
-            "opt": ["q_proj", "k_proj", "v_proj", "out_proj"],
-            "bloom": ["query_key_value", "dense"],
-            "t5": ["q", "k", "v", "o"],
-            "bert": ["query", "key", "value", "output.dense"],
-            "roberta": ["query", "key", "value", "output.dense"],
-            "gpt_neox": ["query_key_value", "dense"],
-            "falcon": ["query_key_value", "dense"],
-            "mpt": ["Wqkv", "out_proj"],
-            "baichuan": ["W_pack", "o_proj"],
-            "chatglm": ["query_key_value", "dense"],
-            "qwen": ["c_attn", "c_proj"],
-            "phi": ["Wqkv", "out_proj"],
-            "gemma": ["q_proj", "k_proj", "v_proj", "o_proj"],
-            "stablelm": ["q_proj", "k_proj", "v_proj", "o_proj"]
-        }
-        target_modules = target_modules_map.get(model_type, ["q_proj", "k_proj", "v_proj", "o_proj"])
-        # target_modules = find_all_linear_names(self.model)
+        target_modules = get_target_modules(model_type)
         print(f"Using target modules for {model_type}: {target_modules}")
         
-        # Configure LoRA
         lora_config = LoraConfig(
-            r=32,  # Lower rank to cut trainable params
-            lora_alpha=64,  # Scale matches reduced rank
+            r=32,
+            lora_alpha=64,
             target_modules=target_modules,
             lora_dropout=0.05,
             bias="none",
             task_type="CAUSAL_LM"
         )
         
-        # Get PEFT model
         self.model = get_peft_model(self.model, lora_config)
-        
-        # self.vision_model = CLIPVisionModel.from_pretrained(
-        #     "openai/clip-vit-large-patch14",
-        #     quantization_config=self.quantization_config,
-        #     device_map="auto",
-        #     torch_dtype=self.dtype,
-        #     low_cpu_mem_usage=True
-        # )
         config = VisionConfig()
-        self.vismodel = VisionModel(config)
-        # Enable training mode and gradient checkpointing
+        self.vismodel = VisionModel(config, lang_model=self.model, model_config=self.model_config)
+        
         self.vismodel.train()
         self.vismodel.gradient_checkpointing_enable()
-        self.vismodel.lang_model = self.model
         
     def save_regular_model(self):
         """Save the model and all its components with optimizations."""
         try:
-            # Create necessary directories
             os.makedirs(self.model_path, exist_ok=True)
             
-            # Save the model with safe serialization
             self.convomodel.save_pretrained(
                 self.model_path,
                 safe_serialization=True
             )
             
-            # Save tokenizer
             self.tokenizer.save_pretrained(self.model_path)
-            
-            # Save config
             self.original_config.save_pretrained(self.model_path)
             
             print(f"Successfully saved model to {self.model_path}")
@@ -668,99 +585,38 @@ class CreateModel:
         except Exception as e:
             print(f"Error saving model: {str(e)}")
             raise
-        
+
     def save_vision_model(self):
         """Save the model and all its components with optimizations."""
         try:
-            # Create necessary directories
-            # vision_model_path = os.path.join(self.model_path, "vision_model")
             lang_model_path = os.path.join(self.model_path, "lang_model")
-            # os.makedirs(vision_model_path, exist_ok=True)
+            vision_adapter_path = os.path.join(self.model_path, "vision_adapter")
             os.makedirs(lang_model_path, exist_ok=True)
+            os.makedirs(vision_adapter_path, exist_ok=True)
             
-            # Save base model first with quantization
-            quantization_config = BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_compute_dtype=self.dtype,
-                bnb_4bit_quant_type="nf4",
-                bnb_4bit_use_double_quant=True,
-                llm_int8_threshold=6.0,
-                llm_int8_has_fp16_weight=False,
-            )
-            # Save tokenizer
-            self.tokenizer.save_pretrained(
-                lang_model_path
-            )
-        
-            
-            # Save vision model with quantization
-            # self.vision_model.save_pretrained(
-            #     vision_model_path,
-            #     quantization_config=quantization_config,
-            #     torch_dtype=self.dtype,
-            #     safe_serialization=True
-            # )
-            
-            # Save language model with quantization
+            # Save language model and tokenizer
+            self.tokenizer.save_pretrained(lang_model_path)
             self.model.save_pretrained(
                 lang_model_path,
-                quantization_config=quantization_config,
+                quantization_config=self.quantization_config,
                 torch_dtype=self.dtype,
                 safe_serialization=True
             )
             
-            # Save vision processor
-            # self.vision_processor.save_pretrained(
-            #     os.path.join(self.model_path, "vision_processor"),
-            #     safe_serialization=Trues
-            # )
+            # Save vision config only
+            self.vismodel.config.save_pretrained(self.model_path)
             
-            self.vismodel.save_pretrained(
-                os.path.join(self.model_path),
-                quantization_config=quantization_config,
-                torch_dtype=self.dtype,
+            # Save vision components separately
+            self.vismodel.vision_model.save_pretrained(
+                os.path.join(self.model_path, "vision_model"),
                 safe_serialization=True
             )
-            
-            vision_adapter_path = os.path.join(self.model_path, "vision_adapter")
-            os.makedirs(vision_adapter_path, exist_ok=True)
             torch.save(self.vismodel.vision_adapter.state_dict(), os.path.join(vision_adapter_path, "vision_adapter.pt"))
-        except:
-            print("Error:: Created Model not save.")
+        except Exception as e:
+            print(f"Error: Failed to save model - {str(e)}")
 
-# def find_checkpoint_folder(model_path):
-#     # Check for checkpoint folders in the model_path
-#     checkpoint_dirs = [d for d in os.listdir(model_path) if d.startswith("checkpoint-") and os.path.isdir(os.path.join(model_path, d))]
-#     if not checkpoint_dirs:
-#         return None
-#     # Sort directories by checkpoint number
-#     checkpoint_dirs.sort(key=lambda x: int(x.split("-")[-1]))
-#     print("using latest checkpoint:", checkpoint_dirs[-1])
-#     # Return the latest checkpoint directory
-#     return os.path.join(model_path, checkpoint_dirs[-1])
 
-# Load model and processor from demo_path
-
-def load_saved_model(model_path,checkpoint=False):
-    target_modules_map = {
-                "gpt2": ["c_attn", "c_proj"],
-                "llama": ["q_proj", "k_proj", "v_proj", "o_proj"],
-                "mistral": ["q_proj", "k_proj", "v_proj", "o_proj"],
-                "opt": ["q_proj", "k_proj", "v_proj", "out_proj"],
-                "bloom": ["query_key_value", "dense"],
-                "t5": ["q", "k", "v", "o"],
-                "bert": ["query", "key", "value", "output.dense"],
-                "roberta": ["query", "key", "value", "output.dense"],
-                "gpt_neox": ["query_key_value", "dense"],
-                "falcon": ["query_key_value", "dense"],
-                "mpt": ["Wqkv", "out_proj"],
-                "baichuan": ["W_pack", "o_proj"],
-                "chatglm": ["query_key_value", "dense"],
-                "qwen": ["c_attn", "c_proj"],
-                "phi": ["Wqkv", "out_proj"],
-                "gemma": ["q_proj", "k_proj", "v_proj", "o_proj"],
-                "stablelm": ["q_proj", "k_proj", "v_proj", "o_proj"]
-            }
+def load_saved_model(model_path, checkpoint=False):
     variable = Variable()
     dtype = variable.DTYPE
     """Load a saved model and its processor."""    
@@ -769,180 +625,45 @@ def load_saved_model(model_path,checkpoint=False):
         config = AutoConfig.from_pretrained(model_path)
         print(f"Loaded config with model type: {config.model_type}")
         print(f"Model architecture: {config.architectures}")
-        
-        # Check if this is a vision model
         is_vision_model = (
             hasattr(config, 'model_type') and config.model_type == "vision-model"
         )
         lang_model_path = os.path.join(model_path, "lang_model")
         local_checkpoint_path = model_path
         vision_model_path = os.path.join(model_path, "vision_model")
-        vision_adapter_path = os.path.join(model_path, "vision_adapter")
+        vision_adapter_fpath = os.path.join(model_path, "vision_adapter","vision_adapter.pt")
         
         
         if is_vision_model:
-            # print("Loading vision model...")
-            # print(f"Vision model path: {vision_model_path}"
-            #       f"\nLanguage model path: {lang_model_path}"
-            #       f"\nLocal checkpoint path: {local_checkpoint_path}")
-            # # Load components
-            lang_model = AutoModelForCausalLM.from_pretrained(lang_model_path,torch_dtype=dtype)
-            lang_model = prepare_model_for_kbit_training(lang_model)
             
-            # Get target modules based on model architecture
-            model_type = lang_model.config.model_type.lower() if hasattr(lang_model.config, 'model_type') else ""
-            
-            target_modules = target_modules_map.get(model_type, ["q_proj", "k_proj", "v_proj", "o_proj"])
-            # target_modules = find_all_linear_names(lang_model)
-            print(f"Using target modules for {model_type}: {target_modules}")
-            
-            # Configure LoRA (lower rank to reduce trainable params)
-            lora_config = LoraConfig(
-                r=32,
-                lora_alpha=64,
-                target_modules=target_modules,
-                lora_dropout=0.05,
-                bias="none",
-                task_type="CAUSAL_LM"
-            )
-            
-            # Get PEFT model
-            lang_model = get_peft_model(lang_model, lora_config)
-            # vision_model = CLIPVisionModel.from_pretrained(vision_model_path)
-            
-            # # Create model
-            # model = VisionModel(config, vision_model, lang_model)
-            
-            # # Load processor
-            # tokenizer = AutoTokenizer.from_pretrained(lang_model_path)
             config = VisionConfig()
-            # model = VisionModel(config)
-            model = VisionModel.from_pretrained(model_path, config=config)
-            model.vision_adapter.load_state_dict(torch.load(os.path.join(vision_adapter_path, "vision_adapter.pt")))
-            model.lang_model = lang_model
+            
+            pefted_lang_model = AutoModelForCausalLM.from_pretrained(lang_model_path)
+            pefted_lang_model = PeftModel.from_pretrained(pefted_lang_model, lang_model_path)
+
+            model = VisionModel(config, lang_model=pefted_lang_model, model_config=ModelConfig())
+
+            # Restore vision adapter if it was saved
+            if os.path.exists(vision_adapter_fpath):
+                model.vision_adapter.load_state_dict(torch.load(vision_adapter_fpath))
+
             tokenizer = AutoTokenizer.from_pretrained(lang_model_path)
             model.config.use_cache = False
-            model.train()  # Ensure model is in training mode
+            model.train()
             return model, tokenizer
         else:
-            # For conversation models, use AutoModelForCausalLM
             print("Loading conversation model...")
-            base_model = AutoModelForCausalLM.from_pretrained(
-                local_checkpoint_path,
-                torch_dtype=dtype,
-                device_map=None
-            )
-            base_model = prepare_model_for_kbit_training(base_model)
+            pefted_model = AutoModelForCausalLM.from_pretrained(model_path)
+            pefted_model = PeftModel.from_pretrained(pefted_model, model_path)
             
-            # Get target modules based on model architecture
-            model_type = base_model.config.model_type.lower() if hasattr(base_model.config, 'model_type') else ""
-            
-            target_modules = target_modules_map.get(model_type, ["q_proj", "k_proj", "v_proj", "o_proj"])
-            # target_modules = find_all_linear_names(base_model)
-            print(f"Using target modules for {model_type}: {target_modules}")
-
-            lora_config = LoraConfig(
-                r=32,  # Rank
-                lora_alpha=64,  # Alpha scaling
-                target_modules=target_modules,
-                lora_dropout=0.05,
-                bias="none",
-                task_type="CAUSAL_LM"
-            )
-            
-            # Get PEFT model
-            base_model = get_peft_model(base_model, lora_config)
-            
-            # Create conversation model
-            model = ConversationModel(config, base_model)
+            model = ConversationModel(config, pefted_model)
             model.config.use_cache = False
-            model.train()  # Ensure model is in training mode
+            model.train()
             
             tokenizer = AutoTokenizer.from_pretrained(local_checkpoint_path)
-
             return model, tokenizer
 
         
     except Exception as e:
         print(f"Error loading model: {str(e)}")
         raise
-    
-# Example usage:
-
-
-# Load the model and tokenizer
-
-# Load the model and tokenizer
-# path = Path(__file__).parent.parent.absolute() / "custom_models" / "vision-model" / "Qwen_Qwen1.5-0.5B-Chat"
-# model, tokenizer = load_saved_model(path.as_posix())
-
-# # Get the device and dtype of the model
-# device = next(model.parameters()).device
-# dtype = next(model.parameters()).dtype
-
-# Load the image
-# image_url = "https://media.istockphoto.com/id/155439315/photo/passenger-airplane-flying-above-clouds-during-sunset.jpg?s=612x612&w=0&k=20&c=LJWadbs3B-jSGJBVy9s0f8gZMHi2NvWFXa3VJ2lFcL0="
-# image = load_image(image_url)
-
-# # Initialize the processor
-# clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-large-patch14", use_fast=True)
-# processor = VisionProcessor(image_processor=clip_processor, tokenizer=tokenizer)
-
-# # Tokenize the text
-# text_input = processor.tokenizer("What do you see in this image?", return_tensors="pt")
-
-# # Preprocess the image
-# pixel_values = processor.image_processor(images=image, return_tensors="pt")["pixel_values"]
-
-# # Move inputs to the model's device and dtype
-# inputs = {
-#     "input_ids": text_input["input_ids"].to(device),  # Keep input_ids as integers
-#     "attention_mask": text_input["attention_mask"].to(device).to(dtype),
-#     "pixel_values": pixel_values.to(device).to(dtype)
-# }
-
-# # Generate outputs
-# outputs = model.generate(
-#     input_ids=inputs["input_ids"],
-#     attention_mask=inputs["attention_mask"],
-#     pixel_values=inputs["pixel_values"],
-#     max_new_tokens=50,  # Limit the number of tokens to generate
-#     num_beams=4,        # Use beam search for better results
-#     temperature=0.7,    # Sampling temperature
-#     do_sample=True      # Enable sampling
-# )
-
-# # Decode and print the outputs
-# decoded_outputs = processor.tokenizer.batch_decode(outputs, skip_special_tokens=True)
-# print(decoded_outputs)
-
-
-
-
-# # Working Good
-# # Load the model and tokenizer
-# # path = Path(__file__).parent.parent.absolute() / "custom_models" / "conversation-model" / "Qwen_Qwen1.5-0.5B-Chat"
-# # model, tokenizer = load_saved_model(path.as_posix())
-
-# # Move the model to the appropriate device
-# # device = next(model.parameters()).device
-
-# # Define the text input
-# text_prompt = "Hello"
-
-# # Tokenize the text input
-# text_input = tokenizer(text_prompt, return_tensors="pt").to(device)
-
-# # Generate outputs
-# outputs = model.generate(
-#     input_ids=text_input["input_ids"],
-#     attention_mask=text_input["attention_mask"],
-#     max_new_tokens=50,  # Limit the number of tokens to generate
-#     num_beams=4,        # Use beam search for better results
-#     temperature=0.7,    # Sampling temperature
-#     do_sample=True      # Enable sampling
-# )
-
-# # Decode and print the outputs
-# decoded_outputs = tokenizer.batch_decode(outputs, skip_special_tokens=True)
-# print(decoded_outputs)

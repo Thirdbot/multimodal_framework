@@ -1,46 +1,46 @@
 import os
-# import torch
-from typing import List, Dict, Optional, Union
-from datasets import load_dataset
-from transformers import AutoTokenizer, AutoModelForCausalLM
-from datasets import Dataset, DatasetDict
-from colorama import Fore, Style, init
 import zipfile
-import torch
-import multiprocessing as mp
-from functools import partial
-# Set environment variables for better performance
-os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
-os.environ['OMP_NUM_THREADS'] = str(mp.cpu_count())  # Use all available CPU cores
-os.environ['TOKENIZERS_PARALLELISM'] = 'false'
 import re
-from PIL import Image
+import multiprocessing as mp
+from dataclasses import dataclass
 from pathlib import Path
-# Initialize colorama
-init(autoreset=True)
+
+import numpy as np
+import torch
+import torch.nn.functional as F
+from PIL import Image
+from colorama import Fore, Style, init
+from datasets import Dataset, DatasetDict
+from jinja2 import Environment
 from sentence_transformers import SentenceTransformer
-
 from tqdm import tqdm
-
-# from joblib import Parallel, delayed
-
-# from sentence_transformers import SentenceTransformer
-from transformers import AutoImageProcessor, AutoModel
+from transformers import AutoTokenizer, AutoImageProcessor
 from transformers.image_utils import load_image
-# from matplotlib.image import imread
 from torchvision import transforms
 from torchvision.models import resnet50, ResNet50_Weights
-# from pydub import AudioSegment
 
-import torch.nn.functional as F
-import numpy as np
-
-from datasets import Dataset
-import io
-
-import pandas
-from jinja2 import Environment,FileSystemLoader
 from modules.variable import Variable
+
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
+os.environ['OMP_NUM_THREADS'] = str(mp.cpu_count())
+os.environ['TOKENIZERS_PARALLELISM'] = 'false'
+
+
+@dataclass
+class ChatTemplateConfig:
+    """Runtime configuration for ChatTemplate to avoid hard-coding paths and model ids."""
+
+    chat_template_filename: str = "chat_template_conversation.jinja"
+    sentence_tokenizer_name: str = "sentence-transformers/msmarco-distilbert-cos-v5"
+    sentence_model_name: str = "sentence-transformers/all-MiniLM-L6-v2"
+    image_processor_name: str = "microsoft/resnet-50"
+    image_model_weights: ResNet50_Weights = ResNet50_Weights.IMAGENET1K_V2
+    device_override: str | None = None
+    max_text_length: int = 1000
+    max_multimodal_length: int = 10000
+    batch_size: int = 100
+    repository_root: Path | None = None
+
 class ChatTemplate:
     """Class for handling chat templates and conversation formatting"""
     
@@ -67,21 +67,27 @@ class ChatTemplate:
         'assistant': [r'assistant', r'gpt', r'output', r'response']
     }
     
-    def __init__(self, tokenizer=None, model_name=None):
+    def __init__(self, tokenizer=None, model_name=None, config: ChatTemplateConfig | None = None):
         self.tokenizer = tokenizer
-        
         self.model_name = model_name
-       
-        # Move model loading to device
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.config = config or ChatTemplateConfig()
+
+        # Resolve repository root from config or default to project root
+        self.variable = Variable()
+        default_repo_root = Path(__file__).parent.parent.absolute()
+        self.repository_root = self.config.repository_root or default_repo_root
+
+        # Device selection is configurable
+        device_str = self.config.device_override or ("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device(device_str)
         print(f"Using device: {self.device}")
-        
+
         # Initialize image model with ResNet for reliable embeddings
-        self.img_model = resnet50(weights=ResNet50_Weights.IMAGENET1K_V2).to(self.device)
+        self.img_model = resnet50(weights=self.config.image_model_weights).to(self.device)
         # Remove the final classification layer
         self.img_model = torch.nn.Sequential(*(list(self.img_model.children())[:-1]))
         self.img_model.eval()
-        
+
         # Initialize image preprocessing
         self.img_transform = transforms.Compose([
             transforms.Resize(256),
@@ -89,50 +95,24 @@ class ChatTemplate:
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
         ])
-        
-        self.sentence_tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/msmarco-distilbert-cos-v5")
-        self.image_processor = AutoImageProcessor.from_pretrained("microsoft/resnet-50")
-        
-        self.sentence_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2").to(self.device)
+
+        self.sentence_tokenizer = AutoTokenizer.from_pretrained(self.config.sentence_tokenizer_name)
+        self.image_processor = AutoImageProcessor.from_pretrained(self.config.image_processor_name)
+
+        self.sentence_model = SentenceTransformer(self.config.sentence_model_name).to(self.device)
         self.sentence_model.eval()  # Ensure model is in eval mode from the start
-        
-        
-        self.variable = Variable()
+
         self.chat_template_path = self.variable.chat_template_path
         self.template = self.load_template_from_folder()
-        
+
         self.tokenizer.chat_template = self.str_template(self.chat_template_path)
     
-    def str_template(self, template_path):
-        with open(template_path / "chat_template_conversation.jinja", "r", encoding="utf-8") as f:
-            template_str = f.read()
-    
-            image_logic = """
-                        {% if message.images is defined and message.images %}
-                            {% if message.images is string %}
-                                <images>{{ message.images }}</images>
-                            {% else %}
-                                {% for image in message.images %}
-                                    <images>{{ image }}</images>
-                                {% endfor %}
-                            {% endif %}
-                        {% endif %}
-                        """
-                        
-            if image_logic.strip() not in template_str:
-                template_str = template_str.replace(
-                    "{{ message.content }}",
-                    "{{ message.content }}" + image_logic
-                )
-        return template_str
-    
-    def load_template_from_folder(self):
-        model_path = self.chat_template_path
-        template_file = model_path / "chat_template_conversation.jinja"
+    def _read_template_str(self, template_path: Path) -> str:
+        template_file = template_path / self.config.chat_template_filename
         with open(template_file, "r", encoding="utf-8") as f:
-            template_str = f.read()
+            return f.read()
 
-        # Inject image logic only once
+    def _inject_image_logic(self, template_str: str) -> str:
         image_logic = """
                         {% if message.images is defined and message.images %}
                             {% if message.images is string %}
@@ -144,14 +124,19 @@ class ChatTemplate:
                             {% endif %}
                         {% endif %}
                         """
-        # Only inject if not already present
         if image_logic.strip() not in template_str:
             template_str = template_str.replace(
                 "{{ message.content }}",
                 "{{ message.content }}" + image_logic
             )
+        return template_str
 
-        # Compile to Jinja2 Template object
+    def str_template(self, template_path: Path):
+        template_str = self._read_template_str(template_path)
+        return self._inject_image_logic(template_str)
+
+    def load_template_from_folder(self):
+        template_str = self._inject_image_logic(self._read_template_str(self.chat_template_path))
         envi = Environment()
         template = envi.from_string(template_str)
         return template
@@ -178,7 +163,7 @@ class ChatTemplate:
                     formatted_texts,
                     padding=True,
                     truncation=True,
-                    max_length=1000,  # Reduced max length for better stability
+                    max_length=self.config.max_text_length,
                     return_tensors="pt",
                     return_attention_mask=True,
                     return_special_tokens_mask=True
@@ -229,7 +214,7 @@ class ChatTemplate:
                     formatted_texts,
                     padding=True,
                     truncation=True,
-                    max_length=10000,
+                    max_length=self.config.max_multimodal_length,
                     return_tensors="pt"
                 )
                 
@@ -283,7 +268,7 @@ class ChatTemplate:
         print(f"Processing embedded dataset")
         total_items = len(dataset[keys])
 
-        batch_size = 100  # Smaller batch size
+        batch_size = self.config.batch_size
         batch_list = []
 
         for index in range(0, total_items, batch_size):
@@ -474,56 +459,28 @@ class ChatTemplate:
             return None
     #make a dataset of mul content
     def get_mul_content(self,dataset_name,mul_content,full_content,role,content,Tokenizing=False):
-        #change particular text content inside full content to embedding and every multimodal data to embedding
-        if isinstance(mul_content,list):
-            if len(mul_content) == 1:
-                name_image = mul_content[0]
-                mul_content_list = []
-                for mul_content_item in mul_content:
-                    name_image = mul_content_item
-                    mul_embedded = self.get_mul_file(name_image,dataset_name,Tokenizing=Tokenizing)
-                    if mul_embedded is not None:
-                        mul_content_list.append(mul_embedded)
-                
-                # Process all messages in the conversation
-                processed_messages = []
-                processed_content = self.get_text_content(role, content, full_content,Tokenizing=Tokenizing)
-                if processed_content is not None:
-                    processed_messages.append(processed_content)
-                
-                return processed_messages, mul_content_list
-                
-            elif len(mul_content) > 1:
-                mul_content_list = []
-                for mul_content_item in mul_content:
-                    name_image = mul_content_item
-                    mul_embedded = self.get_mul_file(name_image,dataset_name,Tokenizing=Tokenizing)
-                    if mul_embedded is not None:
-                        mul_content_list.append(mul_embedded)
-                
-                # Process all messages in the conversation
-                processed_messages = []
-                processed_content = self.get_text_content(role, content, full_content,Tokenizing=Tokenizing)
-                if processed_content is not None:
-                    processed_messages.append(processed_content)
-                
-                return processed_messages, mul_content_list
-        elif isinstance(mul_content,str):
-            name_image = mul_content
-            mul_embedded = self.get_mul_file(name_image,dataset_name,Tokenizing=Tokenizing)
-            if mul_embedded is not None:
-                mul_content_list.append(mul_embedded)
-                
-        else:
-            print(f"Invalid mul_content type: {type(mul_content)}")
+        # Convert any supported input into a list and embed each element once
+        mul_items = mul_content if isinstance(mul_content, list) else [mul_content]
+        embedded_items = []
+        for item in mul_items:
+            embedded = self.get_mul_file(item, dataset_name, Tokenizing=Tokenizing)
+            if embedded is not None:
+                embedded_items.append(embedded)
+
+        if not embedded_items:
             return [], []
+
+        processed_messages = []
+        processed_content = self.get_text_content(role, content, full_content, Tokenizing=Tokenizing)
+        if processed_content is not None:
+            processed_messages.append(processed_content)
+
+        return processed_messages, embedded_items
     
     #get file from local repository
     def get_mul_file(self,data_name,dataset_name,Tokenizing=False):
         short_name = dataset_name.split("/")[-1]
-        
-        HomePath = Path(__file__).parent.parent.absolute()
-        local_dataset_path = HomePath / "repositories" / "datasets" / short_name
+        local_dataset_path = self.repository_root / "repositories" / "datasets" / short_name
  
         file_in_path = [path for path in Path(local_dataset_path).iterdir() if path.is_file()]
         zip_file_in_path = [path for path in Path(local_dataset_path).iterdir() if path.is_file() and path.suffix == ".zip"]
@@ -821,39 +778,6 @@ class ChatTemplate:
         return None
     
     
-    def emb_to_text(self,emb):
-        try:
-            # Check if embedding is valid
-            if emb is None or not isinstance(emb, np.ndarray):
-                return ""
-            
-            # If embedding is all zeros, return empty string
-            if np.all(emb == 0):
-                return ""
-            
-            # Convert embedding to tokens using the tokenizer
-            # First, convert numpy array to tensor
-            emb_tensor = torch.from_numpy(emb).to(self.device)
-            
-            # Get the closest token IDs to the embedding
-            with torch.no_grad():
-                # Get the vocabulary size
-                vocab_size = self.sentence_tokenizer.vocab_size
-                
-                # Project embedding to vocabulary space
-                logits = torch.matmul(emb_tensor, self.sentence_model.embeddings.word_embeddings.weight.T)
-                
-                # Get the most likely token IDs
-                token_ids = torch.argmax(logits, dim=-1)
-                
-                # Decode the token IDs to text
-                text = self.sentence_tokenizer.decode(token_ids)
-                
-                return text
-                
-        except Exception as e:
-            print(f"Error converting embedding to text: {str(e)}")
-            return None
     
     def format_message(self, message):
         formatted_chat = self.template.render(messages=message)
