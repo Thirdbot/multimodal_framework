@@ -44,7 +44,7 @@ class FinetuneModel:
         self.per_device_eval_batch_size = 1
         self.gradient_accumulation_steps = 10  # Accumulate to simulate larger batch
         self.learning_rate = 1e-3
-        self.num_train_epochs = 40
+        self.num_train_epochs = 10
         self.save_strategy = "best"
         self.training_config_path = self.variable.training_config_path
         
@@ -242,6 +242,7 @@ class FinetuneModel:
                 model_save_path = self.CHECKPOINT_DIR / 'text-vision-text-generation' / modelname
                 model_save_path.mkdir(parents=True, exist_ok=True)
                 # Save the final model and adapter
+                
                 trainer.save_model(str(model_save_path))
                 tokenizer.save_pretrained(str(model_save_path))
                            
@@ -259,11 +260,7 @@ class FinetuneModel:
                     model.vision_model.save_pretrained(str(vision_model_path))
                     print(f"{Fore.GREEN}Vision model saved to: {vision_model_path}{Style.RESET_ALL}")
                 
-                # if hasattr(model, "vision_processor"):
-                #     vision_processor_path = model_save_path / "vision_processor"
-                #     vision_processor_path.mkdir(parents=True, exist_ok=True)
-                #     model.vision_processor.save_pretrained(str(vision_processor_path))
-                #     print(f"{Fore.GREEN}Vision processor saved to: {vision_processor_path}{Style.RESET_ALL}")
+
                 
                 if hasattr(model,'vision_adapter'):
                     vision_adapter_path = model_save_path / "vision_adapter"
