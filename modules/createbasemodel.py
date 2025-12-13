@@ -420,9 +420,9 @@ AutoModelForCausalLM.register(ConversationConfig, ConversationModel)
 AutoModelForCausalLM.register(VisionConfig, VisionModel)
     
 class CreateModel:
-    def __init__(self, model_name, model_category):
-        self.model_name = model_name
-        self.save_name = self.model_name.replace("/","_")
+    def __init__(self, model_repo_path, model_category):
+        self.model_repo_path = model_repo_path
+        self.save_name = self.model_repo_path.name.replace("/","_")
         self.model_category = model_category
         self.variable = Variable()
         self.dtype = self.variable.DTYPE
@@ -457,7 +457,7 @@ class CreateModel:
         try:
             print(f"Loading model with stable quantization settings...")
             self.model = AutoModelForCausalLM.from_pretrained(
-                self.model_name,
+                self.model_repo_path,
                 quantization_config=self.quantization_config,
                 device_map="auto",
                 torch_dtype=self.dtype,  # Use float32 instead of bfloat16
@@ -469,7 +469,7 @@ class CreateModel:
             print(f"Error loading model with quantization: {str(e)}")
             print(f"Attempting to load without quantization...")
             self.model = AutoModelForCausalLM.from_pretrained(
-                self.model_name,
+                self.model_repo_path,
                 device_map="auto",
                 torch_dtype=self.dtype,
                 low_cpu_mem_usage=True,
@@ -480,13 +480,13 @@ class CreateModel:
         
         # First load the tokenizer to get the correct vocab size
         self.tokenizer = AutoTokenizer.from_pretrained(
-            self.model_name,
+            self.model_repo_path,
             use_fast=True,
             trust_remote_code=True
         )
         # self.template = self.load_template_from_model()
         
-        # self.tokenizer.chat_template = self.str_template(self.local_model_path / self.model_name)
+        # self.tokenizer.chat_template = self.str_template(self.local_model_path / self.model_repo_path)
         
         self.clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-large-patch14", use_fast=True)
         self.vision_processor = VisionProcessor(self.clip_processor, self.tokenizer)
@@ -500,7 +500,7 @@ class CreateModel:
     #     return template_str
         
     # def load_template_from_model(self):
-    #     model_path = self.local_model_path / self.model_name
+    #     model_path = self.local_model_path / self.model_repo_path
     #     template_loader = FileSystemLoader(searchpath=model_path)
     #     envi = Environment(loader=template_loader)
     #     template = envi.get_template("chat_template.jinja")
@@ -515,7 +515,7 @@ class CreateModel:
             if not isinstance(self.model, AutoModelForCausalLM):
                 print(f"Converting model to AutoModelForCausalLM")
                 self.model = AutoModelForCausalLM.from_pretrained(
-                    self.model_name,
+                    self.model_repo_path,
                     device_map="auto",
                     trust_remote_code=True,
                     quantization_config=self.quantization_config,
