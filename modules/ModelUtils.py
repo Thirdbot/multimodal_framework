@@ -108,9 +108,9 @@ class ConversationModelWrapper(PreTrainedModel):
     config_class = ConversationConfig
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    def __init__(self, config, base_model):
+    def __init__(self, config,**kwargs):
         super().__init__(config)
-        self.bmodel = base_model.to(self.device)
+        self.bmodel = kwargs.get('base_model').to(self.device)
         self.config = config
         
     
