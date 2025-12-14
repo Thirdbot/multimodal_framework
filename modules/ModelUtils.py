@@ -820,8 +820,9 @@ def load_saved_model(model_path, checkpoint=False):
             else:
                 #newly created conversation model so it does not have lora
                 print("Loading conversation model... without lora")
+
+                #temporal fix for now (later,differentiate model type config or standalone and wrapper)
                 # Direct load without wrapper since it's a standalone model
-                
                 model = ConversationModel.from_pretrained(
                     model_path,
                     device_map=device,
