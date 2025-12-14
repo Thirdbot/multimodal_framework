@@ -15,7 +15,6 @@ from transformers import (
 )
 import requests
 
-from modules.chatTemplate import ChatTemplate
 from modules.createbasemodel import VisionModel, ConversationModel
 from modules.variable import Variable
 

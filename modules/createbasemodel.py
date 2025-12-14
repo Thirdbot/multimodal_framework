@@ -190,6 +190,7 @@ class VisionModel(PreTrainedModel):
         self.vision_model = CLIPVisionModel.from_pretrained(self.model_config.clip_processor_name)
         self.vision_adapter = VisionAdapter(1024, 1024)
         
+        # Freeze vision model but keep gradients through adapter
         for param in self.vision_model.parameters():
             param.requires_grad = False
 
@@ -348,13 +349,15 @@ class VisionModel(PreTrainedModel):
 
         if pixel_values is not None:
             pixel_values = pixel_values.to(device).to(dtype)
-            # Ensure vision model is on the correct device
+            # Ensure vision model and adapter are on the correct device
             self.vision_model = self.vision_model.to(device)
             self.vision_adapter = self.vision_adapter.to(device)
             
-            image_embeddings = self.vision_model(pixel_values).last_hidden_state.to(dtype).to(device)
-
-            # Adapt image embeddings to match language embeddings
+            # Process through vision model (frozen) and detach to ensure clean gradient flow through adapter
+            with torch.no_grad():
+                image_embeddings = self.vision_model(pixel_values).last_hidden_state.to(dtype).to(device)
+            
+            # Ensure adapter output has gradient tracking
             adapted_embeddings = self.vision_adapter(image_embeddings)
             embeddings = torch.cat((adapted_embeddings, embeddings), axis=1)
             attention_mask = self.__extend_attention_mask(attention_mask, attend_to_img_tokens)
@@ -619,6 +622,7 @@ class CreateModel:
 def load_saved_model(model_path, checkpoint=False):
     variable = Variable()
     dtype = variable.DTYPE
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     """Load a saved model and its processor."""    
     try:
         # Load the config
@@ -638,27 +642,52 @@ def load_saved_model(model_path, checkpoint=False):
             
             config = VisionConfig()
             
-            pefted_lang_model = AutoModelForCausalLM.from_pretrained(lang_model_path)
+            # Load base model with proper device mapping and dtype
+            pefted_lang_model = AutoModelForCausalLM.from_pretrained(
+                lang_model_path,
+                device_map=device,
+                torch_dtype=dtype,
+                trust_remote_code=True
+            )
             pefted_lang_model = PeftModel.from_pretrained(pefted_lang_model, lang_model_path)
+            pefted_lang_model = pefted_lang_model.to(device).to(dtype)
 
             model = VisionModel(config, lang_model=pefted_lang_model, model_config=ModelConfig())
 
             # Restore vision adapter if it was saved
             if os.path.exists(vision_adapter_fpath):
-                model.vision_adapter.load_state_dict(torch.load(vision_adapter_fpath))
+                model.vision_adapter.load_state_dict(torch.load(vision_adapter_fpath, map_location=device))
 
             tokenizer = AutoTokenizer.from_pretrained(lang_model_path)
             model.config.use_cache = False
+            
+            # Ensure model is in training mode and has gradients
             model.train()
+            for param in model.parameters():
+                param.requires_grad = True
+            if hasattr(model, 'vision_adapter'):
+                for param in model.vision_adapter.parameters():
+                    param.requires_grad = True
+            
             return model, tokenizer
         else:
             print("Loading conversation model...")
-            pefted_model = AutoModelForCausalLM.from_pretrained(model_path)
+            pefted_model = AutoModelForCausalLM.from_pretrained(
+                model_path,
+                device_map=device,
+                torch_dtype=dtype,
+                trust_remote_code=True
+            )
             pefted_model = PeftModel.from_pretrained(pefted_model, model_path)
+            pefted_model = pefted_model.to(device).to(dtype)
             
             model = ConversationModel(config, pefted_model)
             model.config.use_cache = False
+            
+            # Ensure model is in training mode and has gradients
             model.train()
+            for param in model.parameters():
+                param.requires_grad = True
             
             tokenizer = AutoTokenizer.from_pretrained(local_checkpoint_path)
             return model, tokenizer
