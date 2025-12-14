@@ -9,13 +9,14 @@ from jinja2 import Template
 from PIL import Image
 from transformers import (
     AutoModelForCausalLM,
+    AutoModel,
     AutoTokenizer,
     AutoConfig,
     CLIPProcessor,
 )
 import requests
 
-from modules.createbasemodel import VisionModel, ConversationModel
+from modules.ModelUtils import VisionModelWrapper
 from modules.variable import Variable
 
 from peft import PeftModel
@@ -86,7 +87,7 @@ class InferenceManager:
                 pefted_lang_model = PeftModel.from_pretrained(pefted_lang_model, self.lang_path)
                 pefted_lang_model = pefted_lang_model.to(self.device)
 
-                self.model = VisionModel(config, lang_model=pefted_lang_model)
+                self.model = VisionModelWrapper(config, lang_model=pefted_lang_model)
         
                 adapter_state_dict = torch.load(
                     self.vision_adapter_path / "vision_adapter.pt",
@@ -103,12 +104,12 @@ class InferenceManager:
                 )
             else:
                 print("Detected text-only model. Loading ConversationModel...")
-                base_model = AutoModelForCausalLM.from_pretrained(
+                # AutoModelForCausalLM will automatically use registered ConversationModel
+                self.model = AutoModelForCausalLM.from_pretrained(
                     self.model_path,
-                    torch_dtype=self.dtype,
-                    device_map="auto"
-                )
-                self.model = ConversationModel(config, base_model).to(self.device)
+                    torch_dtype=self.dtype
+                ).to(self.device)
+                
                 self.tokenizer = AutoTokenizer.from_pretrained(
                     self.model_path,
                     use_fast=self.config.use_fast_tokenizer
