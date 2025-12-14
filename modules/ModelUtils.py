@@ -40,13 +40,15 @@ TARGET_MODULES_MAP = {
     "phi": ["Wqkv", "out_proj"],
     "gemma": ["q_proj", "k_proj", "v_proj", "o_proj"],
     "stablelm": ["q_proj", "k_proj", "v_proj", "o_proj"],
-    "ConversationModel": ["q_proj", "k_proj", "v_proj", "o_proj"],
+    "ConversationModelWrapper": ["q_proj", "k_proj", "v_proj", "o_proj"],
+    "VisionModelWrapper": ["q_proj", "k_proj", "v_proj", "o_proj"],
+
 }
 
 
-def get_target_modules(model_type: str) -> list:
+def get_target_modules(model_type: str):
     """Get target modules for LoRA based on model type."""
-    return TARGET_MODULES_MAP.get(model_type.lower(), None)
+    return TARGET_MODULES_MAP.get(model_type, None)
 
 
 @dataclass
@@ -70,54 +72,94 @@ class ModelConfig:
     quantization: QuantizationConfig | None = None
 
 
-# Config classes
-# class ConversationConfig(PretrainedConfig):
-#     model_type = "conversation-model"
-#     architectures = ["ConversationModel"]
+# class ConversationModelWrapper(PreTrainedModel):
+#     config_class = ConversationConfig
+
+#     def __init__(self, config, **kwargs):
+#         # Extract base_model from kwargs for backward compatibility
+#         base_model = kwargs.pop('base_model', None)
+#         super().__init__(config, inner_model=base_model, **kwargs)
+
+#     def get_target_modules(self):
+#         if hasattr(self.model, 'get_target_modules'):
+#             return self.model.get_target_modules()
+#         model_type = self.config.model_type.lower() if hasattr(self.config, 'model_type') else ""
+#         return get_target_modules(model_type)
     
-#     def __init__(self, **kwargs):
-#         super().__init__(**kwargs)
-
-
-# class VisionConfig(PretrainedConfig):
-#     model_type = "vision-model"
-#     architectures = ["VisionModel"]
+#     def forward(self, input_ids=None, attention_mask=None, labels=None, **kwargs):
+#         outputs = self.model(
+#             input_ids=input_ids.to(self.device),
+#             attention_mask=attention_mask.to(self.device),
+#             labels=labels.to(self.device) if labels is not None else None,
+#             **kwargs
+#         )
+#         return outputs
     
-#     def __init__(self, **kwargs):
-#         super().__init__(**kwargs)
-#         # self.lang_embed_dim = lang_embed_dim
-#         # self.clip_dim = clip_dim
+    # def save_pretrained(self, save_directory, **kwargs):
+    #     """Save the inner model directly instead of wrapper."""
+    #     if self.model is not None:
+    #         # Save the wrapped model (which has the actual weights)
+    #         self.model.save_pretrained(save_directory, **kwargs)
+    #     else:
+    #         # Fallback to parent save if no inner model
+    #         super().save_pretrained(save_directory, **kwargs)
 
-class ConversationModelWrapper(ModelTemplate):
+class ConversationModelWrapper(PreTrainedModel):
     config_class = ConversationConfig
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    def __init__(self, config, **kwargs):
-        # Extract base_model from kwargs for backward compatibility
-        base_model = kwargs.pop('base_model', None)
-        super().__init__(config, inner_model=base_model, **kwargs)
+    def __init__(self, config, base_model):
+        super().__init__(config)
+        self.bmodel = base_model.to(self.device)
+        self.config = config
         
-        if base_model is not None:
-            if hasattr(base_model, 'peft_config'):
-                self.peft_config = base_model.peft_config
-            if hasattr(base_model, 'active_adapter'):
-                self.active_adapter = base_model.active_adapter
-            if hasattr(base_model, 'base_model'):
-                self.base_model = base_model.base_model
-
-    def get_target_modules(self):
-        if hasattr(self.model, 'get_target_modules'):
-            return self.model.get_target_modules()
-        model_type = self.config.model_type.lower() if hasattr(self.config, 'model_type') else ""
-        return get_target_modules(model_type)
     
     def forward(self, input_ids=None, attention_mask=None, labels=None, **kwargs):
-        outputs = self.model(
+        outputs = self.bmodel(
             input_ids=input_ids.to(self.device),
             attention_mask=attention_mask.to(self.device),
             labels=labels.to(self.device) if labels is not None else None,
             **kwargs
         )
         return outputs
+
+    def generate(self, *args, **kwargs):
+        return self.bmodel.generate(*args, **kwargs)
+
+    @property
+    def is_gradient_checkpointing(self) -> bool:
+        return self._is_gradient_checkpointing
+
+    @is_gradient_checkpointing.setter
+    def is_gradient_checkpointing(self, value: bool):
+        self._is_gradient_checkpointing = value
+
+    def gradient_checkpointing_enable(self, gradient_checkpointing_kwargs=None):
+        if hasattr(self.bmodel, "gradient_checkpointing_enable"):
+            self.bmodel.gradient_checkpointing_enable(gradient_checkpointing_kwargs=gradient_checkpointing_kwargs)
+        self.is_gradient_checkpointing = True
+
+    def gradient_checkpointing_disable(self):
+        if hasattr(self.bmodel, "gradient_checkpointing_disable"):
+            self.bmodel.gradient_checkpointing_disable()
+        self.is_gradient_checkpointing = False
+
+    def _set_gradient_checkpointing(self, module, value=False):
+        if hasattr(module, "gradient_checkpointing"):
+            module.gradient_checkpointing = value
+
+    def enable_input_require_grads(self):
+        if hasattr(self.bmodel, "enable_input_require_grads"):
+            self.bmodel.enable_input_require_grads()
+            
+    def save_pretrained(self, save_directory, **kwargs):
+        """Save the model."""
+        # Save PEFT configuration if it exists
+        if hasattr(self.bmodel, 'peft_config'):
+            self.bmodel.save_pretrained(save_directory, **kwargs)
+        else:
+            super().save_pretrained(save_directory, **kwargs)
+
 
     
 
@@ -456,12 +498,12 @@ class CreateModel:
             
             self.model = prepare_model_for_kbit_training(self.model)
             
+            
             # model_type = self.model.config.model_type.lower() if hasattr(self.model.config, 'model_type') else ""
             model_arc = self.model.config.architectures[0] if hasattr(self.model.config, 'architectures') and len(self.model.config.architectures) > 0 else ""
             target_modules = get_target_modules(model_arc)
             if target_modules is not None:
                 print(f"Using target modules for {model_arc}: {target_modules}")
-                
                 lora_config = LoraConfig(
                     r=32,
                     lora_alpha=64,
@@ -474,7 +516,6 @@ class CreateModel:
                 self.model = get_peft_model(self.model, lora_config)
                 self.model = ConversationModelWrapper(self.original_config, base_model=self.model)
                 
-                self.model.config.use_cache = False
                 self.model.config.use_cache = False
                 
                 self.model.train()
@@ -497,8 +538,8 @@ class CreateModel:
                     quantization_config=self.quantization_config,
                     torch_dtype=self.dtype
                 )
+                self.model = ConversationModelWrapper(self.original_config, base_model=self.model)
                 
-                self.model.config.use_cache = False
                 self.model.config.use_cache = False
                 
                 self.model.train()
@@ -575,13 +616,29 @@ class CreateModel:
         try:
             os.makedirs(self.model_path, exist_ok=True)
             
+            # Save the inner model to avoid shared tensor issues
+            # if hasattr(self.model, 'model') and self.model.model is not None:
+            #     # If wrapped, save the inner model directly
+            #     self.model.model.save_pretrained(
+            #         self.model_path,
+            #         safe_serialization=True
+            #     )
+            # else:
+                
+            #     #save wrapped model
+            
             self.model.save_pretrained(
+                self.model_path,
+                safe_serialization=True
+            )
+            # Wrapped Model config save
+            self.model.config.save_pretrained(
                 self.model_path,
                 safe_serialization=True
             )
             
             self.tokenizer.save_pretrained(self.model_path)
-            self.original_config.save_pretrained(self.model_path)
+            # self.original_config.save_pretrained(self.model_path)
             
             print(f"Successfully saved model to {self.model_path}")
             
@@ -607,7 +664,8 @@ class CreateModel:
             )
             
             # Save vision config only
-            self.vismodel.config.save_pretrained(self.model_path)
+            # self.vismodel.config.save_pretrained(self.model_path)
+            self.vismodel.save_pretrained(self.model_path)
             
             # Save vision components separately
             self.vismodel.vision_model.save_pretrained(
@@ -642,7 +700,11 @@ def load_saved_model(model_path, checkpoint=False):
         if is_vision_model:
             
             config = VisionConfig()
-            if get_target_modules(config.architectures[0]) is not None:
+            # Get architecture safely
+            arch = config.architectures[0] if hasattr(config, 'architectures') and config.architectures else None
+            target_modules = get_target_modules(arch) if arch else None
+            
+            if target_modules is not None:
             
                 # Load base model with proper device mapping and dtype
                 pefted_lang_model = AutoModelForCausalLM.from_pretrained(
@@ -694,7 +756,10 @@ def load_saved_model(model_path, checkpoint=False):
                 
             return model, tokenizer
         else:
-            if get_target_modules(config.architectures[0]) is not None:
+            # Get architecture safely
+            arch = config.architectures
+            target_modules = get_target_modules(arch[0]) if arch else None
+            if target_modules is not None:
                 print("Loading conversation model with LoRA...")
                 pefted_model = AutoModelForCausalLM.from_pretrained(
                     model_path,
@@ -713,7 +778,7 @@ def load_saved_model(model_path, checkpoint=False):
                 tokenizer = AutoTokenizer.from_pretrained(local_checkpoint_path)
             else:
                 print("Loading conversation model... without lora")
-                model = AutoModelForCausalLM.from_pretrained(
+                model = ConversationModelWrapper.from_pretrained(
                     model_path,
                     device_map=device,
                     torch_dtype=dtype,
@@ -727,3 +792,10 @@ def load_saved_model(model_path, checkpoint=False):
     except Exception as e:
         print(f"Error loading model: {str(e)}")
         raise
+
+AutoConfig.register("conversation-model", ConversationConfig)
+AutoModelForCausalLM.register(ConversationConfig, ConversationModelWrapper)
+
+
+AutoConfig.register("vision-model", VisionConfig)
+AutoModelForCausalLM.register(VisionConfig, VisionModelWrapper)

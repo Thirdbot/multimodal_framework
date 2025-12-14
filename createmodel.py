@@ -32,20 +32,23 @@ model_config = CustomModelConfig(
 oldmodel_path = repo_folder /"Qwen"/ "Qwen1.5-0.5B-Chat"
 
 
-# Load a tokenizer (e.g., from a pretrained model)
-tokenizer = AutoTokenizer.from_pretrained("gpt2")
-tokenizer.chat_template = _read_template_str(chat_template_file)
-tokenizer.pad_token = tokenizer.eos_token
+# # Load the SAME tokenizer that will be used for training (Qwen tokenizer)
+# tokenizer = AutoTokenizer.from_pretrained(oldmodel_path)
+# tokenizer.chat_template = _read_template_str(chat_template_file)
+# tokenizer.pad_token = tokenizer.eos_token
 
+# # Update config with correct vocab size from tokenizer
+# model_config.vocab_size = len(tokenizer)
+# print(f"Setting vocab_size to {model_config.vocab_size} (from tokenizer)")
 
-# Create the conversation model with tokenizer
-conver = ConversationModel(model_config, tokenizer=tokenizer)
+# # Create the conversation model with tokenizer
+# conver = ConversationModel(model_config, tokenizer=tokenizer)
 
-# Save directly (tokenizer will be saved automatically)
-conver.save_pretrained(conversation_folder / "newModel")
-conver.save_pretrained(repo_folder / "newModel")
+# # Save directly (tokenizer will be saved automatically)
+# conver.save_pretrained(conversation_folder / "newModel")
+# conver.save_pretrained(repo_folder / "newModel")
 
-print("Successfully created and saved the conversation model. to "+ str(conversation_folder / "newModel"))
+# print("Successfully created and saved the conversation model. to "+ str(conversation_folder / "newModel"))
 
 
 
