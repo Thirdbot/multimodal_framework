@@ -24,7 +24,7 @@ class FinetuneModel:
         self.per_device_eval_batch_size = 1
         self.gradient_accumulation_steps = 10  # Accumulate to simulate larger batch
         self.learning_rate = 1e-3
-        self.num_train_epochs = 1
+        self.num_train_epochs = 0.1
         self.save_strategy = "best"
         self.training_config_path = self.variable.training_config_path
         
