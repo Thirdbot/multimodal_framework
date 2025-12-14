@@ -16,7 +16,7 @@ from modules.variable import Variable
 from modules.ModelCreationtemplate import ModelTemplate
 
 
-from modules.models.ConversationModel import ConversationConfig
+from modules.models.ConversationModel import ConversationConfig,ConversationModel
 from modules.models.VisionModel import VisionConfig
 
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
@@ -328,20 +328,20 @@ class VisionModelWrapper(PreTrainedModel):
         if hasattr(self.vision_model, "enable_input_require_grads"):
             self.vision_model.enable_input_require_grads()
 
-    def named_parameters(self, *args, **kwargs):
-        """Expose inner model's parameters so trainer sees them."""
-        return self.bmodel.named_parameters(*args, **kwargs)
+    # def named_parameters(self, *args, **kwargs):
+    #     """Expose inner model's parameters so trainer sees them."""
+    #     return self.lang_model.named_parameters(*args, **kwargs)
     
-    def parameters(self, *args, **kwargs):
-        """Expose inner model's parameters so trainer sees them."""
-        return self.bmodel.parameters(*args, **kwargs)
+    # def parameters(self, *args, **kwargs):
+    #     """Expose inner model's parameters so trainer sees them."""
+    #     return self.lang_model.parameters(*args, **kwargs)
     
-    def train(self, mode=True):
-        """Ensure inner model is in training mode."""
-        super().train(mode)
-        if self.bmodel is not None:
-            self.bmodel.train(mode)
-        return self
+    # def train(self, mode=True):
+    #     """Ensure inner model is in training mode."""
+    #     super().train(mode)
+    #     if self.lang_model is not None:
+    #         self.lang_model.train(mode)
+    #     return self
 
     def generate(self, input_ids=None, attention_mask=None, pixel_values=None,
                  attend_to_img_tokens=True, **kwargs):
@@ -725,6 +725,7 @@ def load_saved_model(model_path, checkpoint=False):
             arch = config.architectures[0] if hasattr(config, 'architectures') and config.architectures else None
             target_modules = get_target_modules(arch) if arch else None
             
+            # Load vision model components that is addoned on top of language model
             if target_modules is not None:
             
                 # Load base model with proper device mapping and dtype
@@ -737,13 +738,13 @@ def load_saved_model(model_path, checkpoint=False):
                 pefted_lang_model = PeftModel.from_pretrained(pefted_lang_model, lang_model_path)
                 pefted_lang_model = pefted_lang_model.to(device).to(dtype)
 
-                # Enable training on PEFT model - LoRA adapters are frozen by default after loading
-                pefted_lang_model.train()
+                # # Enable training on PEFT model - LoRA adapters are frozen by default after loading
+                # pefted_lang_model.train()
                 
-                # Explicitly enable gradients on LoRA parameters
-                for name, param in pefted_lang_model.named_parameters():
-                    if 'lora' in name.lower():
-                        param.requires_grad = True
+                # # Explicitly enable gradients on LoRA parameters
+                # for name, param in pefted_lang_model.named_parameters():
+                #     if 'lora' in name.lower():
+                #         param.requires_grad = True
 
                 model = VisionModelWrapper(config, lang_model=pefted_lang_model, model_config=ModelConfig())
 
@@ -761,6 +762,7 @@ def load_saved_model(model_path, checkpoint=False):
                     for param in model.vision_adapter.parameters():
                         param.requires_grad = True
             else:
+                #newly created vision model so it does not have lora
                 print("Loading vision model without LoRA...")
                 lang_model = AutoModelForCausalLM.from_pretrained(
                     lang_model_path,
@@ -788,6 +790,8 @@ def load_saved_model(model_path, checkpoint=False):
             # Get architecture safely
             arch = config.architectures
             target_modules = get_target_modules(arch[0]) if arch else None
+
+            # Load conversation model that addons on top of base model
             if target_modules is not None:
                 print("Loading conversation model with LoRA...")
                 pefted_model = AutoModelForCausalLM.from_pretrained(
@@ -814,8 +818,11 @@ def load_saved_model(model_path, checkpoint=False):
         
                 tokenizer = AutoTokenizer.from_pretrained(local_checkpoint_path)
             else:
+                #newly created conversation model so it does not have lora
                 print("Loading conversation model... without lora")
-                model = ConversationModelWrapper.from_pretrained(
+                # Direct load without wrapper since it's a standalone model
+                
+                model = ConversationModel.from_pretrained(
                     model_path,
                     device_map=device,
                     torch_dtype=dtype,
