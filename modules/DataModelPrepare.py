@@ -13,6 +13,7 @@ from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from modules.chatTemplate import ChatTemplate
 from modules.ModelUtils import CreateModel
 from modules.variable import Variable
+from modules.ModelUtils import load_saved_model
 
 # Initialize colorama
 init(autoreset=True)
@@ -63,56 +64,57 @@ class Manager:
         print(f"{Fore.CYAN}Retrieving model {model_id}{Style.RESET_ALL}")
 
         try:
-            return self._load_from_scratch(model_id)
+            # return self._load_from_scratch(model_id)
+            return load_saved_model(model_id)
         except Exception as e:
             print(f"{Fore.RED}Error loading model {model_id}: {str(e)}{Style.RESET_ALL}")
             return None, None
     
 
-    def _load_from_scratch(self, model_id: Union[str, Path]) -> Tuple[Optional[AutoModelForCausalLM], Optional[AutoTokenizer]]:
-        potential_path = Path(model_id)
-        model_path = potential_path if potential_path.exists() else (self.variable.LocalModel_DIR / str(model_id))
-        try:
-            print(f"{Fore.CYAN}Downloading and loading model: {model_path}{Style.RESET_ALL}")
+    # def _load_from_scratch(self, model_id: Union[str, Path]) -> Tuple[Optional[AutoModelForCausalLM], Optional[AutoTokenizer]]:
+    #     potential_path = Path(model_id)
+    #     model_path = potential_path if potential_path.exists() else (self.variable.LocalModel_DIR / str(model_id))
+    #     try:
+    #         print(f"{Fore.CYAN}Downloading and loading model: {model_path}{Style.RESET_ALL}")
 
-            tokenizer = AutoTokenizer.from_pretrained(
-                model_path,
-                trust_remote_code=True,
-                padding_side="right",
-                truncation_side="right",
-            )
+    #         tokenizer = AutoTokenizer.from_pretrained(
+    #             model_path,
+    #             trust_remote_code=True,
+    #             padding_side="right",
+    #             truncation_side="right",
+    #         )
 
-            # Ensure tokenizer has padding token
-            if tokenizer.pad_token is None:
-                tokenizer.pad_token = tokenizer.eos_token
-                print(f"{Fore.YELLOW}Set padding token to EOS token{Style.RESET_ALL}")
+    #         # Ensure tokenizer has padding token
+    #         if tokenizer.pad_token is None:
+    #             tokenizer.pad_token = tokenizer.eos_token
+    #             print(f"{Fore.YELLOW}Set padding token to EOS token{Style.RESET_ALL}")
 
-            config = AutoConfig.from_pretrained(
-                model_path,
-                trust_remote_code=True,
-                use_cache=False  # Disable cache for gradient checkpointing compatibility
-            )
+    #         config = AutoConfig.from_pretrained(
+    #             model_path,
+    #             trust_remote_code=True,
+    #             use_cache=False  # Disable cache for gradient checkpointing compatibility
+    #         )
 
-            # Update config with tokenizer's pad_token_id
-            if hasattr(tokenizer, 'pad_token_id') and tokenizer.pad_token_id is not None:
-                config.pad_token_id = tokenizer.pad_token_id
+    #         # Update config with tokenizer's pad_token_id
+    #         if hasattr(tokenizer, 'pad_token_id') and tokenizer.pad_token_id is not None:
+    #             config.pad_token_id = tokenizer.pad_token_id
 
-        
-            model = AutoModelForCausalLM.from_pretrained(
-                model_path,
-                config=config,
-                device_map=self.device_map,
-                trust_remote_code=True,
-                torch_dtype=torch.float32,
-            )
+    #         model,tokeni
+    #         # model = AutoModelForCausalLM.from_pretrained(
+    #         #     model_path,
+    #         #     config=config,
+    #         #     device_map=self.device_map,
+    #         #     trust_remote_code=True,
+    #         #     torch_dtype=torch.float32,
+    #         # )
 
-            # Enable training mode and gradient checkpointing
-            model.config.use_cache = False  # Ensure config is consistent
-            model.train()
-            model.gradient_checkpointing_enable()
+    #         # Enable training mode and gradient checkpointing
+    #         model.config.use_cache = False  # Ensure config is consistent
+    #         model.train()
+    #         model.gradient_checkpointing_enable()
 
-            print(f"{Fore.GREEN}Successfully loaded model and tokenizer{Style.RESET_ALL}")
-            return model, tokenizer
+    #         print(f"{Fore.GREEN}Successfully loaded model and tokenizer{Style.RESET_ALL}")
+    #         return model, tokenizer
             
         except Exception as e:
             print(f"{Fore.RED}Error loading model from scratch: {str(e)}{Style.RESET_ALL} from {model_path}")

@@ -14,34 +14,34 @@ from pathlib import Path
 # then run this file to download dataset and finetune the model
 # after first run you can directly finetune without formatting dataset again by keeping FinetunModel.finetune_model
 
-# variable = Variable()
-# downloading = DataLoader()
+variable = Variable()
+downloading = DataLoader()
 
-# #finetune model
-# finetune = Manager()
+#finetune model
+finetune = Manager()
 Ft = FinetuneModel()
 
-# api = variable.hf_api
+api = variable.hf_api
 
 
-# create_config_folders()
+create_config_folders()
 
-# setcard = ApiCardSetup()
+setcard = ApiCardSetup()
 
-# # set lists of models and datasets in config files btw, set the name that not exist to make it skipped
-# list_models = api.list_models(model_name='Qwen/Qwen1.5-0.5B-Chat',limit=1,gated=False)
-# list_datasets = api.list_datasets(dataset_name='SohamGhadge/casual-conversation',limit=1,gated=False)
+# set lists of models and datasets in config files btw, set the name that not exist to make it skipped
+list_models = api.list_models(model_name='Qwen/Qwen1.5-0.5B-Chat',limit=1,gated=False)
+list_datasets = api.list_datasets(dataset_name='waltsun/MOAT',limit=1,gated=False)
 
-# # set new list to download
-# list_download = setcard.set(list_models,list_datasets)
+# set new list to download
+list_download = setcard.set(list_models,list_datasets)
 
-# # download from datacard
-# downloading.run(list_download)
-# # formatting dataset
+# download from datacard
+downloading.run(list_download)
+# formatting dataset
 
-# ## use custom_models in custom_models folder so it need to have custom_models in folder 
-# finetune.dataset_prepare(list_download)
-# # use formatted dataset and models
+## use custom_models in custom_models folder so it need to have custom_models in folder 
+finetune.dataset_prepare(list_download)
+# use formatted dataset and models
 Ft.finetune_model()
 
 

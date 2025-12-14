@@ -61,6 +61,6 @@ create_conver_model.save_regular_model()
 
 ###attach text-based model to vision model with visionmodelwrapper to add Vision capability
 
-create_vision_model = CreateModel(oldmodel_path, "vision-model")
-create_vision_model.add_vision()
-create_vision_model.save_vision_model()
+# create_vision_model = CreateModel(oldmodel_path, "vision-model")
+# create_vision_model.add_vision()
+# create_vision_model.save_vision_model()
