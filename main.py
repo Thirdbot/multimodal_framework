@@ -47,8 +47,8 @@ Ft.finetune_model()
 
 
 # model_path = Path(__file__).parent.absolute() / "checkpoints" / "text-vision-text-generation" / "Qwen_Qwen1.5-0.5B-Chat"
-model_path = Path(__file__).parent.absolute() / "custom_models" / "conversation-model" / "newmodel"
-model_path = Path(__file__).parent.absolute() / "checkpoints" / "text-generation" / "newmodel"
+# model_path = Path(__file__).parent.absolute() / "custom_models" / "conversation-model" / "newmodel"
+model_path = Path(__file__).parent.absolute() / "checkpoints" / "text-generation" / "Qwen_Qwen1.5-0.5B-Chat"
 
 inference_manager = InferenceManager(model_path)
 # image_path = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSKrRTIhPqYvZTuh0m79LUYJsDRG9VgZYIaNA&s"

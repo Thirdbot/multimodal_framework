@@ -151,6 +151,21 @@ class ConversationModelWrapper(PreTrainedModel):
     def enable_input_require_grads(self):
         if hasattr(self.bmodel, "enable_input_require_grads"):
             self.bmodel.enable_input_require_grads()
+    
+    def named_parameters(self, *args, **kwargs):
+        """Expose inner model's parameters so trainer sees them."""
+        return self.bmodel.named_parameters(*args, **kwargs)
+    
+    def parameters(self, *args, **kwargs):
+        """Expose inner model's parameters so trainer sees them."""
+        return self.bmodel.parameters(*args, **kwargs)
+    
+    def train(self, mode=True):
+        """Ensure inner model is in training mode."""
+        super().train(mode)
+        if self.bmodel is not None:
+            self.bmodel.train(mode)
+        return self
             
     def save_pretrained(self, save_directory, **kwargs):
         """Save the model."""
@@ -308,9 +323,25 @@ class VisionModelWrapper(PreTrainedModel):
         if hasattr(module, "gradient_checkpointing"):
             module.gradient_checkpointing = value
 
+
     def enable_input_require_grads(self):
         if hasattr(self.vision_model, "enable_input_require_grads"):
             self.vision_model.enable_input_require_grads()
+
+    def named_parameters(self, *args, **kwargs):
+        """Expose inner model's parameters so trainer sees them."""
+        return self.bmodel.named_parameters(*args, **kwargs)
+    
+    def parameters(self, *args, **kwargs):
+        """Expose inner model's parameters so trainer sees them."""
+        return self.bmodel.parameters(*args, **kwargs)
+    
+    def train(self, mode=True):
+        """Ensure inner model is in training mode."""
+        super().train(mode)
+        if self.bmodel is not None:
+            self.bmodel.train(mode)
+        return self
 
     def generate(self, input_ids=None, attention_mask=None, pixel_values=None,
                  attend_to_img_tokens=True, **kwargs):
@@ -616,17 +647,7 @@ class CreateModel:
         try:
             os.makedirs(self.model_path, exist_ok=True)
             
-            # Save the inner model to avoid shared tensor issues
-            # if hasattr(self.model, 'model') and self.model.model is not None:
-            #     # If wrapped, save the inner model directly
-            #     self.model.model.save_pretrained(
-            #         self.model_path,
-            #         safe_serialization=True
-            #     )
-            # else:
-                
-            #     #save wrapped model
-            
+            # Wrapped Model save
             self.model.save_pretrained(
                 self.model_path,
                 safe_serialization=True
@@ -716,6 +737,14 @@ def load_saved_model(model_path, checkpoint=False):
                 pefted_lang_model = PeftModel.from_pretrained(pefted_lang_model, lang_model_path)
                 pefted_lang_model = pefted_lang_model.to(device).to(dtype)
 
+                # Enable training on PEFT model - LoRA adapters are frozen by default after loading
+                pefted_lang_model.train()
+                
+                # Explicitly enable gradients on LoRA parameters
+                for name, param in pefted_lang_model.named_parameters():
+                    if 'lora' in name.lower():
+                        param.requires_grad = True
+
                 model = VisionModelWrapper(config, lang_model=pefted_lang_model, model_config=ModelConfig())
 
                 # Restore vision adapter if it was saved
@@ -769,6 +798,14 @@ def load_saved_model(model_path, checkpoint=False):
                 )
                 pefted_model = PeftModel.from_pretrained(pefted_model, model_path)
                 pefted_model = pefted_model.to(device).to(dtype)
+                
+                # Enable training on PEFT model - LoRA adapters are frozen by default after loading
+                pefted_model.train()
+                
+                # Explicitly enable gradients on LoRA parameters
+                for name, param in pefted_model.named_parameters():
+                    if 'lora' in name.lower():
+                        param.requires_grad = True
                 
                 model = ConversationModelWrapper(config, base_model=pefted_model)
                 model.config.use_cache = False
