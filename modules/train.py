@@ -1,38 +1,18 @@
 import os
 import json
-from pathlib import Path
-from typing import Optional, List, Dict, Any, Union, Tuple
 import torch
-import numpy as np
-from colorama import Fore, Style, init
-from datasets import load_dataset, concatenate_datasets, DatasetDict,get_dataset_config_info,get_dataset_split_names,get_dataset_config_names,load_from_disk
+from colorama import Fore, Style
+from datasets import DatasetDict,load_from_disk
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
-    AutoConfig,
-    BitsAndBytesConfig,
     DataCollatorForLanguageModeling,
     Trainer,
     TrainingArguments
 )
-from peft import (
-    LoraConfig,
-    get_peft_model,
-    PeftModel,
-    AutoPeftModelForCausalLM,
-    prepare_model_for_kbit_training
-)
-# from trl import SFTTrainer
-import evaluate
-from huggingface_hub import HfApi
 
-from modules.chatTemplate import ChatTemplate
-# from modules.chainpipe import Chainpipe
 from modules.createbasemodel import load_saved_model
-
 from modules.variable import Variable
-import ast
-import pandas as pd
 
 class FinetuneModel:
     """Class for handling model fine-tuning operations."""
@@ -58,41 +38,24 @@ class FinetuneModel:
         
         # Initialize components
         self.device_map = "cuda:0" if torch.cuda.is_available() else "cpu"
-        self.metric = evaluate.load("accuracy")
-        # self.chainpipe = Chainpipe()
-        
-        
         
         # Initialize state variables
         self.model_id = None
         self.dataset_name = None
         self.model_task = None
-
-
-        self.CUTOM_MODEL_DIR = self.variable.CUTOM_MODEL_DIR
-        self.VISION_MODEL_DIR = self.variable.VISION_MODEL_DIR
-        self.REGULAR_MODEL_DIR = self.variable.REGULAR_MODEL_DIR
-        self.MODEL_LOCAL_DIR = self.variable.REPO_DIR
-        
-        self.dataset_formatted_dir = self.variable.DATASET_FORMATTED_DIR
         
 
     
     def _setup_directories(self):
         """Set up required directories."""        
-        self.CHECKPOINT_DIR = self.variable.CHECKPOINT_DIR
-        
-        for directory in [self.CHECKPOINT_DIR]:
-            directory.mkdir(parents=True, exist_ok=True)
+        self.variable.CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
     
-    def train_args(self,task:str, modelname: str) -> TrainingArguments:
-
-        model_folder = self.CHECKPOINT_DIR / task
-
-        if "custom_models" in modelname.split("\\"):
-            modelname = modelname.split("\\")
-            modelname = modelname[-1]
-        output_dir = model_folder / modelname if '/' not in modelname else model_folder / modelname.replace('/', '_')
+    def train_args(self, task: str, modelname: str) -> TrainingArguments:
+        model_folder = self.variable.CHECKPOINT_DIR / task
+        
+        # Normalize model name
+        modelname = modelname.split("\\")[-1] if "custom_models" in modelname else modelname
+        output_dir = model_folder / (modelname if '/' not in modelname else modelname.replace('/', '_'))
         
         output_dir.mkdir(parents=True, exist_ok=True)
         
@@ -140,33 +103,7 @@ class FinetuneModel:
             dataloader_prefetch_factor=None,  # Disable prefetching
         )
     
-    def compute_metrics(self, eval_pred: Tuple[np.ndarray, np.ndarray]) -> Dict[str, float]:
-     
-        logits, labels = eval_pred
-        predictions = np.argmax(logits[:, -1, :], axis=-1)
-        valid_labels = labels[:, -1]
-        mask = valid_labels != -100
-        filtered_predictions = predictions[mask]
-        filtered_labels = valid_labels[mask]
-        
-        if len(filtered_predictions) == 0 or len(filtered_labels) == 0:
-            return {"accuracy": 0.0}
-            
-        try:
-            metrics = self.metric.compute(predictions=filtered_predictions, references=filtered_labels)
-            if metrics is None or np.isnan(metrics.get("accuracy", 0.0)):
-                return {"accuracy": 0.0}
-            return metrics
-        except Exception as e:
-            print(f"{Fore.YELLOW}Warning: Error computing metrics: {str(e)}{Style.RESET_ALL}")
-            return {"accuracy": 0.0}
-    
-    def parse_dict(self,example):
-        return ast.literal_eval(example['train'])
-
-
-
-    def Trainer(self, model: AutoModelForCausalLM, dataset:DatasetDict, tokenizer: AutoTokenizer, modelname: str,task:str) -> Trainer:
+    def Trainer(self, model: AutoModelForCausalLM, dataset: DatasetDict, tokenizer: AutoTokenizer, modelname: str, task: str) -> Trainer:
 
         try:
             """Create a trainer instance."""
@@ -184,7 +121,7 @@ class FinetuneModel:
             # Configure data collator for language modeling
             data_collator = DataCollatorForLanguageModeling(
                 tokenizer=tokenizer,
-                mlm=False,  # We want masked language modeling
+                mlm=False,  # Causal language modeling (not masked)
                 pad_to_multiple_of=8  # For better GPU utilization
             )
             
@@ -211,6 +148,12 @@ class FinetuneModel:
             if "custom_models" in modelname.split("/"):
                 modelname = modelname.split("/")
                 modelname = modelname[-1]
+            
+            # Ensure model is in training mode with gradients
+            model.train()
+            for param in model.parameters():
+                if hasattr(param, 'requires_grad'):
+                    param.requires_grad = True
 
             trainer = self.Trainer(model=model, dataset=dataset, tokenizer=tokenizer, modelname=modelname,task=task)
             
@@ -233,13 +176,12 @@ class FinetuneModel:
 
             print(f"{Fore.CYAN}Identified model type to save: {model_type}{Style.RESET_ALL}")
             
-            
+            # Normalize model name for path
             modelname = modelname.replace('/', '_') if '/' in modelname else modelname
             
-            
-            #save model needed outside checkpoints
+            # Save model based on type
             if model_type == "vision-model" or "VisionModel" in model_type:
-                model_save_path = self.CHECKPOINT_DIR / 'text-vision-text-generation' / modelname
+                model_save_path = self.variable.CHECKPOINT_DIR / 'text-vision-text-generation' / modelname
                 model_save_path.mkdir(parents=True, exist_ok=True)
                 # Save the final model and adapter
 
@@ -262,21 +204,21 @@ class FinetuneModel:
                 
 
                 
-                if hasattr(model,'vision_adapter'):
+                if hasattr(model, 'vision_adapter'):
                     vision_adapter_path = model_save_path / "vision_adapter"
                     vision_adapter_path.mkdir(parents=True, exist_ok=True)
                     torch.save(model.vision_adapter.state_dict(), str(vision_adapter_path / "vision_adapter.pt"))
                     print(f"{Fore.GREEN}Vision adapter saved to: {vision_adapter_path}{Style.RESET_ALL}")
 
             elif model_type == "conversation-model" or "ConversationModel" in model_type:
-                model_save_path = self.CHECKPOINT_DIR / 'text-generation' / modelname
+                model_save_path = self.variable.CHECKPOINT_DIR / 'text-generation' / modelname
                 model_save_path.mkdir(parents=True, exist_ok=True)
                 # Save the final model and adapter
                 trainer.save_model(str(model_save_path))
                 tokenizer.save_pretrained(str(model_save_path))
                 model.config.save_pretrained(str(model_save_path))
             else:
-                model_save_path = self.CHECKPOINT_DIR / 'text-generation' / modelname
+                model_save_path = self.variable.CHECKPOINT_DIR / 'text-generation' / modelname
                 model_save_path.mkdir(parents=True, exist_ok=True)
                 trainer.save_model(str(model_save_path))
                 tokenizer.save_pretrained(str(model_save_path))
@@ -315,46 +257,50 @@ class FinetuneModel:
 
             for dataset_name, dataset_info in dict_dataset.items():
                 dataset_format_name = f"{dataset_name.replace('/', '_')}_formatted"
-                
-
-                dataset = load_from_disk(self.dataset_formatted_dir / dataset_format_name)
-                #create model as design
+                dataset = load_from_disk(self.variable.DATASET_FORMATTED_DIR / dataset_format_name)
+                # Create model as designed
                 if "conversations" in dataset_info:
-                    #if model is not local and been createdd
-                    model_name_checkpoint = modelname.replace("/","_")
+                    model_name_checkpoint = modelname.replace("/", "_")
                     model_name_path = modelname.split("/")[-1]
-                    model_path = self.REGULAR_MODEL_DIR / model_name_path
+                    model_path = self.variable.REGULAR_MODEL_DIR / model_name_path
                     model_task = "text-generation"
 
-                    self.conversation_checkpoint = self.CHECKPOINT_DIR / model_task / model_name_checkpoint
+                    conversation_checkpoint = self.variable.CHECKPOINT_DIR / model_task / model_name_checkpoint
 
-                    # load from checkpoint if exists for training only
-                    if Path(self.conversation_checkpoint).exists():
+                    # Load from checkpoint if exists for training only
+                    if conversation_checkpoint.exists():
                         print(f"{Fore.GREEN}Loading conversation model from checkpoint...{Style.RESET_ALL}")
-                        model, tokenizer = load_saved_model(self.conversation_checkpoint,checkpoint=True)
+                        model, tokenizer = load_saved_model(conversation_checkpoint, checkpoint=True)
                     else:
                         model, tokenizer = load_saved_model(model_path)
+                    
+                    # Set model to training mode
+                    model.train()
 
 
-                #temporal fix this
+                # Handle vision models
                 if "image" in dataset_info or "images" in dataset_info:
-                    model_name_checkpoint = modelname.replace("/","_")
+                    model_name_checkpoint = modelname.replace("/", "_")
                     model_name_path = modelname.split("/")[-1]
 
-                    model_path = self.VISION_MODEL_DIR / model_name_path                       
+                    model_path = self.variable.VISION_MODEL_DIR / model_name_path
                     model_task = "text-vision-text-generation"
-                    self.vision_checkpoint = self.CHECKPOINT_DIR / model_task / model_name_checkpoint
-                        
+                    vision_checkpoint = self.variable.CHECKPOINT_DIR / model_task / model_name_checkpoint
 
-                    if Path(self.vision_checkpoint).exists():
+                    if vision_checkpoint.exists():
                         print(f"{Fore.GREEN}Loading vision model from checkpoint...{Style.RESET_ALL}")
-                        model, tokenizer = load_saved_model(self.vision_checkpoint,checkpoint=True)
+                        model, tokenizer = load_saved_model(vision_checkpoint, checkpoint=True)
                     else:
                         model, tokenizer = load_saved_model(model_path)
-                        
-                    for param in model.vision_adapter.parameters():
-                        param.requires_grad = True
-                        
+                    
+                    # Ensure vision adapter has gradients enabled
+                    if hasattr(model, 'vision_adapter'):
+                        for param in model.vision_adapter.parameters():
+                            param.requires_grad = True
+                    
+                    # Set model to training mode with proper gradient setup
+                    model.train()
+                
                 print(f"{Fore.CYAN}Dataset loaded with {len(dataset)} records{Style.RESET_ALL}")
 
                 # Clear CUDA cache before training
@@ -363,4 +309,4 @@ class FinetuneModel:
                     torch.cuda.reset_peak_memory_stats()
                     print(f"{Fore.CYAN}GPU Memory before training: {torch.cuda.memory_allocated()/1e9:.2f} GB{Style.RESET_ALL}")
                 
-                self.runtuning(model=model, tokenizer=tokenizer, dataset=dataset, modelname=modelname,task=model_task)
+                self.runtuning(model=model, tokenizer=tokenizer, dataset=dataset, modelname=modelname, task=model_task)

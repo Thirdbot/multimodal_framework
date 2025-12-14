@@ -11,32 +11,32 @@ from modules.train import FinetuneModel
 from pathlib import Path
 
 
-variable = Variable()
-downloading = DataLoader()
+# variable = Variable()
+# downloading = DataLoader()
 
-# #finetune model
-finetune = Manager()
+# # #finetune model
+# finetune = Manager()
 Ft = FinetuneModel()
 
-api = variable.hf_api
+# api = variable.hf_api
 
 
-create_config_folders()
+# create_config_folders()
 
-setcard = ApiCardSetup()
+# setcard = ApiCardSetup()
 
-#set lists of models and datasets in config files
-list_models = api.list_models(model_name='Qwen/Qwen1.5-0.5B-Chat',limit=1,gated=False)
-list_datasets = api.list_datasets(dataset_name='laolao77/MMDU',limit=1,gated=False)
+# #set lists of models and datasets in config files
+# list_models = api.list_models(model_name='Qwen/Qwen1.5-0.5B-Chat',limit=1,gated=False)
+# list_datasets = api.list_datasets(dataset_name='llm-jp/japanese-photos-conversation',limit=1,gated=False)
 
-#set new list to download
-list_download = setcard.set(list_models,list_datasets)
+# #set new list to download
+# list_download = setcard.set(list_models,list_datasets)
 
-#download from datacard
-downloading.run(list_download)
-#formatting dataset
-finetune.dataset_prepare(list_download)
-# use formatted dataset and models
+# #download from datacard
+# downloading.run(list_download)
+# #formatting dataset
+# finetune.dataset_prepare(list_download)
+# # use formatted dataset and models
 Ft.finetune_model()
 
 
@@ -45,12 +45,12 @@ Ft.finetune_model()
 # inference_manager = InferenceManager(model_path)
 # image_path = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcStFEnMosKZV8Y5Dy23L_kjxg7Jup75XA3Cpg&s"
 
-# user_input = ""
+# user_input = "What is 1+1="
 
 # response = inference_manager.generate_response(user_input,image_path=image_path)
 # print(f"{response}")
 
 # image_path = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRngDpJnVUWLRj3Vs5HEmhuzCgK0w5SEN0Mgg&s"
-# user_input = ""
+# user_input = "what is show in images?"
 # response = inference_manager.generate_response(user_input,image_path=image_path)
 # print(f"{response}")
