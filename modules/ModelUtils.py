@@ -5,7 +5,7 @@ from pathlib import Path
 from dataclasses import dataclass
 
 from transformers import (
-    AutoTokenizer, AutoConfig, ProcessorMixin, PretrainedConfig, PreTrainedModel,
+    AutoTokenizer, AutoConfig, ProcessorMixin, PreTrainedModel,
     CLIPProcessor, AutoModelForCausalLM, BitsAndBytesConfig
 )
 from transformers.modeling_outputs import CausalLMOutputWithCrossAttentions
@@ -13,14 +13,15 @@ from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training,Pef
 from transformers import CLIPVisionModel
 
 from modules.variable import Variable
+from modules.ModelCreationtemplate import ModelTemplate
+
+
+from modules.models.ConversationModel import ConversationConfig
+from modules.models.VisionModel import VisionConfig
 
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 
-
-# =============================================================================
-# CONFIGURATION AND UTILITY CONSTANTS
-# =============================================================================
-
+### add target modules base on model architecture like custom model has custom architecture
 TARGET_MODULES_MAP = {
     "gpt2": ["c_attn", "c_proj"],
     "llama": ["q_proj", "k_proj", "v_proj", "o_proj"],
@@ -38,13 +39,14 @@ TARGET_MODULES_MAP = {
     "qwen": ["c_attn", "c_proj"],
     "phi": ["Wqkv", "out_proj"],
     "gemma": ["q_proj", "k_proj", "v_proj", "o_proj"],
-    "stablelm": ["q_proj", "k_proj", "v_proj", "o_proj"]
+    "stablelm": ["q_proj", "k_proj", "v_proj", "o_proj"],
+    "ConversationModel": ["q_proj", "k_proj", "v_proj", "o_proj"],
 }
 
 
 def get_target_modules(model_type: str) -> list:
     """Get target modules for LoRA based on model type."""
-    return TARGET_MODULES_MAP.get(model_type.lower(), ["q_proj", "k_proj", "v_proj", "o_proj"])
+    return TARGET_MODULES_MAP.get(model_type.lower(), None)
 
 
 @dataclass
@@ -69,46 +71,38 @@ class ModelConfig:
 
 
 # Config classes
-class ConversationConfig(PretrainedConfig):
-    model_type = "conversation-model"
-    architectures = ["ConversationModel"]
+# class ConversationConfig(PretrainedConfig):
+#     model_type = "conversation-model"
+#     architectures = ["ConversationModel"]
     
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+#     def __init__(self, **kwargs):
+#         super().__init__(**kwargs)
 
 
-class VisionConfig(PretrainedConfig):
-    model_type = "vision-model"
-    architectures = ["VisionModel"]
+# class VisionConfig(PretrainedConfig):
+#     model_type = "vision-model"
+#     architectures = ["VisionModel"]
     
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        # self.lang_embed_dim = lang_embed_dim
-        # self.clip_dim = clip_dim
+#     def __init__(self, **kwargs):
+#         super().__init__(**kwargs)
+#         # self.lang_embed_dim = lang_embed_dim
+#         # self.clip_dim = clip_dim
 
-
-# =============================================================================
-# MODEL CLASSES
-# =============================================================================
-
-class ConversationModel(PreTrainedModel):
+class ConversationModelWrapper(ModelTemplate):
     config_class = ConversationConfig
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    def __init__(self, config, base_model):
-        super().__init__(config)
-        self.model = base_model.to(self.device)
-        self.config = config
+    def __init__(self, config, **kwargs):
+        # Extract base_model from kwargs for backward compatibility
+        base_model = kwargs.pop('base_model', None)
+        super().__init__(config, inner_model=base_model, **kwargs)
         
-        if hasattr(base_model, 'peft_config'):
-            self.peft_config = base_model.peft_config
-        if hasattr(base_model, 'active_adapter'):
-            self.active_adapter = base_model.active_adapter
-        if hasattr(base_model, 'base_model'):
-            self.base_model = base_model.base_model
-        
-        self.supports_gradient_checkpointing = True
-        self._is_gradient_checkpointing = False
+        if base_model is not None:
+            if hasattr(base_model, 'peft_config'):
+                self.peft_config = base_model.peft_config
+            if hasattr(base_model, 'active_adapter'):
+                self.active_adapter = base_model.active_adapter
+            if hasattr(base_model, 'base_model'):
+                self.base_model = base_model.base_model
 
     def get_target_modules(self):
         if hasattr(self.model, 'get_target_modules'):
@@ -125,42 +119,7 @@ class ConversationModel(PreTrainedModel):
         )
         return outputs
 
-    def generate(self, *args, **kwargs):
-        return self.model.generate(*args, **kwargs)
-
-    @property
-    def is_gradient_checkpointing(self) -> bool:
-        return self._is_gradient_checkpointing
-
-    @is_gradient_checkpointing.setter
-    def is_gradient_checkpointing(self, value: bool):
-        self._is_gradient_checkpointing = value
-
-    def gradient_checkpointing_enable(self, gradient_checkpointing_kwargs=None):
-        if hasattr(self.model, "gradient_checkpointing_enable"):
-            self.model.gradient_checkpointing_enable(gradient_checkpointing_kwargs=gradient_checkpointing_kwargs)
-        self.is_gradient_checkpointing = True
-
-    def gradient_checkpointing_disable(self):
-        if hasattr(self.model, "gradient_checkpointing_disable"):
-            self.model.gradient_checkpointing_disable()
-        self.is_gradient_checkpointing = False
-
-    def _set_gradient_checkpointing(self, module, value=False):
-        if hasattr(module, "gradient_checkpointing"):
-            module.gradient_checkpointing = value
-
-    def enable_input_require_grads(self):
-        if hasattr(self.model, "enable_input_require_grads"):
-            self.model.enable_input_require_grads()
-            
-    def save_pretrained(self, save_directory, **kwargs):
-        """Save the model."""
-        # Save PEFT configuration if it exists
-        if hasattr(self.model, 'peft_config'):
-            self.model.save_pretrained(save_directory, **kwargs)
-        else:
-            super().save_pretrained(save_directory, **kwargs)
+    
 
 class VisionAdapter(torch.nn.Module):
     def __init__(self, lang_embed_dim, clip_dim):
@@ -181,7 +140,7 @@ class VisionAdapter(torch.nn.Module):
         output = self.activation(x)
         return output
 
-class VisionModel(PreTrainedModel):
+class VisionModelWrapper(PreTrainedModel):
     config_class = VisionConfig
 
     def __init__(self, config, lang_model=None, model_config: ModelConfig | None = None):
@@ -425,15 +384,6 @@ class VisionProcessor(ProcessorMixin):
             result = self.add_label(result)
 
         return result
-
-# Register this config type when instantiated
-AutoConfig.register("conversation-model", ConversationConfig)
-# Register the config at class level
-AutoConfig.register("vision-model", VisionConfig)
-# Register this model type when instantiated
-AutoModelForCausalLM.register(ConversationConfig, ConversationModel)
-# Register the model at class level
-AutoModelForCausalLM.register(VisionConfig, VisionModel)
     
 class CreateModel:
     def __init__(self, model_repo_path, model_category, model_config: ModelConfig | None = None):
@@ -469,7 +419,6 @@ class CreateModel:
             )
             print("Model loaded successfully")
         except Exception as e:
-            print(f"Error loading model with quantization: {str(e)}")
             print("Attempting to load without quantization...")
             self.model = AutoModelForCausalLM.from_pretrained(
                 self.model_repo_path,
@@ -491,10 +440,6 @@ class CreateModel:
         )
         self.vision_processor = VisionProcessor(self.clip_processor, self.tokenizer)
         self.vision_config = VisionConfig()
-    #     template_loader = FileSystemLoader(searchpath=model_path)
-    #     envi = Environment(loader=template_loader)
-    #     template = envi.get_template("chat_template.jinja")
-    #     return template
     
     def add_conversation(self):
         """Add conversation capability to the model."""
@@ -511,9 +456,77 @@ class CreateModel:
             
             self.model = prepare_model_for_kbit_training(self.model)
             
-            model_type = self.model.config.model_type.lower() if hasattr(self.model.config, 'model_type') else ""
-            target_modules = get_target_modules(model_type)
-            print(f"Using target modules for {model_type}: {target_modules}")
+            # model_type = self.model.config.model_type.lower() if hasattr(self.model.config, 'model_type') else ""
+            model_arc = self.model.config.architectures[0] if hasattr(self.model.config, 'architectures') and len(self.model.config.architectures) > 0 else ""
+            target_modules = get_target_modules(model_arc)
+            if target_modules is not None:
+                print(f"Using target modules for {model_arc}: {target_modules}")
+                
+                lora_config = LoraConfig(
+                    r=32,
+                    lora_alpha=64,
+                    target_modules=target_modules,
+                    lora_dropout=0.05,
+                    bias="none",
+                    task_type="CAUSAL_LM"
+                )
+                
+                self.model = get_peft_model(self.model, lora_config)
+                self.model = ConversationModelWrapper(self.original_config, base_model=self.model)
+                
+                self.model.config.use_cache = False
+                self.model.config.use_cache = False
+                
+                self.model.train()
+                self.model.gradient_checkpointing_enable()
+                
+                print("Successfully created conversation model with LoRA configuration")
+                trainable_params = 0
+                all_param = 0
+                for _, param in self.model.named_parameters():
+                    all_param += param.numel()
+                    if param.requires_grad:
+                        trainable_params += param.numel()
+                print(f"Trainable params: {trainable_params:,} ({100 * trainable_params / all_param:.2f}%)")
+                print(f"All params: {all_param:,}")
+            else:
+                self.model = AutoModelForCausalLM.from_pretrained(
+                    self.model_repo_path,
+                    device_map="auto",
+                    trust_remote_code=True,
+                    quantization_config=self.quantization_config,
+                    torch_dtype=self.dtype
+                )
+                
+                self.model.config.use_cache = False
+                self.model.config.use_cache = False
+                
+                self.model.train()
+                self.model.gradient_checkpointing_enable()
+                
+                print("Successfully created conversation model without LoRA configuration")
+                trainable_params = 0
+                all_param = 0
+                for _, param in self.model.named_parameters():
+                    all_param += param.numel()
+                    if param.requires_grad:
+                        trainable_params += param.numel()
+                print(f"Trainable params: {trainable_params:,} ({100 * trainable_params / all_param:.2f}%)")
+                print(f"All params: {all_param:,}")
+        
+            
+        except Exception as e:
+            print(f"Error creating conversation model: {str(e)}")
+            raise
+    
+    def add_vision(self):
+        self.model = prepare_model_for_kbit_training(self.model)
+        
+        model_type = self.model.config.model_type.lower() if hasattr(self.model.config, 'model_type') else ""
+        model_arc = self.model.config.architectures[0] if hasattr(self.model.config, 'architectures') and len(self.model.config.architectures) > 0 else ""
+        target_modules = get_target_modules(model_arc)
+        if target_modules is not None:
+            print(f"Using target modules for {model_arc}: {target_modules}")
             
             lora_config = LoraConfig(
                 r=32,
@@ -525,57 +538,44 @@ class CreateModel:
             )
             
             self.model = get_peft_model(self.model, lora_config)
-            self.convomodel = ConversationModel(self.original_config, self.model)
+            config = VisionConfig()
+            self.vismodel = VisionModelWrapper(config, lang_model=self.model, model_config=self.model_config)
             
-            self.model.config.use_cache = False
-            self.convomodel.config.use_cache = False
+            self.vismodel.train()
+            self.vismodel.gradient_checkpointing_enable()
             
-            self.convomodel.train()
-            self.convomodel.gradient_checkpointing_enable()
-            
-            print("Successfully created conversation model with LoRA configuration")
+            print("Successfully created vision model with LoRA configuration")
             trainable_params = 0
             all_param = 0
-            for _, param in self.convomodel.named_parameters():
+            for _, param in self.vismodel.named_parameters():
                 all_param += param.numel()
                 if param.requires_grad:
                     trainable_params += param.numel()
             print(f"Trainable params: {trainable_params:,} ({100 * trainable_params / all_param:.2f}%)")
             print(f"All params: {all_param:,}")
+        else:
+            config = VisionConfig()
+            self.vismodel = VisionModelWrapper(config, lang_model=self.model, model_config=self.model_config)
             
-        except Exception as e:
-            print(f"Error creating conversation model: {str(e)}")
-            raise
-    
-    def add_vision(self):
-        self.model = prepare_model_for_kbit_training(self.model)
-        
-        model_type = self.model.config.model_type.lower() if hasattr(self.model.config, 'model_type') else ""
-        target_modules = get_target_modules(model_type)
-        print(f"Using target modules for {model_type}: {target_modules}")
-        
-        lora_config = LoraConfig(
-            r=32,
-            lora_alpha=64,
-            target_modules=target_modules,
-            lora_dropout=0.05,
-            bias="none",
-            task_type="CAUSAL_LM"
-        )
-        
-        self.model = get_peft_model(self.model, lora_config)
-        config = VisionConfig()
-        self.vismodel = VisionModel(config, lang_model=self.model, model_config=self.model_config)
-        
-        self.vismodel.train()
-        self.vismodel.gradient_checkpointing_enable()
+            self.vismodel.train()
+            self.vismodel.gradient_checkpointing_enable()
+
+            print("Successfully created vision model without LoRA configuration")
+            trainable_params = 0
+            all_param = 0
+            for _, param in self.vismodel.named_parameters():
+                all_param += param.numel()
+                if param.requires_grad:
+                    trainable_params += param.numel()
+            print(f"Trainable params: {trainable_params:,} ({100 * trainable_params / all_param:.2f}%)")
+            print(f"All params: {all_param:,}")
         
     def save_regular_model(self):
         """Save the model and all its components with optimizations."""
         try:
             os.makedirs(self.model_path, exist_ok=True)
             
-            self.convomodel.save_pretrained(
+            self.model.save_pretrained(
                 self.model_path,
                 safe_serialization=True
             )
@@ -615,6 +615,7 @@ class CreateModel:
                 safe_serialization=True
             )
             torch.save(self.vismodel.vision_adapter.state_dict(), os.path.join(vision_adapter_path, "vision_adapter.pt"))
+            print(f"Successfully saved model to {self.model_path}")
         except Exception as e:
             print(f"Error: Failed to save model - {str(e)}")
 
@@ -641,55 +642,85 @@ def load_saved_model(model_path, checkpoint=False):
         if is_vision_model:
             
             config = VisionConfig()
+            if get_target_modules(config.architectures[0]) is not None:
             
-            # Load base model with proper device mapping and dtype
-            pefted_lang_model = AutoModelForCausalLM.from_pretrained(
-                lang_model_path,
-                device_map=device,
-                torch_dtype=dtype,
-                trust_remote_code=True
-            )
-            pefted_lang_model = PeftModel.from_pretrained(pefted_lang_model, lang_model_path)
-            pefted_lang_model = pefted_lang_model.to(device).to(dtype)
+                # Load base model with proper device mapping and dtype
+                pefted_lang_model = AutoModelForCausalLM.from_pretrained(
+                    lang_model_path,
+                    device_map=device,
+                    torch_dtype=dtype,
+                    trust_remote_code=True
+                )
+                pefted_lang_model = PeftModel.from_pretrained(pefted_lang_model, lang_model_path)
+                pefted_lang_model = pefted_lang_model.to(device).to(dtype)
 
-            model = VisionModel(config, lang_model=pefted_lang_model, model_config=ModelConfig())
+                model = VisionModelWrapper(config, lang_model=pefted_lang_model, model_config=ModelConfig())
 
-            # Restore vision adapter if it was saved
-            if os.path.exists(vision_adapter_fpath):
-                model.vision_adapter.load_state_dict(torch.load(vision_adapter_fpath, map_location=device))
+                # Restore vision adapter if it was saved
+                if os.path.exists(vision_adapter_fpath):
+                    model.vision_adapter.load_state_dict(torch.load(vision_adapter_fpath, map_location=device))
 
-            tokenizer = AutoTokenizer.from_pretrained(lang_model_path)
-            model.config.use_cache = False
-            
-            # Ensure model is in training mode and has gradients
-            model.train()
-            for param in model.parameters():
-                param.requires_grad = True
-            if hasattr(model, 'vision_adapter'):
-                for param in model.vision_adapter.parameters():
-                    param.requires_grad = True
-            
+                tokenizer = AutoTokenizer.from_pretrained(lang_model_path)
+                model.config.use_cache = False
+                
+                # Ensure model is in training mode and has gradients
+                model.train()
+
+                if hasattr(model, 'vision_adapter'):
+                    for param in model.vision_adapter.parameters():
+                        param.requires_grad = True
+            else:
+                print("Loading vision model without LoRA...")
+                lang_model = AutoModelForCausalLM.from_pretrained(
+                    lang_model_path,
+                    device_map=device,
+                    torch_dtype=dtype,
+                    trust_remote_code=True
+                )
+                model = VisionModelWrapper(config, lang_model=lang_model, model_config=ModelConfig())
+
+                # Restore vision adapter if it was saved
+                if os.path.exists(vision_adapter_fpath):
+                    model.vision_adapter.load_state_dict(torch.load(vision_adapter_fpath, map_location=device))
+
+                tokenizer = AutoTokenizer.from_pretrained(lang_model_path)
+                model.config.use_cache = False
+                
+                # Ensure model is in training mode and has gradients
+                model.train()
+                if hasattr(model, 'vision_adapter'):
+                    for param in model.vision_adapter.parameters():
+                        param.requires_grad = True
+                
             return model, tokenizer
         else:
-            print("Loading conversation model...")
-            pefted_model = AutoModelForCausalLM.from_pretrained(
-                model_path,
-                device_map=device,
-                torch_dtype=dtype,
-                trust_remote_code=True
-            )
-            pefted_model = PeftModel.from_pretrained(pefted_model, model_path)
-            pefted_model = pefted_model.to(device).to(dtype)
-            
-            model = ConversationModel(config, pefted_model)
-            model.config.use_cache = False
-            
-            # Ensure model is in training mode and has gradients
-            model.train()
-            for param in model.parameters():
-                param.requires_grad = True
-            
-            tokenizer = AutoTokenizer.from_pretrained(local_checkpoint_path)
+            if get_target_modules(config.architectures[0]) is not None:
+                print("Loading conversation model with LoRA...")
+                pefted_model = AutoModelForCausalLM.from_pretrained(
+                    model_path,
+                    device_map=device,
+                    torch_dtype=dtype,
+                    trust_remote_code=True
+                )
+                pefted_model = PeftModel.from_pretrained(pefted_model, model_path)
+                pefted_model = pefted_model.to(device).to(dtype)
+                
+                model = ConversationModelWrapper(config, base_model=pefted_model)
+                model.config.use_cache = False
+                
+                model.train()
+        
+                tokenizer = AutoTokenizer.from_pretrained(local_checkpoint_path)
+            else:
+                print("Loading conversation model... without lora")
+                model = AutoModelForCausalLM.from_pretrained(
+                    model_path,
+                    device_map=device,
+                    torch_dtype=dtype,
+                    trust_remote_code=True
+                )
+                model.train()
+                tokenizer = AutoTokenizer.from_pretrained(local_checkpoint_path)
             return model, tokenizer
 
         

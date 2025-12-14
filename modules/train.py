@@ -11,7 +11,7 @@ from transformers import (
     TrainingArguments
 )
 
-from modules.createbasemodel import load_saved_model
+from modules.ModelUtils import load_saved_model
 from modules.variable import Variable
 
 class FinetuneModel:
@@ -24,7 +24,7 @@ class FinetuneModel:
         self.per_device_eval_batch_size = 1
         self.gradient_accumulation_steps = 10  # Accumulate to simulate larger batch
         self.learning_rate = 1e-3
-        self.num_train_epochs = 10
+        self.num_train_epochs = 1
         self.save_strategy = "best"
         self.training_config_path = self.variable.training_config_path
         
@@ -151,9 +151,9 @@ class FinetuneModel:
             
             # Ensure model is in training mode with gradients
             model.train()
-            for param in model.parameters():
-                if hasattr(param, 'requires_grad'):
-                    param.requires_grad = True
+            # for param in model.parameters():
+            #     if hasattr(param, 'requires_grad'):
+            #         param.requires_grad = True
 
             trainer = self.Trainer(model=model, dataset=dataset, tokenizer=tokenizer, modelname=modelname,task=task)
             
