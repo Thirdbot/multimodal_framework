@@ -116,9 +116,9 @@ class Manager:
     #         print(f"{Fore.GREEN}Successfully loaded model and tokenizer{Style.RESET_ALL}")
     #         return model, tokenizer
             
-        except Exception as e:
-            print(f"{Fore.RED}Error loading model from scratch: {str(e)}{Style.RESET_ALL} from {model_path}")
-            return None, None
+        # except Exception as e:
+        #     print(f"{Fore.RED}Error loading model from scratch: {str(e)}{Style.RESET_ALL} from {model_path}")
+        #     return None, None
     
     def load_dataset(self, dataset_name: str, config_name: Optional[str] = None) -> Optional[DatasetDict]:
         print(f"{Fore.CYAN}Retrieving dataset {dataset_name}{Style.RESET_ALL}")
