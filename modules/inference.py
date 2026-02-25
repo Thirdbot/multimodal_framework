@@ -8,18 +8,16 @@ from colorama import Fore, Style
 from jinja2 import Template
 from PIL import Image
 from transformers import (
-    AutoModelForCausalLM,
-    AutoModel,
-    AutoTokenizer,
-    AutoConfig,
+    AutoImageProcessor,
     CLIPProcessor,
 )
 import requests
 
-from modules.ModelUtils import VisionModelWrapper
+from modules.ModelUtils import VisionModelWrapper, load_saved_model
 from modules.variable import Variable
 
 from peft import PeftModel
+
 
 
 @dataclass
@@ -52,8 +50,7 @@ class InferenceManager:
         self._load_model_and_tokenizer()
 
     def _setup_device(self):
-        device_str = self.config.device_override or ("cuda" if torch.cuda.is_available() else "cpu")
-        self.device = torch.device(device_str)
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
@@ -67,68 +64,18 @@ class InferenceManager:
             print("Warning: Running on CPU. Performance will be slower.")
             
     def _load_model_and_tokenizer(self):
-        try:
-            config = AutoConfig.from_pretrained(self.model_path)
-            print(f"Loaded model configuration: {config.model_type}")
 
-            if hasattr(config, "model_type") and config.model_type == "vision-model":
-                print("Detected multimodal model. Loading VisionModel...")
-                
-                self.vision_processor = CLIPProcessor.from_pretrained(
-                    self.config.vision_processor_name,
+        self.model,self.tokenizer = load_saved_model(self.model_path, True)
+        self.chat_template = self.tokenizer.chat_template
+
+        # self.vision_processor = CLIPProcessor.from_pretrained(
+        #             self.config.vision_processor_name,
+        #             use_fast=self.config.use_fast_tokenizer
+        #         )
+        self.vision_processor = AutoImageProcessor.from_pretrained(
+                    "microsoft/resnet-50",
                     use_fast=self.config.use_fast_tokenizer
                 )
-
-                pefted_lang_model = AutoModelForCausalLM.from_pretrained(
-                    self.lang_path,
-                    torch_dtype=self.dtype,
-                    device_map="auto"
-                )
-                pefted_lang_model = PeftModel.from_pretrained(pefted_lang_model, self.lang_path)
-                pefted_lang_model = pefted_lang_model.to(self.device)
-
-                self.model = VisionModelWrapper(config, lang_model=pefted_lang_model)
-        
-                adapter_state_dict = torch.load(
-                    self.vision_adapter_path / "vision_adapter.pt",
-                    map_location=self.device,
-                    weights_only=True
-                )
-                self.model.vision_adapter.load_state_dict(adapter_state_dict)
-                self.model.vision_adapter = self.model.vision_adapter.to(self.device).to(self.dtype)
-                self.model.vision_model = self.model.vision_model.to(self.device).to(self.dtype)
-
-                self.tokenizer = AutoTokenizer.from_pretrained(
-                    self.lang_path,
-                    use_fast=self.config.use_fast_tokenizer
-                )
-            else:
-                print("Detected text-only model. Loading ConversationModel...")
-                # AutoModelForCausalLM will automatically use registered ConversationModel
-                self.model = AutoModelForCausalLM.from_pretrained(
-                    self.model_path,
-                    torch_dtype=self.dtype
-                ).to(self.device)
-                
-                self.tokenizer = AutoTokenizer.from_pretrained(
-                    self.model_path,
-                    use_fast=self.config.use_fast_tokenizer
-                )
-
-            # Ensure chat_template is loaded
-            if hasattr(self.tokenizer, "chat_template") and self.tokenizer.chat_template is not None:
-                self.chat_template = self.tokenizer.chat_template
-            elif hasattr(config, "chat_template") and config.chat_template is not None:
-                self.chat_template = config.chat_template
-            else:
-                raise ValueError("Chat template not found in tokenizer or config.")
-            if self.tokenizer.pad_token is None:
-                self.tokenizer.pad_token = self.tokenizer.eos_token
-                
-        except Exception as e:
-            print(f"Error loading model: {str(e)}")
-            raise
-
     
     def format_chat(self, messages: list, chat_template: str) -> str:
         template = Template(chat_template)

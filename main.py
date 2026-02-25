@@ -17,7 +17,7 @@ from pathlib import Path
 # variable = Variable()
 # downloading = DataLoader()
 
-# #finetune model
+# # #finetune model
 # finetune = Manager()
 Ft = FinetuneModel()
 
@@ -47,19 +47,30 @@ Ft.finetune_model()
 
 
 
-# model_path = Path(__file__).parent.absolute() / "checkpoints" / "text-vision-text-generation" / "Qwen_Qwen1.5-0.5B-Chat"
+model_path = Path(__file__).parent.absolute() / "checkpoints" / "text-vision-text-generation" / "Qwen_Qwen1.5-0.5B-Chat"
 # model_path = Path(__file__).parent.absolute() / "custom_models" / "conversation-model" / "newmodel"
 # model_path = Path(__file__).parent.absolute() / "checkpoints" / "text-generation" / "Qwen_Qwen1.5-0.5B-Chat"
 
-# inference_manager = InferenceManager(model_path)
+inference_manager = InferenceManager(model_path)
 # # image_path = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSKrRTIhPqYvZTuh0m79LUYJsDRG9VgZYIaNA&s"
 
-# # user_input = "What is the total value in the image?"
+# user_input = "What is the total value in the image?"
 
-# # response = inference_manager.generate_response(user_input,image_path=image_path)
-# # print(f"{response}")
-
-# # image_path = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRs0cV933dMsauoMHgQBpcZ-VTsTa5SbTAMWQ&s"
-# user_input = "who is spidergwen?"
-# response = inference_manager.generate_response(user_input)
+# response = inference_manager.generate_response(user_input,image_path=image_path)
 # print(f"{response}")
+
+image_path = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRs0cV933dMsauoMHgQBpcZ-VTsTa5SbTAMWQ&s"
+user_input = "What is the total score of the 6 arrows on the target?  On this image?"
+response = inference_manager.generate_response(user_input,image_path=image_path)
+print(f"{response}")
+
+
+
+##TODO 
+# 1. accept only formatted dataset (user find thier ways to format to acceptable dataset)
+# 2. change inference and training lib to unsloth lib
+# 3. model should save and push to huggingfacce repository
+# 4. change model architecture using keras only
+# 5. change dataset format using unsloth gptformat
+# 6. exposed things that can be config in model
+# 7. those config file change from json to ini
