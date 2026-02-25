@@ -42,6 +42,7 @@ TARGET_MODULES_MAP = {
     "stablelm": ["q_proj", "k_proj", "v_proj", "o_proj"],
     "ConversationModelWrapper": ["q_proj", "k_proj", "v_proj", "o_proj"],
     "VisionModelWrapper": ["q_proj", "k_proj", "v_proj", "o_proj"],
+    "Qwen2Model":["q_proj", "k_proj", "v_proj", "o_proj"],
 
 }
 
