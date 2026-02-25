@@ -43,7 +43,7 @@ class ManagerConfig:
     
 class Manager:
     """Manager class for handling fine-tuning operations."""
-    
+
     def __init__(self, config: ManagerConfig | None = None):
         self.variable = Variable()
         self.config = config or ManagerConfig()
@@ -59,7 +59,7 @@ class Manager:
         self.device_map = self.config.device or default_device
 
         os.makedirs(self.DATASET_FORMATTED_DIR, exist_ok=True)
-    
+
     def load_model(self, model_id: Union[str, Path]) -> Tuple[Optional[AutoModelForCausalLM], Optional[AutoTokenizer]]:
         print(f"{Fore.CYAN}Retrieving model {model_id}{Style.RESET_ALL}")
 
@@ -69,7 +69,7 @@ class Manager:
         except Exception as e:
             print(f"{Fore.RED}Error loading model {model_id}: {str(e)}{Style.RESET_ALL}")
             return None, None
-    
+
 
     # def _load_from_scratch(self, model_id: Union[str, Path]) -> Tuple[Optional[AutoModelForCausalLM], Optional[AutoTokenizer]]:
     #     potential_path = Path(model_id)
@@ -115,42 +115,36 @@ class Manager:
 
     #         print(f"{Fore.GREEN}Successfully loaded model and tokenizer{Style.RESET_ALL}")
     #         return model, tokenizer
-            
+
         # except Exception as e:
         #     print(f"{Fore.RED}Error loading model from scratch: {str(e)}{Style.RESET_ALL} from {model_path}")
         #     return None, None
-    
+
     def load_dataset(self, dataset_name: str, config_name: Optional[str] = None) -> Optional[DatasetDict]:
+
+        dataset_name = self.variable.DATASETS_DIR.joinpath(dataset_name).as_posix()
+
         print(f"{Fore.CYAN}Retrieving dataset {dataset_name}{Style.RESET_ALL}")
 
         try:
             splits = get_dataset_split_names(dataset_name, config_name)
             split = 'train' if 'train' in splits else ('test' if 'test' in splits else 'train')
-        except Exception:
-            split = 'train'
-
-        try:
-            if config_name is not None:
-                print(f"{Fore.YELLOW}Attempting to load dataset with config: {config_name}{Style.RESET_ALL}")
-                return load_dataset(dataset_name, config_name, split=split)
-
-            print(f"{Fore.YELLOW}Loading dataset without config...{Style.RESET_ALL}")
             return load_dataset(dataset_name, split=split)
         except Exception as e:
             print(f"{Fore.RED}Error loading dataset {dataset_name}: {str(e)}{Style.RESET_ALL}")
             return None
-    
-    def map_tokenizer(self, dataset_name: str, model_name: str, tokenizer: AutoTokenizer, dataset: DatasetDict, 
+
+    def map_tokenizer(self, dataset_name: str, model_name: str, tokenizer: AutoTokenizer, dataset: DatasetDict,
                      max_length: Optional[int] = None, Tokenizing: bool = False) -> Optional[DatasetDict]:
 
         max_len = max_length or self.config.max_length
         print(f"{Fore.CYAN}Processing dataset with max length: {max_len}{Style.RESET_ALL}")
-        
+
         # Ensure tokenizer has padding token
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
             print(f"{Fore.GREEN}Set padding token to EOS token{Style.RESET_ALL}")
-            
+
         self.chat_template = ChatTemplate(tokenizer=tokenizer,model_name=model_name)
         self.chat_template_saved = self.chat_template.tokenizer.chat_template
         try:
@@ -166,29 +160,29 @@ class Manager:
             print(f"{Fore.RED}Error tokenizing dataset: {str(e)}{Style.RESET_ALL}")
             return None
     def dataset_prepare(self, list_model_data: Dict[str, Any]) -> Tuple[Optional[AutoModelForCausalLM], Optional[DatasetDict]]:
-        
+
         datamodel_file = self.variable.SAVED_CONFIG_Path
-        
+
         datamodel_file = datamodel_file.as_posix()
-        
+
         self.training_config_path.touch(exist_ok=True)
-        
-        
+
+
         try:
             with open(datamodel_file, 'r') as f:
                 config = json.load(f)
         except Exception:
             print(f"error config file not found {datamodel_file}")
             config = {}
-            
+
         try:
             # combined_dataset = None
             dataset = None
             saved_dataset = None
             print(list_model_data)
-            
+
             model_training_data = {'model':dict()}
-            
+
             #load model and dataset prepare for tuning
             for modelname,dict_dataset in list_model_data.get('model', {}).items():
 
@@ -199,50 +193,50 @@ class Manager:
                 saved_dataset = None
                 first_dataset = None
                 second_dataset = None
-                
+
                 first_cols = set()
                 second_cols = set()
                 concat_dataset = None
 
                 model_training_data['model'][modelname] = dict()
 
-                
+
                 for dataset_name,info in dict_dataset.items():
-                    
+
                     formatted_dataset_name = f"{dataset_name.replace('/', '_')}_formatted"
-                    
+
                     print(f"{Fore.CYAN}Formatting Dataset {dataset_name}{Style.RESET_ALL}")
                     try:
                         print(f"{Fore.CYAN}Loading dataset config: {dataset_name} {config.get(dataset_name, 'No config found')}{Style.RESET_ALL}")
-                        
+
                         dataset = self.load_dataset(dataset_name, config.get(dataset_name))
-                    
-                        
+
+
                         if first_dataset is None:
                             print(f"{Fore.GREEN}Processing first dataset: {dataset_name}{Style.RESET_ALL}")
-                            
+
                             #return processed True make it return text
                             first_dataset = self.map_tokenizer(dataset_name,
                                                                 model_repo,
-                                                                tokenizer, dataset, 
+                                                                tokenizer, dataset,
                                                                 Tokenizing=False)
                             if first_dataset is None:
                                 print(f"{Fore.RED}Failed to process first dataset: {dataset_name}{Style.RESET_ALL}")
                                 continue
                             first_cols = set(first_dataset.column_names)
                             concat_dataset = first_dataset
-                            
-                            
-                                        
+
+
+
                         else:
                             # first_dataset = concat_dataset
                             print(f"{Fore.GREEN}Processing additional dataset: {dataset_name}{Style.RESET_ALL}")
-                            
+
                             #return processed True make it return text
                             second_dataset = self.map_tokenizer(dataset_name,
                                                                 model_repo,
-                                                                tokenizer, 
-                                                                dataset, 
+                                                                tokenizer,
+                                                                dataset,
                                                                 Tokenizing=False)
 
                             concat_dataset = second_dataset
@@ -251,35 +245,35 @@ class Manager:
                                 continue
 
                             second_cols = set(second_dataset.column_names)
-                            
-                            
+
+
                             print(f"{Fore.GREEN}Concatenating datasets...{Style.RESET_ALL}")
-                        
+
                             print(f"{Fore.GREEN}First dataset columns: {first_cols}{Style.RESET_ALL}")
                             print(f"{Fore.GREEN}Second dataset columns: {second_cols}{Style.RESET_ALL}")
-                                                            
+
                         union_cols = first_cols.union(second_cols)
                         model_training_data['model'][modelname][dataset_name] = str(union_cols)
                         #after formatted to right format it use it to embedding
                         #after getting concatenate dataset return it to embedding formatted with return both false since the model going to tokenized it anyways
                         saved_dataset = self.map_tokenizer(dataset_name,
                                                             model_repo,
-                                                            tokenizer, 
+                                                            tokenizer,
                                                             concat_dataset,
                                                             Tokenizing=True)
-                        
+
                         os.makedirs(self.DATASET_FORMATTED_DIR  / formatted_dataset_name, exist_ok=True)
                         saved_dataset.save_to_disk(self.DATASET_FORMATTED_DIR / formatted_dataset_name)
-                        
+
                         if first_dataset is not None and second_dataset is not None:
                             # For columns only in second dataset, add them to first dataset with None values
                             for col in second_cols - first_cols:
                                 first_dataset = first_dataset.add_column(col, [None] * len(first_dataset))
-                            
+
                             # For columns only in first dataset, add them to second dataset with None values  
                             for col in first_cols - second_cols:
                                 second_dataset = second_dataset.add_column(col, [None] * len(second_dataset))
-                            
+
                             # Now both datasets have same columns, concatenate them
                             concat_dataset = concatenate_datasets([first_dataset, second_dataset])
                             print(f"{Fore.GREEN}Successfully joined datasets with columns: {concat_dataset.column_names}{Style.RESET_ALL}")
@@ -291,20 +285,20 @@ class Manager:
                                                                 tokenizer,
                                                                 concat_dataset,
                                                                 Tokenizing=True)
-                            
-                            
-                            os.makedirs(self.DATASET_FORMATTED_DIR  / formatted_dataset_name, exist_ok=True)
+
+
+                            self.DATASET_FORMATTED_DIR.joinpath(formatted_dataset_name).mkdir(exist_ok=True,parents=True)
                             saved_dataset.save_to_disk(self.DATASET_FORMATTED_DIR / formatted_dataset_name)
 
                     except Exception as e:
                         print(f"{Fore.RED}Error processing dataset {dataset_name}: {str(e)}{Style.RESET_ALL}")
                         continue
 
-                   
+
 
             with open(self.training_config_path, 'w') as f:
                 json.dump(model_training_data, f, indent=4)
-            
+
         except Exception as e:
             print(f"{Fore.RED}Error running finetune: {str(e)}{Style.RESET_ALL}")
             return None, None
