@@ -42,7 +42,7 @@ TARGET_MODULES_MAP = {
     "stablelm": ["q_proj", "k_proj", "v_proj", "o_proj"],
     "ConversationModelWrapper": ["q_proj", "k_proj", "v_proj", "o_proj"],
     "VisionModelWrapper": ["q_proj", "k_proj", "v_proj", "o_proj"],
-    "Qwen2Model":["q_proj", "k_proj", "v_proj", "o_proj"],
+    # "Qwen2Model":["q_proj", "k_proj", "v_proj", "o_proj"],
 
 }
 
@@ -61,6 +61,7 @@ class QuantizationConfig:
     use_double_quant: bool = False
     llm_int8_threshold: float = 0.0
     llm_int8_has_fp16_weight: bool = False
+
 
 
 @dataclass
@@ -700,7 +701,7 @@ class CreateModel:
             print(f"Error: Failed to save model - {str(e)}")
 
 
-def load_saved_model(model_path, checkpoint=False):
+def load_saved_model(model_path):
     variable = Variable()
     dtype = variable.DTYPE
     device = "cuda" if torch.cuda.is_available() else "cpu"
