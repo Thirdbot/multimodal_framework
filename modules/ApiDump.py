@@ -14,7 +14,7 @@ class ApiCardSetup:
         self.api_card_path = self.variable.Card_Path
         
         
-    def set(self,list_models:Optional[Iterable[ModelInfo]],list_datasets:Optional[Iterable[DatasetInfo]]):
+    def set(self,list_models:Optional[Iterable[ModelInfo]]=None,list_datasets:Optional[Iterable[DatasetInfo]]=None,from_repository=None):
        
        #empty List of model_name and datasets_name
         model_name_list:list = list()
@@ -34,6 +34,14 @@ class ApiCardSetup:
         if list_datasets is not None:
             for dataset in list_datasets:
                 dataset_name_list.append(dataset.id)
+
+
+        if from_repository is not None:
+            for model in from_repository['model']:
+                model_name_list.append(model)
+                for dataset in from_repository['model'][model].keys():
+                    dataset_name_list.append(dataset)
+
         #Load Existed Card
         if os.path.exists(str_literal_path):
             try:

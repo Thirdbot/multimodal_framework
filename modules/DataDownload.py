@@ -5,7 +5,7 @@ from pathlib import Path
 from colorama import Fore, Style, init
 from datasets import load_dataset, get_dataset_config_names, get_dataset_split_names
 from huggingface_hub import HfApi, snapshot_download
-from transformers import AutoModel, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from modules.variable import Variable
 
@@ -132,10 +132,11 @@ class ModelLoader:
         self.SAVEDMODEL_DIR.mkdir(parents=True, exist_ok=True)
 
     def load_model(self, name: str):
+
         try:
             local_path = Path(name)
             if local_path.exists():
-                print(f"{Fore.GREEN}Using custom model from: {local_path}{Style.RESET_ALL}")
+                print(f"{Fore.GREEN}Using custom model from local: {local_path}{Style.RESET_ALL}")
                 return local_path
 
             model_dir = self.SAVEDMODEL_DIR / name
@@ -143,15 +144,24 @@ class ModelLoader:
                 print(f"{Fore.GREEN}Model already cached at: {model_dir}{Style.RESET_ALL}")
                 return model_dir
 
-            model = AutoModel.from_pretrained(name, trust_remote_code=True)
+            model = AutoModelForCausalLM.from_pretrained(name, trust_remote_code=True)
             tokenizer = AutoTokenizer.from_pretrained(name, trust_remote_code=True)
+            
             model_dir.mkdir(parents=True, exist_ok=True)
             model.save_pretrained(model_dir)
             tokenizer.save_pretrained(model_dir)
             print(f"{Fore.GREEN}Saved model and tokenizer to: {model_dir}{Style.RESET_ALL}")
             return model_dir
         except Exception as e:
-            print(f"{Fore.RED}Error downloading model {name}: {str(e)}{Style.RESET_ALL}")
+            print(f"{Fore.RED}Error loading model: {str(e)}{Style.RESET_ALL}")
+            #exception when mismatch happens
+            with open (self.variable.Card_Path) as f:
+                api_card = json.load(f)
+                if name in api_card['model']:
+                    del api_card['model'][name]
+                    with open(self.variable.Card_Path, 'w') as f:
+                        json.dump(api_card, f, indent=4)
+
             return None
 
 
@@ -187,6 +197,7 @@ class DataLoader:
                     
             except Exception as e:
                 print(f"{Fore.RED}Error processing model {model}: {str(e)}{Style.RESET_ALL}")
+
     
    
             
