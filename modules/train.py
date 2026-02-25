@@ -14,6 +14,98 @@ from transformers import (
 from modules.ModelUtils import load_saved_model
 from modules.variable import Variable
 
+
+class VisionDataCollator:
+    """Data collator that handles both vision and language data.
+    
+    This collator properly handles multimodal datasets containing:
+    - input_ids: text tokens
+    - attention_mask: text attention
+    - pixel_values: image tensors
+    - labels: target tokens for training
+    
+    Critical for vision model training as standard DataCollatorForLanguageModeling
+    strips out pixel_values.
+    """
+    
+    def __init__(self, tokenizer, pad_to_multiple_of=None):
+        self.tokenizer = tokenizer
+        self.pad_to_multiple_of = pad_to_multiple_of
+        self.padding_side = tokenizer.padding_side
+    
+    def __call__(self, features):
+        """Collate a batch of features with vision and text data.
+        
+        Args:
+            features: List of dicts with keys: input_ids, attention_mask, pixel_values, labels
+            
+        Returns:
+            Batched dict with properly padded tensors
+        """
+        # Separate vision and text features
+        has_pixel_values = 'pixel_values' in features[0]
+        
+        # Extract text features
+        input_ids = [f['input_ids'] for f in features]
+        attention_mask = [f['attention_mask'] for f in features]
+        
+        # Handle labels - use input_ids if labels not explicitly provided
+        if 'labels' in features[0]:
+            labels = [f['labels'] for f in features]
+        else:
+            labels = [f['input_ids'].clone() if isinstance(f['input_ids'], torch.Tensor) 
+                     else f['input_ids'].copy() for f in features]
+        
+        # Determine max length for padding
+        max_length = max(len(ids) if isinstance(ids, list) else ids.shape[0] for ids in input_ids)
+        
+        # Pad sequences
+        batch = self._pad_sequences(input_ids, attention_mask, labels, max_length)
+        
+        # Add vision data if present
+        if has_pixel_values:
+            pixel_values = [f['pixel_values'] for f in features]
+            # Stack pixel values - they should already be tensors of same size
+            if isinstance(pixel_values[0], torch.Tensor):
+                batch['pixel_values'] = torch.stack(pixel_values)
+            else:
+                batch['pixel_values'] = torch.stack([torch.tensor(pv) for pv in pixel_values])
+        
+        return batch
+    
+    def _pad_sequences(self, input_ids, attention_mask, labels, max_length):
+        """Pad sequences to max_length."""
+        batch_size = len(input_ids)
+        
+        # Initialize padded tensors
+        padded_input_ids = torch.full((batch_size, max_length), self.tokenizer.pad_token_id, dtype=torch.long)
+        padded_attention_mask = torch.zeros((batch_size, max_length), dtype=torch.long)
+        padded_labels = torch.full((batch_size, max_length), -100, dtype=torch.long)
+        
+        # Fill in actual values
+        for i in range(batch_size):
+            # Convert to tensor if needed
+            ids = input_ids[i] if isinstance(input_ids[i], torch.Tensor) else torch.tensor(input_ids[i])
+            mask = attention_mask[i] if isinstance(attention_mask[i], torch.Tensor) else torch.tensor(attention_mask[i])
+            label = labels[i] if isinstance(labels[i], torch.Tensor) else torch.tensor(labels[i])
+            
+            seq_len = len(ids)
+            
+            if self.padding_side == 'right':
+                padded_input_ids[i, :seq_len] = ids
+                padded_attention_mask[i, :seq_len] = mask
+                padded_labels[i, :seq_len] = label
+            else:  # left padding
+                padded_input_ids[i, -seq_len:] = ids
+                padded_attention_mask[i, -seq_len:] = mask
+                padded_labels[i, -seq_len:] = label
+        
+        return {
+            'input_ids': padded_input_ids,
+            'attention_mask': padded_attention_mask,
+            'labels': padded_labels
+        }
+
 class FinetuneModel:
     """Class for handling model fine-tuning operations."""
     def __init__(self):
@@ -22,9 +114,9 @@ class FinetuneModel:
         self.variable = Variable()
         self.per_device_train_batch_size = 1  # Minimal batch size for 6GB GPU
         self.per_device_eval_batch_size = 1
-        self.gradient_accumulation_steps = 10  # Accumulate to simulate larger batch
+        self.gradient_accumulation_steps = 1  # Accumulate to simulate larger batch
         self.learning_rate = 1e-3
-        self.num_train_epochs = 10
+        self.num_train_epochs = 1
         self.save_strategy = "best"
         self.training_config_path = self.variable.training_config_path
         
@@ -118,12 +210,29 @@ class FinetuneModel:
             print(f"{Fore.CYAN}All params: {all_param:,}{Style.RESET_ALL}")
             print(f"{Fore.CYAN}Non-trainable params: {all_param - trainable_params:,}{Style.RESET_ALL}")
             
-            # Configure data collator for language modeling
-            data_collator = DataCollatorForLanguageModeling(
-                tokenizer=tokenizer,
-                mlm=False,  # Causal language modeling (not masked)
-                pad_to_multiple_of=8  # For better GPU utilization
-            )
+            # Detect if this is a vision model by checking for pixel_values in dataset
+            train_dataset = dataset['train']
+            is_vision_model = 'pixel_values' in train_dataset.features if hasattr(train_dataset, 'features') else False
+            
+            # Also check model architecture
+            if not is_vision_model and hasattr(model, 'config'):
+                model_type = getattr(model.config, 'model_type', '')
+                is_vision_model = 'vision' in model_type.lower()
+            
+            # Use appropriate data collator based on model type
+            if is_vision_model:
+                print(f"{Fore.GREEN}Using VisionDataCollator for multimodal training{Style.RESET_ALL}")
+                data_collator = VisionDataCollator(
+                    tokenizer=tokenizer,
+                    pad_to_multiple_of=8
+                )
+            else:
+                print(f"{Fore.CYAN}Using standard DataCollatorForLanguageModeling{Style.RESET_ALL}")
+                data_collator = DataCollatorForLanguageModeling(
+                    tokenizer=tokenizer,
+                    mlm=False,  # Causal language modeling (not masked)
+                    pad_to_multiple_of=8  # For better GPU utilization
+                )
             
             print(f"{Fore.CYAN}Setting up training dataset{Style.RESET_ALL}")
             train_dataset = dataset['train']
