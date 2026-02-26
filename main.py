@@ -59,9 +59,10 @@ from modules.inference import InferenceManager
 
 model_path = (
     Path(__file__).parent
-    / "checkpoints"
-    / "text-generation"
-    / "HuggingFaceTB_SmolLM2-360M"
+    / "custom_models"
+    / "conversation-model"
+    / "HuggingFaceTB"
+    / "SmolLM2-360M"
 )
 
 inference_manager = InferenceManager(str(model_path))
