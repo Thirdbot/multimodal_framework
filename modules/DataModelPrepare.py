@@ -71,7 +71,16 @@ class Manager:
 
         try:
             for model_name, datasets in list_model_data.get("model", {}).items():
-                model_path = self.variable.REPO_DIR / "models" / model_name
+                model_name = Path(model_name)
+                model_part = model_name.parts
+                split_name =[model_part[-2] , model_part[-1]]
+
+                model_name = model_name.as_posix()
+                model_name_sub = Path(*split_name).as_posix()
+                # model_path = self.variable.REPO_DIR / "models" / model_name # this one only load from source
+                # model_path = self.variable.WORKSPACE / "custom_models" / model_name if len(model_part[0]) != "model" else self.variable.REPO_DIR / "models" / model_name_sub  #Temporal solution for selecting custom model or local model as dataset tokenizer format
+                model_path = self.variable.WORKSPACE  / "custom_models" / model_name if model_part[0] != "models" else self.variable.REPO_DIR / model_name  #Temporal solution for selecting custom model or local model as dataset tokenizer format
+
                 model, tokenizer = self._load_model(model_path)
 
                 if model is None or tokenizer is None:
@@ -80,7 +89,8 @@ class Manager:
 
                 training_config["model"][model_name] = {}
                 col_meta = self._process_model_datasets(
-                    model_name, model_path, tokenizer, datasets, saved_configs
+                    # model_path originally formatting dataset from source model
+                    tokenizer, datasets, saved_configs
                 )
                 training_config["model"][model_name].update(col_meta)
 
@@ -102,7 +112,7 @@ class Manager:
 
     # ── Dataset processing ─────────────────────────────────────────────────────
 
-    def _process_model_datasets(self, model_name, model_path, tokenizer, datasets, saved_configs):
+    def _process_model_datasets(self, tokenizer, datasets, saved_configs):
         """
         Process all datasets for one model.
 
@@ -119,7 +129,7 @@ class Manager:
             if raw_dataset is None:
                 continue
 
-            formatted = self._apply_template(dataset_name, model_path, tokenizer, raw_dataset, tokenizing=False)
+            formatted = self._apply_template(dataset_name, tokenizer, raw_dataset, tokenizing=False)
             if formatted is None:
                 print(f"{Fore.RED}Template failed for: {dataset_name}{Style.RESET_ALL}")
                 continue
@@ -134,7 +144,7 @@ class Manager:
                 first_cols = set(concat_ds.column_names)
 
             # Tokenize the current (possibly concatenated) dataset
-            tokenized = self._apply_template(dataset_name, model_path, tokenizer, concat_ds, tokenizing=True)
+            tokenized = self._apply_template(dataset_name, tokenizer, concat_ds, tokenizing=True)
             if tokenized is None:
                 continue
 
@@ -157,14 +167,14 @@ class Manager:
             print(f"{Fore.RED}Dataset load error [{dataset_name}]: {e}{Style.RESET_ALL}")
             return None
 
-    def _apply_template(self, dataset_name, model_path, tokenizer, dataset, tokenizing=False):
+    def _apply_template(self, dataset_name, tokenizer, dataset, tokenizing=False):
         """Apply the chat template / tokenizer to a dataset."""
         # Ensure pad token is set before template processing
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
 
         try:
-            template = ChatTemplate(tokenizer=tokenizer, model_name=model_path)
+            template = ChatTemplate(tokenizer=tokenizer)
             result = template.prepare_dataset(
                 dataset_name, dataset,
                 max_length=DEFAULT_MAX_LENGTH,
