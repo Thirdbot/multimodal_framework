@@ -86,9 +86,8 @@ class ChatTemplate:
       3. Optionally tokenize using the provided tokenizer
     """
 
-    def __init__(self, tokenizer=None, model_name=None):
+    def __init__(self, tokenizer=None):
         self.tokenizer  = tokenizer
-        self.model_name = model_name
         self.variable   = Variable()
 
         # Select compute device
