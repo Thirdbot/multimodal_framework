@@ -606,8 +606,8 @@ class CreateModel:
         if target_modules is None:
             return None
         return LoraConfig(
-            r=32,
-            lora_alpha=64,
+            r=1024,
+            lora_alpha=2048,
             target_modules=target_modules,
             lora_dropout=0.05,
             bias="none",
@@ -749,7 +749,6 @@ def load_saved_model(model_path):
         config    = AutoConfig.from_pretrained(model_path)
         print(f"Config model_type={config.model_type}  architectures={config.architectures}")
         is_vision = getattr(config, 'model_type', '') == "vision-model"
-
         if is_vision:
             return _load_vision_model(model_path, dtype, device)
         else:
