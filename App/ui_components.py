@@ -6,6 +6,10 @@ import customtkinter as ctk
 import os
 from tkinter import messagebox
 
+import re
+
+from modules.train import FinetuneModel
+
 
 class LoggerFrame(ctk.CTkFrame):
     """Generic frame with a title, a button, and a log output."""
@@ -349,76 +353,101 @@ class CreateModelView(ctk.CTkFrame):
 
         self.on_create_callback(selected_path, mode, self)
 
+
 class TrainView(ctk.CTkFrame):
     def __init__(self, master, vars, **kwargs):
         super().__init__(master, **kwargs)
         self.vars = vars
-
         self.grid_columnconfigure(0, weight=1)
-        # The top terminal row takes all the extra space
         self.grid_rowconfigure(0, weight=1)
-        self.grid_rowconfigure(1, weight=0)
 
-        # 1. TOP: The Internal Terminal for this page
+        # 1. TOP: The Internal Terminal (inverted design)
         self.internal_log = ctk.CTkTextbox(self, font=("Consolas", 11), fg_color="#000000")
-        self.internal_log.grid(row=0, column=0, padx=20, pady=(20, 10), sticky="nsew")
-        self.internal_log.insert("0.0", "--- Training Logs Will Appear Here ---\n")
+        self.internal_log.grid(row=0, column=0, padx=20, pady=(20, 5), sticky="nsew")
         self.internal_log.configure(state="disabled")
 
-        # 2. BOTTOM: The Status and Controls (Inverted)
-        self.controls = ctk.CTkFrame(self, fg_color="transparent")
-        self.controls.grid(row=1, column=0, padx=20, pady=(0, 20), sticky="ew")
+        # 2. MIDDLE: The Graphical Progress Bar
+        self.progress_bar = ctk.CTkProgressBar(self, height=12, fg_color="#1a1a1a", progress_color="#2e7d32")
+        self.progress_bar.grid(row=1, column=0, padx=20, pady=5, sticky="ew")
+        self.progress_bar.set(0)  # Initialize at 0%
 
-        self.status_label = ctk.CTkLabel(
-            self.controls,
-            text="Ready to train. Ensure ApiCardSet.json is configured.",
-            font=("", 13)
-        )
-        self.status_label.pack(pady=5)
+        # 3. BOTTOM: Status and Action
+        self.status_label = ctk.CTkLabel(self, text="Ready to train.", font=("", 12))
+        self.status_label.grid(row=2, column=0, pady=(5, 0))
 
-        self.train_btn = ctk.CTkButton(
-            self.controls,
-            text="Start Fine-tuning",
-            height=40,
-            command=self.start_training,
-            fg_color="#1b4332",
-            hover_color="#081c15"
-        )
-        self.train_btn.pack(fill="x", padx=10)
+        self.train_btn = ctk.CTkButton(self, text="🚀 Start Fine-tuning", height=40, command=self.start_training)
+        self.train_btn.grid(row=3, column=0, pady=(5, 20), padx=20, sticky="ew")
 
-    def write_internal(self, text):
-        """Helper to write specifically to the top terminal of this page."""
+    def update_ui(self, text, is_progress=False):
+        """Writes to terminal and updates progress bar based on parsed text."""
         self.internal_log.configure(state="normal")
+
+        if is_progress:
+            # Overwrite the previous progress line in the textbox to keep it clean
+            self.internal_log.delete("end-2c linestart", "end-1c")
+
+            # PARSING LOGIC: Look for '50%' or '[ 5/10 ]' patterns
+            # Pattern 1: Percentage (e.g., 45%)
+            percent_match = re.search(r"(\d+)%", text)
+            if percent_match:
+                self.progress_bar.set(int(percent_match.group(1)) / 100)
+
+            # Pattern 2: Iterations (e.g., 50/100)
+            iter_match = re.search(r"(\d+)/(\d+)", text)
+            if iter_match:
+                current, total = map(int, iter_match.groups())
+                self.progress_bar.set(current / total)
+
         self.internal_log.insert("end", text)
         self.internal_log.see("end")
         self.internal_log.configure(state="disabled")
 
     def start_training(self):
-        from modules.train import FinetuneModel  # Local import to avoid circular issues
-
         self.train_btn.configure(state="disabled", text="Training...")
-        self.status_label.configure(text="STATUS: Fine-tuning in progress...")
-        self.write_internal("\nSystem: Starting Internal Finetune Engine...\n")
+        self.progress_bar.set(0)
 
         def run():
             try:
                 finetuner = FinetuneModel()
 
-                # Custom stream to capture prints and send to the TOP terminal
                 class LocalStream(io.TextIOBase):
-                    def __init__(self, write_func): self.write_func = write_func
+                    def __init__(self, ui_func):
+                        self.ui_func = ui_func
 
                     def write(self, s):
-                        if s.strip(): self.write_func(s)
+                        if not s.strip(): return len(s)
+
+                        # Check if the string is a progress update (contains \r)
+                        if '\r' in s:
+                            clean_update = s.split('\r')[-1]
+                            self.ui_func(clean_update, is_progress=True)
+                        else:
+                            self.ui_func(s, is_progress=False)
                         return len(s)
 
-                with redirect_stdout(LocalStream(self.write_internal)):
+                with redirect_stdout(LocalStream(self.update_ui)):
                     finetuner.finetune_model()
 
-                self.after(0, lambda: self.status_label.configure(text="STATUS: Finished successfully."))
+                self.after(0, lambda: self.status_label.configure(text="Finished successfully."))
+                self.after(0, lambda: self.progress_bar.set(1.0))
             except Exception as e:
-                self.after(0, lambda err=e: self.write_internal(f"\nError: {str(err)}\n"))
+                self.after(0, lambda err=e: self.update_ui(f"\nError: {str(err)}\n"))
             finally:
-                self.after(0, lambda: self.train_btn.configure(state="normal", text="Start Fine-tuning"))
+                self.after(0, lambda: self.train_btn.configure(state="normal", text="🚀 Start Fine-tuning"))
 
         threading.Thread(target=run, daemon=True).start()
+
+    def write_internal(self, text):
+        """Standard terminal-style write: supports progress bar updates."""
+        self.internal_log.configure(state="normal")
+
+        # Check for carriage return \r (used by progress bars in your screenshot)
+        if "\r" in text:
+            # Delete the current last line to overwrite it with the progress update
+            self.internal_log.delete("end-2c linestart", "end-1c")
+            # Get the content after the last \r
+            text = text.split("\r")[-1]
+
+        self.internal_log.insert("end", text)
+        self.internal_log.see("end")
+        self.internal_log.configure(state="disabled")
