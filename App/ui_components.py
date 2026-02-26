@@ -99,74 +99,74 @@ class DownloadHubView(ctk.CTkFrame):
         ctk.CTkLabel(self, text="Tip: Check the global terminal below for progress.", text_color="gray").pack(padx=20, anchor="w")
 
 
-class TaskSetterView(ctk.CTkFrame):
-    def __init__(self, master, vars, on_set_callback, **kwargs):
-        super().__init__(master, **kwargs)
-        self.vars = vars
-        self.on_set_callback = on_set_callback
-
-        self.grid_columnconfigure((0, 1), weight=1)
-        self.grid_rowconfigure(1, weight=1)
-
-        ctk.CTkLabel(self, text="Set Training Task (Update ApiCard)", font=("", 20, "bold")).grid(row=0, column=0, columnspan=2, pady=10, padx=20, sticky="w")
-
-        # 1. Model Selection (Single)
-        self.model_frame = ctk.CTkScrollableFrame(self, label_text="Select Base Model")
-        self.model_frame.grid(row=1, column=0, padx=10, pady=10, sticky="nsew")
-        self.model_var = ctk.StringVar()
-
-        # 2. Dataset Selection (Multiple)
-        self.dataset_frame = ctk.CTkScrollableFrame(self, label_text="Select Datasets")
-        self.dataset_frame.grid(row=1, column=1, padx=10, pady=10, sticky="nsew")
-        self.dataset_vars = {}
-
-        # 3. Action Button
-        self.set_btn = ctk.CTkButton(self, text="Save Task to ApiCard", command=self.submit_task,
-                                     fg_color=COLORS["action_save"], hover_color=COLORS["action_save_hover"])
-        self.set_btn.grid(row=2, column=0, columnspan=2, pady=20, padx=20, sticky="ew")
-
-        self.refresh_selectors()
-
-    def refresh_selectors(self):
-        # Clear old
-        for child in self.model_frame.winfo_children(): child.destroy()
-        for child in self.dataset_frame.winfo_children(): child.destroy()
-
-        # Populate Models
-        model_paths = [self.vars.CUSTOM_MODEL_DIR, self.vars.LocalModel_DIR, self.vars.CHECKPOINT_DIR]
-        for p in model_paths:
-            if p.exists():
-                for d in p.iterdir():
-                    if d.is_dir():
-                        for sub in d.iterdir():  # Handle owner/model structure
-                            if sub.is_dir():
-                                name = f"{d.name}/{sub.name}"
-                                ctk.CTkRadioButton(self.model_frame, text=name, variable=self.model_var,
-                                                   value=name).pack(anchor="w", pady=2)
-        if not self.model_frame.winfo_children():
-            ctk.CTkLabel(self.model_frame, text="No models found.",
-                         text_color=COLORS["empty_state_text"]).pack(pady=15, padx=10)
-
-        # Populate Datasets
-        if self.vars.DATASET_FORMATTED_DIR.exists():
-            for d in self.vars.DATASET_FORMATTED_DIR.iterdir():
-                if d.is_dir():
-                    var = ctk.BooleanVar(value=False)
-                    self.dataset_vars[d.name] = var
-                    ctk.CTkCheckBox(self.dataset_frame, text=d.name, variable=var).pack(anchor="w", pady=2)
-        if not self.dataset_frame.winfo_children():
-            ctk.CTkLabel(self.dataset_frame, text="No formatted datasets found.",
-                         text_color=COLORS["empty_state_text"]).pack(pady=15, padx=10)
-
-    def submit_task(self):
-        selected_model = self.model_var.get()
-        selected_datasets = [name for name, var in self.dataset_vars.items() if var.get()]
-
-        if not selected_model or not selected_datasets:
-            messagebox.showwarning("Selection Incomplete", "Please select a model and at least one dataset.")
-            return
-
-        self.on_set_callback(selected_model, selected_datasets)
+# class TaskSetterView(ctk.CTkFrame):
+#     def __init__(self, master, vars, on_set_callback, **kwargs):
+#         super().__init__(master, **kwargs)
+#         self.vars = vars
+#         self.on_set_callback = on_set_callback
+#
+#         self.grid_columnconfigure((0, 1), weight=1)
+#         self.grid_rowconfigure(1, weight=1)
+#
+#         ctk.CTkLabel(self, text="Set Training Task (Update ApiCard)", font=("", 20, "bold")).grid(row=0, column=0, columnspan=2, pady=10, padx=20, sticky="w")
+#
+#         # 1. Model Selection (Single)
+#         self.model_frame = ctk.CTkScrollableFrame(self, label_text="Select Base Model")
+#         self.model_frame.grid(row=1, column=0, padx=10, pady=10, sticky="nsew")
+#         self.model_var = ctk.StringVar()
+#
+#         # 2. Dataset Selection (Multiple)
+#         self.dataset_frame = ctk.CTkScrollableFrame(self, label_text="Select Datasets")
+#         self.dataset_frame.grid(row=1, column=1, padx=10, pady=10, sticky="nsew")
+#         self.dataset_vars = {}
+#
+#         # 3. Action Button
+#         self.set_btn = ctk.CTkButton(self, text="Save Task to ApiCard", command=self.submit_task,
+#                                      fg_color=COLORS["action_save"], hover_color=COLORS["action_save_hover"])
+#         self.set_btn.grid(row=2, column=0, columnspan=2, pady=20, padx=20, sticky="ew")
+#
+#         self.refresh_selectors()
+#
+#     def refresh_selectors(self):
+#         # Clear old
+#         for child in self.model_frame.winfo_children(): child.destroy()
+#         for child in self.dataset_frame.winfo_children(): child.destroy()
+#
+#         # Populate Models
+#         model_paths = [self.vars.CUSTOM_MODEL_DIR, self.vars.LocalModel_DIR, self.vars.CHECKPOINT_DIR]
+#         for p in model_paths:
+#             if p.exists():
+#                 for d in p.iterdir():
+#                     if d.is_dir():
+#                         for sub in d.iterdir():  # Handle owner/model structure
+#                             if sub.is_dir():
+#                                 name = f"{d.name}/{sub.name}"
+#                                 ctk.CTkRadioButton(self.model_frame, text=name, variable=self.model_var,
+#                                                    value=name).pack(anchor="w", pady=2)
+#         if not self.model_frame.winfo_children():
+#             ctk.CTkLabel(self.model_frame, text="No models found.",
+#                          text_color=COLORS["empty_state_text"]).pack(pady=15, padx=10)
+#
+#         # Populate Datasets
+#         if self.vars.DATASET_FORMATTED_DIR.exists():
+#             for d in self.vars.DATASET_FORMATTED_DIR.iterdir():
+#                 if d.is_dir():
+#                     var = ctk.BooleanVar(value=False)
+#                     self.dataset_vars[d.name] = var
+#                     ctk.CTkCheckBox(self.dataset_frame, text=d.name, variable=var).pack(anchor="w", pady=2)
+#         if not self.dataset_frame.winfo_children():
+#             ctk.CTkLabel(self.dataset_frame, text="No formatted datasets found.",
+#                          text_color=COLORS["empty_state_text"]).pack(pady=15, padx=10)
+#
+#     def submit_task(self):
+#         selected_model = self.model_var.get()
+#         selected_datasets = [name for name, var in self.dataset_vars.items() if var.get()]
+#
+#         if not selected_model or not selected_datasets:
+#             messagebox.showwarning("Selection Incomplete", "Please select a model and at least one dataset.")
+#             return
+#
+#         self.on_set_callback(selected_model, selected_datasets)
 
 
 class FormattingView(ctk.CTkFrame):
