@@ -61,6 +61,7 @@ class Variable:
         # ── Chat template ──────────────────────────────────────────────
         # Contains .jinja files that define how messages are rendered
         self.chat_template_path = self.WORKSPACE / "chat_template"
+        self.CHAT_TEMPLATE_FILE = "chat_template_conversation.jinja"
 
         # ── Torch dtype used across the project ────────────────────────
         self.DTYPE = torch.float32
