@@ -34,11 +34,14 @@ os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 os.environ["OMP_NUM_THREADS"] = str(mp.cpu_count())
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
+
+vars = Variable()
+
 # ── Default model IDs used internally ─────────────────────────────────────────
 SENTENCE_TOKENIZER   = "sentence-transformers/msmarco-distilbert-cos-v5"
 SENTENCE_MODEL       = "sentence-transformers/all-MiniLM-L6-v2"
 IMAGE_PROCESSOR_NAME = "microsoft/resnet-50"
-CHAT_TEMPLATE_FILE   = "chat_template_conversation.jinja"
+CHAT_TEMPLATE_FILE   = vars.CHAT_TEMPLATE_FILE
 
 # Batch size for embedding generation
 BATCH_SIZE      = 100

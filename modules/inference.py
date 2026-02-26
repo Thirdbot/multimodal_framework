@@ -73,13 +73,19 @@ class InferenceManager:
     def _load_model_and_tokenizer(self):
         """Load model + tokenizer and prepare the image processor."""
         self.model, self.tokenizer = load_saved_model(self.model_path)
-        self.chat_template         = self.tokenizer.chat_template
+        self.chat_template         = self.tokenizer.chat_template if self.tokenizer.chat_template is not None else self._load_template()
 
         # Image processor for vision inputs
         self.vision_processor = AutoImageProcessor.from_pretrained(
             VISION_PROCESSOR_NAME, use_fast=True
         )
 
+    def _load_template(self):
+        source = self.variable.chat_template_path / self.variable.CHAT_TEMPLATE_FILE
+        template = Template(source.read_text(encoding="utf-8")).render(
+            messages=[]
+        )
+        return template
     # ── Public API ─────────────────────────────────────────────────────────────
 
     def generate_response(self, user_input, image_path=None):
