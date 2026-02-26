@@ -11,9 +11,9 @@ model-trained/
 
 checkpoints/
 
-models/
 reports/
 
 
 custom_models/
+formatted_datasets/
 .vscode
