@@ -1,74 +1,71 @@
-import os
-import json
-from modules.variable import Variable
-from modules.prerun import create_config_folders
-from modules.ApiDump import ApiCardSetup
-from modules.DataDownload import DataLoader
+"""
+main.py – Inference demo and full-pipeline reference script.
 
-from modules.DataModelPrepare import Manager
-from modules.inference import InferenceManager
-from modules.train import FinetuneModel
+Active code:
+    Runs a single text-generation query against a saved checkpoint.
+
+Commented pipeline (uncomment steps as needed):
+    1. create_config_folders() – initialise workspace
+    2. ApiCardSetup.set()      – register model + dataset names
+    3. DataLoader.run()        – download from HuggingFace Hub
+    4. Manager.dataset_prepare() – tokenise and format datasets
+    5. FinetuneModel.finetune_model() – fine-tune the model
+
+TODO:
+    1. Accept only pre-formatted datasets (user provides acceptable format)
+    2. Switch inference and training to the unsloth library
+    3. Add push-to-HuggingFace-Hub after training
+    4. Rewrite model architecture using Keras only
+    5. Use unsloth GPT-format for dataset formatting
+    6. Expose configurable model parameters
+    7. Migrate config files from JSON to INI format
+"""
 
 from pathlib import Path
 
-# if there is no custom_models folder, create it using create_model.py
-# then run this file to download dataset and finetune the model
-# after first run you can directly finetune without formatting dataset again by keeping FinetunModel.finetune_model
+from modules.inference import InferenceManager
 
-variable = Variable()
-downloading = DataLoader()
+# ── Full pipeline (uncomment to run each step) ─────────────────────────────────
 
-# # #finetune model
-finetune = Manager()
-Ft = FinetuneModel()
+# from modules.variable import Variable
+# from modules.prerun import create_config_folders
+# from modules.ApiDump import ApiCardSetup
+# from modules.DataDownload import DataLoader
+# from modules.DataModelPrepare import Manager
+# from modules.train import FinetuneModel
 
-api = variable.hf_api
+# variable = Variable()
+# api      = variable.hf_api
 
-
+# Step 1: initialise workspace config folders
 # create_config_folders()
-setcard = ApiCardSetup()
 
-# Fallback or initial creation
-list_models = api.list_models(model_name='HuggingFaceTB/SmolLM2-360M',limit=1,gated=False)
-list_datasets = api.list_datasets(dataset_name='Lin-Chen/ShareGPT4V',limit=1,gated=False)
-list_download = setcard.set(list_models,list_datasets)
+# Step 2: register models and datasets in the API card
+# setcard     = ApiCardSetup()
+# list_models = api.list_models(model_name='HuggingFaceTB/SmolLM2-360M', limit=1, gated=False)
+# list_datasets = api.list_datasets(dataset_name='Lin-Chen/ShareGPT4V', limit=1, gated=False)
+# list_download = setcard.set(list_models, list_datasets)
 
-# # download from datacard
-downloading.run(list_download)
+# Step 3: download models and datasets from the Hub
+# DataLoader().run(list_download)
 
+# Step 4: format datasets for training
+# Manager().dataset_prepare(list_download)
 
-# # formatting dataset
-# ## use custom_models in custom_models folder so it need to have custom_models in folder
-finetune.dataset_prepare(list_download)
-# use formatted dataset and models
-Ft.finetune_model()
+# Step 5: fine-tune the model on the formatted datasets
+# FinetuneModel().finetune_model()
 
+# ── Inference demo ─────────────────────────────────────────────────────────────
 
+model_path = (
+    Path(__file__).parent
+    / "checkpoints"
+    / "text-generation"
+    / "HuggingFaceTB_SmolLM2-360M"
+)
 
-# model_path = Path(__file__).parent.absolute() / "checkpoints" / "text-vision-text-generation" / "Qwen_Qwen1.5-0.5B-Chat"
-# model_path = Path(__file__).parent.absolute() / "custom_models" / "conversation-model" / "newmodel"
-# model_path = Path(__file__).parent.absolute() / "checkpoints" / "text-generation" / "Qwen_Qwen1.5-0.5B-Chat"
+inference_manager = InferenceManager(str(model_path))
 
-# inference_manager = InferenceManager(model_path)
-# # image_path = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSKrRTIhPqYvZTuh0m79LUYJsDRG9VgZYIaNA&s"
-
-# user_input = "What is the total value in the image?"
-
-# response = inference_manager.generate_response(user_input,image_path=image_path)
-# print(f"{response}")
-
-# image_path = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRs0cV933dMsauoMHgQBpcZ-VTsTa5SbTAMWQ&s"
-# user_input = "What is the total score of the 6 arrows on the target?  On this image?"
-# response = inference_manager.generate_response(user_input,image_path=image_path)
-# print(f"{response}")
-#
-
-
-##TODO
-# 1. accept only formatted dataset (user find thier ways to format to acceptable dataset)
-# 2. change inference and training lib to unsloth lib
-# 3. model should save and push to huggingfacce repository
-# 4. change model architecture using keras only
-# 5. change dataset format using unsloth gptformat
-# 6. exposed things that can be config in model
-# 7. those config file change from json to ini
+user_input = "What is the total value in the image?"
+response   = inference_manager.generate_response(user_input)
+print(response)

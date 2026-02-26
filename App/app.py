@@ -14,10 +14,9 @@ from modules.ApiDump import ApiCardSetup
 from modules.DataModelPrepare import  Manager as DataManager
 from modules.ModelUtils import CreateModel
 from modules.variable import Variable
-from modules.train import FinetuneModel
-import io
-from contextlib import redirect_stdout
-from ui_components import ListFrame,DownloadHubView ,TaskSetterView,FormattingView,ConfigView,CreateModelView,TrainView
+from ui_components import (ListFrame, DownloadHubView, TaskSetterView,
+                            FormattingView, ConfigView, CreateModelView,
+                            TrainView, COLORS)
 
 
 class App(ctk.CTk):
@@ -32,8 +31,15 @@ class App(ctk.CTk):
         self.grid_rowconfigure(0, weight=1)
 
         # Sidebar
-        self.sidebar = ctk.CTkFrame(self, width=200, corner_radius=0)
+        self.sidebar = ctk.CTkFrame(self, width=200, corner_radius=0,
+                                    fg_color=COLORS["sidebar_bg"],
+                                    border_width=1,
+                                    border_color=COLORS["sidebar_border"])
         self.sidebar.grid(row=0, column=0, sticky="nsew")
+        ctk.CTkLabel(self.sidebar, text="Model DEV\nStudio",
+                     font=("", 16, "bold"), justify="center").pack(pady=(20, 10), padx=10)
+        ctk.CTkFrame(self.sidebar, height=1,
+                     fg_color=COLORS["sidebar_border"]).pack(fill="x", padx=10, pady=(0, 10))
 
         # global terminal
         self.terminal = ctk.CTkTextbox(self, height=150, font=("Consolas", 11), fg_color="#1a1a1a")
@@ -47,10 +53,16 @@ class App(ctk.CTk):
 
         nav_items = [ k for k in self.views.keys() if k != "config" ]
 
+        self.nav_buttons = {}
         # Navigation
         for name in nav_items:
-            ctk.CTkButton(self.sidebar, text=name.replace("_"," ").title(),
-                          command=lambda n=name: self.show_view(n)).pack(pady=5, padx=10)
+            btn = ctk.CTkButton(self.sidebar, text=name.replace("_", " ").title(),
+                                fg_color=COLORS["nav_default_bg"],
+                                hover_color=COLORS["nav_hover_bg"],
+                                anchor="w",
+                                command=lambda n=name: self.show_view(n))
+            btn.pack(pady=3, padx=10, fill="x")
+            self.nav_buttons[name] = btn
         spacer = ctk.CTkLabel(self.sidebar, text="")
         spacer.pack(expand=True, fill="both")
         self.config_btn = ctk.CTkButton(self.sidebar, text="Configuration",
@@ -83,18 +95,20 @@ class App(ctk.CTk):
         # 3. Model View
         self.views["custom_model"] = ListFrame(container,"Custom Model",
                                                lambda: [
-                                                   sd.name
-                                                   for path in [self.vars.REGULAR_MODEL_DIR, self.vars.VISION_MODEL_DIR]
-                                                   if path.exists()
-                                                   for sd in path.iterdir()
-                                                   if sd.is_dir()
+                                                   f"{subdir.name}/{name.name}"
+                                                   for path in self.vars.CUSTOM_MODEL_DIR.iterdir()
+                                                   if path.is_dir()
+                                                   for subdir in path.iterdir()
+                                                   if subdir.is_dir()
+                                                   for name in subdir.iterdir()
+                                                   if name.is_dir()
                                                ])
 
         # 4. set task for train job
         self.views["Set_Task"] = TaskSetterView(container, self.vars, self.handle_set_apicard)
 
         # 5. Training View (Using Generic Logger)
-        self.views["train"] = TrainView(container, self.handle_internal_train)
+        self.views["train"] = TrainView(container, self.vars, global_log_callback=self.write_log)
 
         # 6. Create Model
         self.views["create_model"] = CreateModelView(container, self.vars, self.handle_model_creation)
@@ -107,20 +121,7 @@ class App(ctk.CTk):
 
         for v in self.views.values(): v.grid(row=0, column=0, sticky="nsew")
 
-    def show_view(self, name):
-        for v in self.views.values(): v.grid_remove()
-        self.views[name].grid()
-
     # Logic Handlers (Passed to the UI components)
-    def handle_training(self, frame):
-        frame.btn.configure(state="disabled")
-        # run_task_in_background("python modules/train.py", frame.write_log, lambda: frame.btn.configure(state="normal"))
-
-    def handle_formatting(self, frame):
-        frame.btn.configure(state="disabled")
-        # run_task_in_background("python modules/DataModelPrepare.py", frame.write_log,
-        #                        lambda: frame.btn.configure(state="normal"))
-
     def handle_hf_download(self, view):
         repo_id = view.repo_entry.get().strip()
         is_model = view.type_var.get() == "Model"
@@ -193,18 +194,17 @@ class App(ctk.CTk):
     def show_view(self, name):
         for v in self.views.values(): v.grid_remove()
         self.views[name].grid()
+        # Highlight active nav button
+        for btn in self.nav_buttons.values():
+            btn.configure(fg_color=COLORS["nav_default_bg"])
+        if name in self.nav_buttons:
+            self.nav_buttons[name].configure(fg_color=COLORS["nav_active_bg"])
         # Refresh the lists whenever we switch to this view
-        if name == "set_task":
-            self.views[name].refresh_selectors()
-        elif name == "format":
-            self.views[name].refresh_selectors()
-        elif name == "create_model":
-            # Updated from refresh_selector() to refresh_selectors()
+        if name in ("Set_Task", "Dataset Format", "create_model"):
             self.views[name].refresh_selectors()
         elif name == "config":
             new_files = self.views[name].get_config_files()
             self.views[name].file_combo.configure(values=new_files)
-
             self.write_log("System: Config editor synchronized.\n")
 
     def handle_data_formatting(self, model_name, dataset_names, view):
@@ -258,41 +258,6 @@ class App(ctk.CTk):
                 self.after(0, lambda:  view.create_btn.configure(state="normal", text="Create Wrapped Model"))
 
         threading.Thread(target=run, daemon=True).start()
-
-    def handle_internal_train(self, view):
-        """Captures direct console output and pipes it into the Training Page terminal."""
-        self.write_log("System: Connecting internal terminal to training stream...\n")
-        view.train_btn.configure(state="disabled", text="Training...")
-
-        def run_training():
-            try:
-                # 1. Initialize your model engine
-                finetuner = FinetuneModel()
-
-                # 2. This helper captures the 'print' output from your module
-                class DirectStream(io.TextIOBase):
-                    def __init__(self, target_view):
-                        self.target_view = target_view
-
-                    def write(self, s):
-                        # Directly send the string to the view's terminal
-                        if s:
-                            self.target_view.after(0, lambda: self.target_view.write_internal(s))
-                        return len(s)
-
-                # 3. Redirect the system stdout directly to the view
-                with redirect_stdout(DirectStream(view)):
-                    self.write_log("System: Starting engine. Watch the terminal above for logs.\n")
-                    finetuner.finetune_model()
-
-                self.after(0, lambda: view.status_label.configure(text="STATUS: Finished successfully."))
-            except Exception as e:
-                # Fixed error handling to avoid NameError
-                self.after(0, lambda err=e: self.write_log(f"Error: Training failed: {str(err)}\n"))
-            finally:
-                self.after(0, lambda: view.train_btn.configure(state="normal", text="Start Fine-tuning"))
-
-        threading.Thread(target=run_training, daemon=True).start()
 
 
 

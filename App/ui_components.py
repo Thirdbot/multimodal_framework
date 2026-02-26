@@ -10,6 +10,25 @@ import re
 
 from modules.train import FinetuneModel
 
+COLORS = {
+    "sidebar_bg":          "#1e1e2e",
+    "sidebar_border":      "#313145",
+    "nav_default_bg":      "transparent",
+    "nav_active_bg":       "#3a3a5c",
+    "nav_hover_bg":        "#2e2e4a",
+    "action_save":         "#2c6e49",
+    "action_save_hover":   "#245c3d",
+    "action_format":       "#c47a00",
+    "action_format_hover": "#a36500",
+    "action_create":       "#5e35b1",
+    "action_create_hover": "#4527a0",
+    "action_train":        "#1565c0",
+    "action_train_hover":  "#0d47a1",
+    "empty_state_text":    "#6b6b8a",
+    "terminal_bg":         "#1a1a1a",
+    "train_progress":      "#2e7d32",
+}
+
 
 class LoggerFrame(ctk.CTkFrame):
     """Generic frame with a title, a button, and a log output."""
@@ -51,6 +70,9 @@ class ListFrame(ctk.CTkFrame):
         for item in self.get_items():
             ctk.CTkButton(self.scroll, text=item, fg_color="transparent", border_width=1, anchor="w").pack(fill="x",
                                                                                                            pady=2)
+        if not self.scroll.winfo_children():
+            ctk.CTkLabel(self.scroll, text="No items found. Use the Download view to add content.",
+                         text_color=COLORS["empty_state_text"]).pack(pady=15, padx=10)
 
 class DownloadHubView(ctk.CTkFrame):
     def __init__(self, master, start_download_callback, **kwargs):
@@ -77,9 +99,6 @@ class DownloadHubView(ctk.CTkFrame):
         ctk.CTkLabel(self, text="Tip: Check the global terminal below for progress.", text_color="gray").pack(padx=20, anchor="w")
 
 
-import customtkinter as ctk
-
-
 class TaskSetterView(ctk.CTkFrame):
     def __init__(self, master, vars, on_set_callback, **kwargs):
         super().__init__(master, **kwargs)
@@ -102,7 +121,8 @@ class TaskSetterView(ctk.CTkFrame):
         self.dataset_vars = {}
 
         # 3. Action Button
-        self.set_btn = ctk.CTkButton(self, text="Save Task to ApiCard", command=self.submit_task, fg_color="#2c6e49")
+        self.set_btn = ctk.CTkButton(self, text="Save Task to ApiCard", command=self.submit_task,
+                                     fg_color=COLORS["action_save"], hover_color=COLORS["action_save_hover"])
         self.set_btn.grid(row=2, column=0, columnspan=2, pady=20, padx=20, sticky="ew")
 
         self.refresh_selectors()
@@ -113,7 +133,7 @@ class TaskSetterView(ctk.CTkFrame):
         for child in self.dataset_frame.winfo_children(): child.destroy()
 
         # Populate Models
-        model_paths = [self.vars.CUSTOM_MODEL_DIR,self.vars.LocalModel_DIR,self.vars.CHECKPOINT_DIR]
+        model_paths = [self.vars.CUSTOM_MODEL_DIR, self.vars.LocalModel_DIR, self.vars.CHECKPOINT_DIR]
         for p in model_paths:
             if p.exists():
                 for d in p.iterdir():
@@ -123,6 +143,9 @@ class TaskSetterView(ctk.CTkFrame):
                                 name = f"{d.name}/{sub.name}"
                                 ctk.CTkRadioButton(self.model_frame, text=name, variable=self.model_var,
                                                    value=name).pack(anchor="w", pady=2)
+        if not self.model_frame.winfo_children():
+            ctk.CTkLabel(self.model_frame, text="No models found.",
+                         text_color=COLORS["empty_state_text"]).pack(pady=15, padx=10)
 
         # Populate Datasets
         if self.vars.DATASET_FORMATTED_DIR.exists():
@@ -131,13 +154,16 @@ class TaskSetterView(ctk.CTkFrame):
                     var = ctk.BooleanVar(value=False)
                     self.dataset_vars[d.name] = var
                     ctk.CTkCheckBox(self.dataset_frame, text=d.name, variable=var).pack(anchor="w", pady=2)
+        if not self.dataset_frame.winfo_children():
+            ctk.CTkLabel(self.dataset_frame, text="No formatted datasets found.",
+                         text_color=COLORS["empty_state_text"]).pack(pady=15, padx=10)
 
     def submit_task(self):
         selected_model = self.model_var.get()
         selected_datasets = [name for name, var in self.dataset_vars.items() if var.get()]
 
         if not selected_model or not selected_datasets:
-            print("Selection incomplete.")
+            messagebox.showwarning("Selection Incomplete", "Please select a model and at least one dataset.")
             return
 
         self.on_set_callback(selected_model, selected_datasets)
@@ -167,10 +193,10 @@ class FormattingView(ctk.CTkFrame):
 
         # 3. Action Button
         self.format_btn = ctk.CTkButton(
-            self, text="✨ Run Formatting Process",
+            self, text="Run Formatting Process",
             command=self.submit_format,
-            fg_color="#d88c00",  # Orange to distinguish from training
-            hover_color="#b07200"
+            fg_color=COLORS["action_format"],
+            hover_color=COLORS["action_format_hover"]
         )
         self.format_btn.grid(row=2, column=0, columnspan=2, pady=20, padx=20, sticky="ew")
 
@@ -181,16 +207,19 @@ class FormattingView(ctk.CTkFrame):
         for child in self.dataset_frame.winfo_children(): child.destroy()
 
         # Populate Models (Tokenizer source)
-        model_paths = [self.vars.REGULAR_MODEL_DIR, self.vars.VISION_MODEL_DIR,self.vars.LocalModel_DIR]
+        model_paths = [self.vars.REGULAR_MODEL_DIR, self.vars.VISION_MODEL_DIR, self.vars.LocalModel_DIR]
         for p in model_paths:
             if p.exists():
                 for owner in p.iterdir():
                     if owner.is_dir():
                         for model in owner.iterdir():
                             if model.is_dir():
-                                name = f"{owner.name}/{model.name}"
+                                name = f"{p.name}/{owner.name}/{model.name}"
                                 ctk.CTkRadioButton(self.model_frame, text=name, variable=self.model_var,
                                                    value=name).pack(anchor="w", pady=2, padx=10)
+        if not self.model_frame.winfo_children():
+            ctk.CTkLabel(self.model_frame, text="No models found.",
+                         text_color=COLORS["empty_state_text"]).pack(pady=15, padx=10)
 
         # Populate Raw Datasets (Datasets folder, not formatted folder)
         if self.vars.DATASETS_DIR.exists():
@@ -199,13 +228,16 @@ class FormattingView(ctk.CTkFrame):
                     var = ctk.BooleanVar(value=False)
                     self.dataset_vars[d.name] = var
                     ctk.CTkCheckBox(self.dataset_frame, text=d.name, variable=var).pack(anchor="w", pady=2, padx=10)
+        if not self.dataset_frame.winfo_children():
+            ctk.CTkLabel(self.dataset_frame, text="No raw datasets found.",
+                         text_color=COLORS["empty_state_text"]).pack(pady=15, padx=10)
 
     def submit_format(self):
         selected_model = self.model_var.get()
         selected_datasets = [name for name, var in self.dataset_vars.items() if var.get()]
 
         if not selected_model or not selected_datasets:
-            print("Please select a model and at least one dataset.")
+            messagebox.showwarning("Selection Incomplete", "Please select a model and at least one dataset.")
             return
 
         self.on_format_callback(selected_model, selected_datasets, self)
@@ -231,11 +263,12 @@ class ConfigView(ctk.CTkFrame):
         self.file_combo.pack(side="left", padx=20)
 
         # Action Buttons
-        self.btn_save = ctk.CTkButton(self.header, text="💾 Save", width=80,
-                                      fg_color="#2c6e49", command=self.save_current_file)
+        self.btn_save = ctk.CTkButton(self.header, text="Save", width=80,
+                                      fg_color=COLORS["action_save"], hover_color=COLORS["action_save_hover"],
+                                      command=self.save_current_file)
         self.btn_save.pack(side="right", padx=5)
 
-        self.btn_reload = ctk.CTkButton(self.header, text="🔄 Reload", width=80,
+        self.btn_reload = ctk.CTkButton(self.header, text="Reload", width=80,
                                         command=lambda: self.load_selected_file(self.file_combo.get()))
         self.btn_reload.pack(side="right", padx=5)
 
@@ -320,10 +353,10 @@ class CreateModelView(ctk.CTkFrame):
 
         # 3. Action Button
         self.create_btn = ctk.CTkButton(
-            self, text="🛠 Create Wrapped Model",
+            self, text="Create Wrapped Model",
             command=self.submit_creation,
-            fg_color="#5e35b1",  # Purple to distinguish
-            hover_color="#4527a0"
+            fg_color=COLORS["action_create"],
+            hover_color=COLORS["action_create_hover"]
         )
         self.create_btn.grid(row=3, column=0, pady=20, padx=20, sticky="ew")
 
@@ -343,21 +376,27 @@ class CreateModelView(ctk.CTkFrame):
                             path = str(model)
                             ctk.CTkRadioButton(self.model_frame, text=name,
                                                variable=self.model_var, value=path).pack(anchor="w", pady=2, padx=10)
+        if not self.model_frame.winfo_children():
+            ctk.CTkLabel(self.model_frame, text="No base models found.",
+                         text_color=COLORS["empty_state_text"]).pack(pady=15, padx=10)
 
     def submit_creation(self):
         selected_path = self.model_var.get()
         mode = self.mode_var.get()
 
         if not selected_path:
+            messagebox.showwarning("Selection Incomplete", "Please select a base model.")
             return
 
         self.on_create_callback(selected_path, mode, self)
 
 
 class TrainView(ctk.CTkFrame):
-    def __init__(self, master, vars, **kwargs):
+    def __init__(self, master, vars, global_log_callback=None, **kwargs):
         super().__init__(master, **kwargs)
         self.vars = vars
+        # Optional callback to forward key events to the app's global terminal
+        self.global_log_callback = global_log_callback
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
@@ -375,11 +414,16 @@ class TrainView(ctk.CTkFrame):
         self.status_label = ctk.CTkLabel(self, text="Ready to train.", font=("", 12))
         self.status_label.grid(row=2, column=0, pady=(5, 0))
 
-        self.train_btn = ctk.CTkButton(self, text="🚀 Start Fine-tuning", height=40, command=self.start_training)
+        self.train_btn = ctk.CTkButton(self, text="Start Fine-tuning", height=40, command=self.start_training,
+                                       fg_color=COLORS["action_train"], hover_color=COLORS["action_train_hover"])
         self.train_btn.grid(row=3, column=0, pady=(5, 20), padx=20, sticky="ew")
 
     def update_ui(self, text, is_progress=False):
-        """Writes to terminal and updates progress bar based on parsed text."""
+        """Called from background thread — schedules on main loop."""
+        self.after(0, lambda t=text, p=is_progress: self._apply_update(t, p))
+
+    def _apply_update(self, text, is_progress=False):
+        """Only called from main thread via self.after()."""
         self.internal_log.configure(state="normal")
 
         if is_progress:
@@ -396,15 +440,22 @@ class TrainView(ctk.CTkFrame):
             iter_match = re.search(r"(\d+)/(\d+)", text)
             if iter_match:
                 current, total = map(int, iter_match.groups())
-                self.progress_bar.set(current / total)
+                if total > 0:
+                    self.progress_bar.set(current / total)
 
         self.internal_log.insert("end", text)
         self.internal_log.see("end")
         self.internal_log.configure(state="disabled")
 
+    def _notify_global(self, text):
+        """Forward a short status message to the app's global terminal, if wired up."""
+        if self.global_log_callback:
+            self.after(0, lambda t=text: self.global_log_callback(t))
+
     def start_training(self):
         self.train_btn.configure(state="disabled", text="Training...")
         self.progress_bar.set(0)
+        self._notify_global("Training: started fine-tuning job.\n")
 
         def run():
             try:
@@ -430,10 +481,12 @@ class TrainView(ctk.CTkFrame):
 
                 self.after(0, lambda: self.status_label.configure(text="Finished successfully."))
                 self.after(0, lambda: self.progress_bar.set(1.0))
+                self._notify_global("Training: completed successfully.\n")
             except Exception as e:
-                self.after(0, lambda err=e: self.update_ui(f"\nError: {str(err)}\n"))
+                self.after(0, lambda err=e: self._apply_update(f"\nError: {str(err)}\n"))
+                self._notify_global(f"Training: error — {e}\n")
             finally:
-                self.after(0, lambda: self.train_btn.configure(state="normal", text="🚀 Start Fine-tuning"))
+                self.after(0, lambda: self.train_btn.configure(state="normal", text="Start Fine-tuning"))
 
         threading.Thread(target=run, daemon=True).start()
 
