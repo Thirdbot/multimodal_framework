@@ -1,255 +1,237 @@
-import os
+"""
+DataModelPrepare.py – Tokenize and format datasets for fine-tuning.
+
+Usage (CLI):
+    python -m modules.DataModelPrepare
+
+Usage (GUI / code):
+    manager = Manager()
+    manager.dataset_prepare(api_card_dict)
+"""
+
 import json
-from dataclasses import dataclass
+import os
 from pathlib import Path
-from typing import Optional, List, Dict, Any, Union, Tuple
 
 import torch
 from colorama import Fore, Style, init
-from datasets import load_dataset, concatenate_datasets, DatasetDict, get_dataset_split_names, get_dataset_config_names
-from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig, BitsAndBytesConfig
-from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+from datasets import (
+    load_dataset,
+    concatenate_datasets,
+    get_dataset_split_names,
+)
 
 from modules.chatTemplate import ChatTemplate
-from modules.ModelUtils import CreateModel
-from modules.variable import Variable
 from modules.ModelUtils import load_saved_model
+from modules.variable import Variable
 
-# Initialize colorama
 init(autoreset=True)
 
-# Set environment variables
-os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
-os.environ['OMP_NUM_THREADS'] = '1' 
-# os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True,max_split_size_mb:128"
+# Suppress OpenMP duplicate lib warnings on some platforms
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+os.environ["OMP_NUM_THREADS"] = "1"
 os.environ["CUDA_LAUNCH_BLOCKING"] = "0"
 
-
-@dataclass
-class ManagerConfig:
-    device: Optional[str] = None  # e.g., "cuda:0" or "cpu"
-    lora_r: int = 8
-    lora_alpha: int = 8
-    lora_dropout: float = 0.05
-    lora_target_modules: Optional[List[str]] = None
-    load_in_4bit: bool = True
-    bnb_compute_dtype: torch.dtype = torch.float32
-    bnb_quant_type: str = "fp4"
-    bnb_use_double_quant: bool = False
-    max_length: int = 1000
+# Default maximum sequence length for tokenization
+DEFAULT_MAX_LENGTH = 1000
 
 
-    
-    
 class Manager:
-    """Manager class for handling fine-tuning operations."""
+    """
+    Orchestrates dataset loading, chat-template formatting, and tokenization.
 
-    def __init__(self, config: ManagerConfig | None = None):
+    Call dataset_prepare(api_card) to run the full pipeline and write
+    formatted datasets to DATASET_FORMATTED_DIR.
+    """
+
+    def __init__(self):
         self.variable = Variable()
-        self.config = config or ManagerConfig()
-        self.VISION_MODEL_DIR = self.variable.VISION_MODEL_DIR
-        self.REGULAR_MODEL_DIR = self.variable.REGULAR_MODEL_DIR
-        self.training_config_path = self.variable.training_config_path
-        self.DATASET_FORMATTED_DIR = self.variable.DATASET_FORMATTED_DIR
-        self.chat_template_saved = None
-        self.chat_template_path = self.variable.chat_template_path
 
-        # Device selection
-        default_device = "cuda:0" if torch.cuda.is_available() else "cpu"
-        self.device_map = self.config.device or default_device
+        # Resolve device
+        self.device = "cuda:0" if torch.cuda.is_available() else "cpu"
 
-        os.makedirs(self.DATASET_FORMATTED_DIR, exist_ok=True)
+        # Ensure output directory exists
+        os.makedirs(self.variable.DATASET_FORMATTED_DIR, exist_ok=True)
 
-    def load_model(self, model_id: Union[str, Path]) -> Tuple[Optional[AutoModelForCausalLM], Optional[AutoTokenizer]]:
-        print(f"{Fore.CYAN}Retrieving model {model_id}{Style.RESET_ALL}")
+    # ── Public entry point ─────────────────────────────────────────────────────
+
+    def dataset_prepare(self, list_model_data):
+        """
+        Format and tokenize every model + dataset pair in api_card.
+
+        list_model_data – dict like {"model": {model_name: {dataset_name: ""}}}
+
+        Saves each formatted dataset to DATASET_FORMATTED_DIR and writes
+        training_config.json with column metadata.
+        """
+        saved_configs = self._load_saved_configs()
+        self.variable.training_config_path.touch(exist_ok=True)
+
+        training_config = {"model": {}}
 
         try:
-            # return self._load_from_scratch(model_id)
-            return load_saved_model(model_id)
+            for model_name, datasets in list_model_data.get("model", {}).items():
+                model_path = self.variable.REPO_DIR / "models" / model_name
+                model, tokenizer = self._load_model(model_path)
+
+                if model is None or tokenizer is None:
+                    print(f"{Fore.RED}Skipping {model_name}: model load failed{Style.RESET_ALL}")
+                    continue
+
+                training_config["model"][model_name] = {}
+                col_meta = self._process_model_datasets(
+                    model_name, model_path, tokenizer, datasets, saved_configs
+                )
+                training_config["model"][model_name].update(col_meta)
+
         except Exception as e:
-            print(f"{Fore.RED}Error loading model {model_id}: {str(e)}{Style.RESET_ALL}")
+            print(f"{Fore.RED}dataset_prepare error: {e}{Style.RESET_ALL}")
+        finally:
+            self._save_training_config(training_config)
+
+    # ── Model helpers ──────────────────────────────────────────────────────────
+
+    def _load_model(self, model_path):
+        """Load a model and tokenizer; return (model, tokenizer) or (None, None)."""
+        print(f"{Fore.CYAN}Loading model: {model_path}{Style.RESET_ALL}")
+        try:
+            return load_saved_model(model_path)
+        except Exception as e:
+            print(f"{Fore.RED}Model load error [{model_path}]: {e}{Style.RESET_ALL}")
             return None, None
 
+    # ── Dataset processing ─────────────────────────────────────────────────────
 
-    def load_dataset(self, dataset_name: str, config_name: Optional[str] = None) -> Optional[DatasetDict]:
+    def _process_model_datasets(self, model_name, model_path, tokenizer, datasets, saved_configs):
+        """
+        Process all datasets for one model.
 
-        dataset_name = self.variable.DATASETS_DIR.joinpath(dataset_name).as_posix()
+        Returns a dict of {dataset_name: column_meta} for training_config.json.
+        """
+        col_meta    = {}
+        first_ds    = None
+        first_cols  = set()
 
-        print(f"{Fore.CYAN}Retrieving dataset {dataset_name}{Style.RESET_ALL}")
+        for dataset_name in datasets:
+            print(f"{Fore.CYAN}Processing dataset: {dataset_name}{Style.RESET_ALL}")
+
+            raw_dataset = self._load_dataset(dataset_name, saved_configs.get(dataset_name))
+            if raw_dataset is None:
+                continue
+
+            formatted = self._apply_template(dataset_name, model_path, tokenizer, raw_dataset, tokenizing=False)
+            if formatted is None:
+                print(f"{Fore.RED}Template failed for: {dataset_name}{Style.RESET_ALL}")
+                continue
+
+            if first_ds is None:
+                first_ds   = formatted
+                first_cols = set(formatted.column_names)
+                concat_ds  = formatted
+            else:
+                second_cols = set(formatted.column_names)
+                concat_ds, first_ds = self._merge_datasets(first_ds, first_cols, formatted, second_cols)
+                first_cols = set(concat_ds.column_names)
+
+            # Tokenize the current (possibly concatenated) dataset
+            tokenized = self._apply_template(dataset_name, model_path, tokenizer, concat_ds, tokenizing=True)
+            if tokenized is None:
+                continue
+
+            formatted_name = self._save_formatted_dataset(tokenized, dataset_name, prefix="")
+            col_meta[dataset_name] = formatted_name
+
+        return col_meta
+
+    def _load_dataset(self, dataset_name, config_name=None):
+        """Load a dataset from the local repository directory."""
+        local_path = self.variable.DATASETS_DIR / dataset_name
+        path_str   = local_path.as_posix()
+        print(f"{Fore.CYAN}Loading dataset: {path_str}  config={config_name}{Style.RESET_ALL}")
 
         try:
-            splits = get_dataset_split_names(dataset_name, config_name)
-            split = 'train' if 'train' in splits else ('test' if 'test' in splits else 'train')
-            return load_dataset(dataset_name, split=split)
+            splits = get_dataset_split_names(path_str, config_name)
+            split  = "train" if "train" in splits else ("test" if "test" in splits else "train")
+            return load_dataset(path_str, split=split)
         except Exception as e:
-            print(f"{Fore.RED}Error loading dataset {dataset_name}: {str(e)}{Style.RESET_ALL}")
+            print(f"{Fore.RED}Dataset load error [{dataset_name}]: {e}{Style.RESET_ALL}")
             return None
 
-    def map_tokenizer(self, dataset_name: str, model_name: str, tokenizer: AutoTokenizer, dataset: DatasetDict,
-                     max_length: Optional[int] = None, Tokenizing: bool = False) -> Optional[DatasetDict]:
-
-        max_len = max_length or self.config.max_length
-        print(f"{Fore.CYAN}Processing dataset with max length: {max_len}{Style.RESET_ALL}")
-
-        # Ensure tokenizer has padding token
+    def _apply_template(self, dataset_name, model_path, tokenizer, dataset, tokenizing=False):
+        """Apply the chat template / tokenizer to a dataset."""
+        # Ensure pad token is set before template processing
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
-            print(f"{Fore.GREEN}Set padding token to EOS token{Style.RESET_ALL}")
 
-        self.chat_template = ChatTemplate(tokenizer=tokenizer,model_name=model_name)
-        self.chat_template_saved = self.chat_template.tokenizer.chat_template
         try:
-            tokenized_dataset = self.chat_template.prepare_dataset(
-                dataset_name,
-                dataset,
-                max_length=max_len,
-                Tokenizing=Tokenizing
+            template = ChatTemplate(tokenizer=tokenizer, model_name=model_path)
+            result = template.prepare_dataset(
+                dataset_name, dataset,
+                max_length=DEFAULT_MAX_LENGTH,
+                Tokenizing=tokenizing,
             )
-            print(f"{Fore.GREEN}Successfully prepared chat dataset{Style.RESET_ALL}")
-            return tokenized_dataset
+            return result
         except Exception as e:
-            print(f"{Fore.RED}Error tokenizing dataset: {str(e)}{Style.RESET_ALL}")
+            print(f"{Fore.RED}Template error [{dataset_name}]: {e}{Style.RESET_ALL}")
             return None
-    def dataset_prepare(self, list_model_data: Dict[str, Any]) -> Tuple[Optional[AutoModelForCausalLM], Optional[DatasetDict]]:
 
-        datamodel_file = self.variable.SAVED_CONFIG_Path
+    def _merge_datasets(self, first_ds, first_cols, second_ds, second_cols):
+        """
+        Align column sets and concatenate two datasets.
 
-        datamodel_file = datamodel_file.as_posix()
+        Missing columns are filled with None so both datasets share the same schema.
+        """
+        # Add missing columns to each side
+        for col in second_cols - first_cols:
+            first_ds = first_ds.add_column(col, [None] * len(first_ds))
+        for col in first_cols - second_cols:
+            second_ds = second_ds.add_column(col, [None] * len(second_ds))
 
-        self.training_config_path.touch(exist_ok=True)
+        concat = concatenate_datasets([first_ds, second_ds])
+        print(f"{Fore.GREEN}Merged columns: {concat.column_names}{Style.RESET_ALL}")
+        return concat, first_ds
 
+    def _save_formatted_dataset(self, dataset, dataset_name, prefix=""):
+        """Save a formatted dataset to disk and return the folder name."""
+        safe_name = dataset_name.replace("/", "_") + "_formatted"
+        if prefix:
+            safe_name = f"{prefix}_{safe_name}"
 
+        out_path = self.variable.DATASET_FORMATTED_DIR / safe_name
+        out_path.mkdir(parents=True, exist_ok=True)
+        dataset.save_to_disk(str(out_path))
+        print(f"{Fore.GREEN}Saved: {out_path}{Style.RESET_ALL}")
+        return safe_name
+
+    # ── Config helpers ─────────────────────────────────────────────────────────
+
+    def _load_saved_configs(self):
+        """Load saved dataset config choices (name → config_name)."""
+        path = self.variable.SAVED_CONFIG_Path.as_posix()
         try:
-            with open(datamodel_file, 'r') as f:
-                config = json.load(f)
+            with open(path, "r") as f:
+                return json.load(f)
         except Exception:
-            print(f"error config file not found {datamodel_file}")
-            config = {}
+            return {}
 
-        try:
-            # combined_dataset = None
-            dataset = None
-            saved_dataset = None
-            print(list_model_data)
-
-            model_training_data = {'model':dict()}
-
-            #load model and dataset prepare for tuning
-            for modelname,dict_dataset in list_model_data.get('model', {}).items():
-
-                model_repo = self.variable.REPO_DIR / "models" / modelname
-                model, tokenizer = self.load_model(model_repo)
-
-                union_cols = None
-                saved_dataset = None
-                first_dataset = None
-                second_dataset = None
-
-                first_cols = set()
-                second_cols = set()
-                concat_dataset = None
-
-                model_training_data['model'][modelname] = dict()
+    def _save_training_config(self, config):
+        """Write training_config.json with the column metadata."""
+        with open(self.variable.training_config_path, "w") as f:
+            json.dump(config, f, indent=4)
 
 
-                for dataset_name,info in dict_dataset.items():
+# ── CLI entry point ────────────────────────────────────────────────────────────
+if __name__ == "__main__":
+    import sys, json
 
-                    formatted_dataset_name = f"{dataset_name.replace('/', '_')}_formatted"
+    # Read the api card from ApiCardSet.json and run dataset_prepare
+    v = Variable()
+    if not v.Card_Path.exists():
+        print("ApiCardSet.json not found. Run ApiDump.py first.")
+        sys.exit(1)
 
-                    print(f"{Fore.CYAN}Formatting Dataset {dataset_name}{Style.RESET_ALL}")
-                    try:
-                        print(f"{Fore.CYAN}Loading dataset config: {dataset_name} {config.get(dataset_name, 'No config found')}{Style.RESET_ALL}")
+    with open(v.Card_Path) as f:
+        card = json.load(f)
 
-                        dataset = self.load_dataset(dataset_name, config.get(dataset_name))
-
-
-                        if first_dataset is None:
-                            print(f"{Fore.GREEN}Processing first dataset: {dataset_name}{Style.RESET_ALL}")
-
-                            #return processed True make it return text
-                            first_dataset = self.map_tokenizer(dataset_name,
-                                                                model_repo,
-                                                                tokenizer, dataset,
-                                                                Tokenizing=False)
-                            if first_dataset is None:
-                                print(f"{Fore.RED}Failed to process first dataset: {dataset_name}{Style.RESET_ALL}")
-                                continue
-                            first_cols = set(first_dataset.column_names)
-                            concat_dataset = first_dataset
-
-
-
-                        else:
-                            # first_dataset = concat_dataset
-                            print(f"{Fore.GREEN}Processing additional dataset: {dataset_name}{Style.RESET_ALL}")
-
-                            #return processed True make it return text
-                            second_dataset = self.map_tokenizer(dataset_name,
-                                                                model_repo,
-                                                                tokenizer,
-                                                                dataset,
-                                                                Tokenizing=False)
-
-                            concat_dataset = second_dataset
-                            if second_dataset is None:
-                                print(f"{Fore.RED}Failed to process second dataset: {dataset_name}{Style.RESET_ALL}")
-                                continue
-
-                            second_cols = set(second_dataset.column_names)
-
-
-                            print(f"{Fore.GREEN}Concatenating datasets...{Style.RESET_ALL}")
-
-                            print(f"{Fore.GREEN}First dataset columns: {first_cols}{Style.RESET_ALL}")
-                            print(f"{Fore.GREEN}Second dataset columns: {second_cols}{Style.RESET_ALL}")
-
-                        union_cols = first_cols.union(second_cols)
-                        model_training_data['model'][modelname][dataset_name] = str(union_cols)
-                        #after formatted to right format it use it to embedding
-                        #after getting concatenate dataset return it to embedding formatted with return both false since the model going to tokenized it anyways
-                        saved_dataset = self.map_tokenizer(dataset_name,
-                                                            model_repo,
-                                                            tokenizer,
-                                                            concat_dataset,
-                                                            Tokenizing=True)
-
-                        os.makedirs(self.DATASET_FORMATTED_DIR  / formatted_dataset_name, exist_ok=True)
-                        saved_dataset.save_to_disk(self.DATASET_FORMATTED_DIR / formatted_dataset_name)
-
-                        if first_dataset is not None and second_dataset is not None:
-                            # For columns only in second dataset, add them to first dataset with None values
-                            for col in second_cols - first_cols:
-                                first_dataset = first_dataset.add_column(col, [None] * len(first_dataset))
-
-                            # For columns only in first dataset, add them to second dataset with None values  
-                            for col in first_cols - second_cols:
-                                second_dataset = second_dataset.add_column(col, [None] * len(second_dataset))
-
-                            # Now both datasets have same columns, concatenate them
-                            concat_dataset = concatenate_datasets([first_dataset, second_dataset])
-                            print(f"{Fore.GREEN}Successfully joined datasets with columns: {concat_dataset.column_names}{Style.RESET_ALL}")
-                            formatted_dataset_name = f"concat_{formatted_dataset_name}"
-                            #after formatted to right format it use it to embedding
-                            #after getting concatenate dataset return it to embedding formatted with return both false since the model going to tokenized it anyways
-                            saved_dataset = self.map_tokenizer(dataset_name,
-                                                                model_repo,
-                                                                tokenizer,
-                                                                concat_dataset,
-                                                                Tokenizing=True)
-
-
-                            self.DATASET_FORMATTED_DIR.joinpath(formatted_dataset_name).mkdir(exist_ok=True,parents=True)
-                            saved_dataset.save_to_disk(self.DATASET_FORMATTED_DIR / formatted_dataset_name)
-
-                    except Exception as e:
-                        print(f"{Fore.RED}Error processing dataset {dataset_name}: {str(e)}{Style.RESET_ALL}")
-                        continue
-
-
-
-            with open(self.training_config_path, 'w') as f:
-                json.dump(model_training_data, f, indent=4)
-
-        except Exception as e:
-            print(f"{Fore.RED}Error running finetune: {str(e)}{Style.RESET_ALL}")
-            return None, None
+    manager = Manager()
+    manager.dataset_prepare(card)
