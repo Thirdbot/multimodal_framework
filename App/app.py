@@ -260,33 +260,35 @@ class App(ctk.CTk):
         threading.Thread(target=run, daemon=True).start()
 
     def handle_internal_train(self, view):
-        """Executes the FinetuneModel logic in a background thread."""
-        self.write_log("System: Initializing Fine-tuning engine...\n")
-        view.train_btn.configure(state="disabled", text="Training in Progress...")
+        """Captures direct console output and pipes it into the Training Page terminal."""
+        self.write_log("System: Connecting internal terminal to training stream...\n")
+        view.train_btn.configure(state="disabled", text="Training...")
 
         def run_training():
-            # Create a stream to capture internal print statements
             try:
-                # 1. Initialize the module
+                # 1. Initialize your model engine
                 finetuner = FinetuneModel()
 
-                # 2. Redirect internal prints to the global terminal
-                # We create a small helper to pipe the stream line-by-line
-                class TerminalStream(io.TextIOBase):
-                    def __init__(self, log_func): self.log_func = log_func
+                # 2. This helper captures the 'print' output from your module
+                class DirectStream(io.TextIOBase):
+                    def __init__(self, target_view):
+                        self.target_view = target_view
 
                     def write(self, s):
-                        if s.strip(): self.log_func(s)
+                        # Directly send the string to the view's terminal
+                        if s:
+                            self.target_view.after(0, lambda: self.target_view.write_internal(s))
                         return len(s)
 
-                with redirect_stdout(TerminalStream(self.write_log)):
-                    self.write_log("System: Starting finetune_model() execution...\n")
-                    # 3. Call your old implementation directly
+                # 3. Redirect the system stdout directly to the view
+                with redirect_stdout(DirectStream(view)):
+                    self.write_log("System: Starting engine. Watch the terminal above for logs.\n")
                     finetuner.finetune_model()
 
-                self.after(0, lambda: self.write_log("\nSuccess: Training process completed!\n"))
+                self.after(0, lambda: view.status_label.configure(text="STATUS: Finished successfully."))
             except Exception as e:
-                self.after(0, lambda err=e: self.write_log(f"\nError: Training failed: {str(err)}\n"))
+                # Fixed error handling to avoid NameError
+                self.after(0, lambda err=e: self.write_log(f"Error: Training failed: {str(err)}\n"))
             finally:
                 self.after(0, lambda: view.train_btn.configure(state="normal", text="Start Fine-tuning"))
 
