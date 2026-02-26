@@ -11,7 +11,7 @@ Usage (GUI / code):
 
 import json
 import os
-
+from pathlib import Path
 import torch
 from colorama import Fore, Style
 from datasets import load_from_disk
@@ -19,7 +19,7 @@ from transformers import (
     AutoTokenizer,
     DataCollatorForLanguageModeling,
     Trainer,
-    TrainingArguments,
+    TrainingArguments, AutoModelForCausalLM,
 )
 
 from modules.ModelUtils import load_saved_model
@@ -128,7 +128,7 @@ class FinetuneModel:
         self.batch_size                 = 1
         self.gradient_accumulation_steps = 1
         self.learning_rate              = 1e-3
-        self.num_train_epochs           = 0.01
+        self.num_train_epochs           = 0.1
 
         # ── Device ────────────────────────────────────────────────────
         self.device = "cuda:0" if torch.cuda.is_available() else "cpu"
@@ -207,20 +207,47 @@ class FinetuneModel:
         """
         model = tokenizer = task = None
 
-        # ── Explicit type hints (dataset_info is a dict with known keys) ──────
-        if isinstance(dataset_info, dict):
-            if "conversations" in dataset_info:
-                task = "text-generation"
-                model, tokenizer = self._load_conversation_model(model_name)
-            if "image" in dataset_info or "images" in dataset_info:
-                task = "text-vision-text-generation"
-                model, tokenizer = self._load_vision_model(model_name)
+        # temporal fix almost same implementation from train_config.json saved to extract the parent's name of model
+        model_name = Path(model_name)
+        model_part = model_name.parts
+        split_name =[model_part[-2] , model_part[-1]]
+        model_name = model_name.as_posix()
 
-        # ── Fallback: try conversation then vision, detect task from config ───
-        if model is None:
-            model, tokenizer = self._load_conversation_model(model_name)
-        if model is None:
-            model, tokenizer = self._load_vision_model(model_name)
+        model_name_sub = Path(*split_name).as_posix()
+
+        print(model_name_sub)
+
+
+
+        # ── Explicit type hints (dataset_info is a dict with known keys) ──────
+        # if isinstance(dataset_info, dict):
+        #     if "conversations" in dataset_info:
+        #         task = "text-generation"
+        #
+        #         model, tokenizer = self._load_conversation_model(model_name)
+        #     if "image" in dataset_info or "images" in dataset_info:
+        #         task = "text-vision-text-generation"
+        #         model, tokenizer = self._load_vision_model(model_name)
+        # else:
+
+        type_part = [model_part[0]]
+
+        model_type = Path(*type_part).as_posix()
+
+        if model_type == "conversation-model":
+            model, tokenizer = self._load_conversation_model(model_name_sub)
+        elif model_type == "vision-model":
+            model, tokenizer = self._load_vision_model(model_name_sub)
+        else:
+            # localModel if i have mind to implement this part
+            local_model =(self.variable.LocalModel_DIR / model_name_sub).as_posix()
+            model , tokenizer = AutoModelForCausalLM.from_pretrained(pretrained_model_name_or_path=local_model)
+
+        # # ── Fallback: try conversation then vision, detect task from config ───
+        # if model is None:
+        #     model, tokenizer = self._load_conversation_model(model_name_sub)
+        # if model is None:
+        #     model, tokenizer = self._load_vision_model(model_name_sub)
 
         # Infer task from the loaded model's config when not already set
         if model is not None and task is None:
@@ -242,7 +269,7 @@ class FinetuneModel:
         safe_name  = model_name.replace("/", "_")
         local_path = self.variable.LocalModel_DIR  / model_name
         custom_path= self.variable.REGULAR_MODEL_DIR / model_name
-        ckpt_path  = self.variable.CHECKPOINT_DIR / "text-generation" / safe_name
+        ckpt_path  = self.variable.CHECKPOINT_DIR / f"text-generation{safe_name}"
 
         # Load from the most refined checkpoint first
         for path in [ckpt_path, custom_path, local_path]:
@@ -257,9 +284,8 @@ class FinetuneModel:
     def _load_vision_model(self, model_name):
         """Try checkpoint → custom path for vision models."""
         safe_name  = model_name.replace("/", "_")
-        model_short= model_name.split("/")[-1]
-        ckpt_path  = self.variable.CHECKPOINT_DIR / "text-vision-text-generation" / safe_name
-        custom_path= self.variable.VISION_MODEL_DIR / model_short
+        ckpt_path  = self.variable.CHECKPOINT_DIR / f"text-vision-text-generation{safe_name}"
+        custom_path= self.variable.VISION_MODEL_DIR / model_name
 
         if ckpt_path.exists():
             print(f"{Fore.GREEN}Loading vision model from checkpoint{Style.RESET_ALL}")
@@ -279,8 +305,8 @@ class FinetuneModel:
     def _make_training_args(self, task, model_name):
         """Build TrainingArguments for the given task and model name."""
         # Normalise model name to a safe folder name
-        safe_name  = model_name.split("\\")[-1] if "custom_models" in model_name else model_name
-        safe_name  = safe_name.replace("/", "_") if "/" in safe_name else safe_name
+        # safe_name  = model_name.split("\\")[-1] if "custom_models" in model_name else model_name
+        safe_name  = model_name.replace("/", "_") if "/" in model_name else model_name
         output_dir = self.variable.CHECKPOINT_DIR / task / safe_name
         output_dir.mkdir(parents=True, exist_ok=True)
 
