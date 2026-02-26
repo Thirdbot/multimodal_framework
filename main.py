@@ -32,7 +32,7 @@ from modules.inference import InferenceManager
 # from modules.ApiDump import ApiCardSetup
 # from modules.DataDownload import DataLoader
 # from modules.DataModelPrepare import Manager
-# from modules.train import FinetuneModel
+from modules.train import FinetuneModel
 
 # variable = Variable()
 # api      = variable.hf_api
@@ -53,20 +53,19 @@ from modules.inference import InferenceManager
 # Manager().dataset_prepare(list_download)
 
 # Step 5: fine-tune the model on the formatted datasets
-# FinetuneModel().finetune_model()
+FinetuneModel().finetune_model()
 
 # ── Inference demo ─────────────────────────────────────────────────────────────
 
-model_path = (
-    Path(__file__).parent
-    / "custom_models"
-    / "conversation-model"
-    / "HuggingFaceTB"
-    / "SmolLM2-360M"
-)
-
-inference_manager = InferenceManager(str(model_path))
-
-user_input = "What is the total value in the image?"
-response   = inference_manager.generate_response(user_input)
-print(response)
+# model_path = (
+#     Path(__file__).parent
+#     / "checkpoints"
+#     / "text-generation"
+#     / "HuggingFaceTB_SmolLM2-360M"
+# )
+#
+# inference_manager = InferenceManager(str(model_path))
+#
+# user_input = "How are you"
+# response   = inference_manager.generate_response(user_input)
+# print(response)
