@@ -14,7 +14,8 @@ from modules.ApiDump import ApiCardSetup
 from modules.DataModelPrepare import  Manager as DataManager
 from modules.ModelUtils import CreateModel
 from modules.variable import Variable
-from ui_components import (ListFrame, DownloadHubView, TaskSetterView,
+from ui_components import (ListFrame, DownloadHubView,
+                           # TaskSetterView,
                             FormattingView, ConfigView, CreateModelView,
                             TrainView, COLORS)
 
@@ -105,7 +106,7 @@ class App(ctk.CTk):
                                                ])
 
         # 4. set task for train job
-        self.views["Set_Task"] = TaskSetterView(container, self.vars, self.handle_set_apicard)
+        # self.views["Set_Task"] = TaskSetterView(container, self.vars, self.handle_set_apicard)
 
         # 5. Training View (Using Generic Logger)
         self.views["train"] = TrainView(container, self.vars, global_log_callback=self.write_log)
@@ -113,7 +114,7 @@ class App(ctk.CTk):
         # 6. Create Model
         self.views["create_model"] = CreateModelView(container, self.vars, self.handle_model_creation)
         # 7. Formatting View (Using Generic Logger)
-        self.views["Dataset Format"] = FormattingView(container, self.vars, self.handle_data_formatting)
+        self.views["format Dataset and set Task"] = FormattingView(container, self.vars, self.handle_data_formatting)
 
 
         # 7. Config
