@@ -41,7 +41,7 @@ downloading.run(list_download)
 # ## use custom_models in custom_models folder so it need to have custom_models in folder
 finetune.dataset_prepare(list_download)
 # use formatted dataset and models
-# Ft.finetune_model()
+Ft.finetune_model()
 
 
 

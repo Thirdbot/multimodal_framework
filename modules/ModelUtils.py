@@ -40,9 +40,8 @@ TARGET_MODULES_MAP = {
     "phi": ["Wqkv", "out_proj"],
     "gemma": ["q_proj", "k_proj", "v_proj", "o_proj"],
     "stablelm": ["q_proj", "k_proj", "v_proj", "o_proj"],
-    "ConversationModelWrapper": ["q_proj", "k_proj", "v_proj", "o_proj"],
-    "VisionModelWrapper": ["q_proj", "k_proj", "v_proj", "o_proj"],
-    # "Qwen2Model":["q_proj", "k_proj", "v_proj", "o_proj"],
+    "conversation-model": ["q_proj", "k_proj", "v_proj", "o_proj"],
+    "vision-model": ["q_proj", "k_proj", "v_proj", "o_proj"],
 
 }
 
@@ -112,7 +111,10 @@ class ConversationModelWrapper(PreTrainedModel):
 
     def __init__(self, config,**kwargs):
         super().__init__(config)
-        self.bmodel = kwargs.get('base_model').to(self.device)
+        base_model = kwargs.get('base_model')
+        if base_model is None:
+            raise ValueError("base_model cannot be None when initializing ConversationModelWrapper")
+        self.bmodel = base_model.to(self.device)
         self.config = config
         
     
@@ -464,10 +466,17 @@ class CreateModel:
     def __init__(self, model_repo_path, model_category, model_config: ModelConfig | None = None):
         self.model_config = model_config or ModelConfig()
         self.model_repo_path = model_repo_path
-        self.save_name = self.model_repo_path.name.replace("/", "_")
+        self.model_repo_path = Path(model_repo_path)
+
+
         self.model_category = model_category
         self.variable = Variable()
         self.dtype = self.variable.DTYPE
+
+        if len(self.model_repo_path.parts) >= 2:
+            self.save_name = os.path.join(self.model_repo_path.parts[-2], self.model_repo_path.parts[-1])
+        else:
+            self.save_name = self.model_repo_path.name
         self.model_path = Path(__file__).parent.parent.absolute() / "custom_models" / self.model_category / self.save_name
         self.model_path.mkdir(parents=True, exist_ok=True)
 
@@ -494,14 +503,18 @@ class CreateModel:
             )
             print("Model loaded successfully")
         except Exception as e:
-            print("Attempting to load without quantization...")
-            self.model = AutoModelForCausalLM.from_pretrained(
-                self.model_repo_path,
-                device_map="auto",
-                torch_dtype=self.dtype,
-                low_cpu_mem_usage=True,
-                trust_remote_code=True
-            )
+            print(f"Attempting to load without quantization... Error: {e}")
+            try:
+                self.model = AutoModelForCausalLM.from_pretrained(
+                    self.model_repo_path,
+                    device_map="auto",
+                    torch_dtype=self.dtype,
+                    low_cpu_mem_usage=True,
+                    trust_remote_code=True
+                )
+            except Exception as e2:
+                print(f"Failed to load model: {e2}")
+                self.model = None
 
         self.original_config = ConversationConfig()
         self.tokenizer = AutoTokenizer.from_pretrained(
@@ -518,6 +531,10 @@ class CreateModel:
     
     def add_conversation(self):
         """Add conversation capability to the model."""
+        if self.model is None:
+            print("Error: Cannot add conversation capability because model failed to load.")
+            return
+
         try:
             if not isinstance(self.model, AutoModelForCausalLM):
                 print("Converting model to AutoModelForCausalLM")
@@ -528,15 +545,17 @@ class CreateModel:
                     quantization_config=self.quantization_config,
                     torch_dtype=self.dtype
                 )
-            
+
             self.model = prepare_model_for_kbit_training(self.model)
             
             
             # model_type = self.model.config.model_type.lower() if hasattr(self.model.config, 'model_type') else ""
-            model_arc = self.model.config.architectures[0] if hasattr(self.model.config, 'architectures') and len(self.model.config.architectures) > 0 else ""
-            target_modules = get_target_modules(model_arc)
+            typed = self.model.config.model_type.lower() if hasattr(self.model.config, 'model_type') else ""
+            target_modules = get_target_modules(typed)
+
+            print(typed)
             if target_modules is not None:
-                print(f"Using target modules for {model_arc}: {target_modules}")
+                print(f"Using target modules for {typed}: {target_modules}")
                 lora_config = LoraConfig(
                     r=32,
                     lora_alpha=64,
@@ -564,20 +583,20 @@ class CreateModel:
                 print(f"Trainable params: {trainable_params:,} ({100 * trainable_params / all_param:.2f}%)")
                 print(f"All params: {all_param:,}")
             else:
-                self.model = AutoModelForCausalLM.from_pretrained(
-                    self.model_repo_path,
-                    device_map="auto",
-                    trust_remote_code=True,
-                    quantization_config=self.quantization_config,
-                    torch_dtype=self.dtype
-                )
+                # self.model = AutoModelForCausalLM.from_pretrained(
+                #     self.model_repo_path,
+                #     device_map="auto",
+                #     trust_remote_code=True,
+                #     quantization_config=self.quantization_config,
+                #     torch_dtype=self.dtype
+                # )
                 self.model = ConversationModelWrapper(self.original_config, base_model=self.model)
-                
+
                 self.model.config.use_cache = False
-                
+
                 self.model.train()
                 self.model.gradient_checkpointing_enable()
-                
+
                 print("Successfully created conversation model without LoRA configuration")
                 trainable_params = 0
                 all_param = 0
@@ -596,11 +615,10 @@ class CreateModel:
     def add_vision(self):
         self.model = prepare_model_for_kbit_training(self.model)
         
-        model_type = self.model.config.model_type.lower() if hasattr(self.model.config, 'model_type') else ""
-        model_arc = self.model.config.architectures[0] if hasattr(self.model.config, 'architectures') and len(self.model.config.architectures) > 0 else ""
-        target_modules = get_target_modules(model_arc)
+        typed = self.model.config.model_type.lower() if hasattr(self.model.config, 'model_type') else ""
+        target_modules = get_target_modules(typed)
         if target_modules is not None:
-            print(f"Using target modules for {model_arc}: {target_modules}")
+            print(f"Using target modules for {typed}: {target_modules}")
             
             lora_config = LoraConfig(
                 r=32,
@@ -724,8 +742,8 @@ def load_saved_model(model_path):
             
             config = VisionConfig()
             # Get architecture safely
-            arch = config.architectures[0] if hasattr(config, 'architectures') and config.architectures else None
-            target_modules = get_target_modules(arch) if arch else None
+            typed = config.model_type[0] if hasattr(config, 'architectures') and config.model_type else None
+            target_modules = get_target_modules(typed) if typed else None
             
             # Load vision model components that is addoned on top of language model
             if target_modules is not None:
@@ -790,12 +808,12 @@ def load_saved_model(model_path):
             return model, tokenizer
         else:
             # Get architecture safely
-            arch = config.architectures
-            target_modules = get_target_modules(arch[0]) if arch else None
+            typed = config.model_type
+            target_modules = get_target_modules(typed[0]) if typed else None
 
             # Load conversation model that addons on top of base model
             if target_modules is not None:
-                print("Loading conversation model with LoRA...")
+                print(f"Loading conversation model with LoRA...{model_path}")
                 pefted_model = AutoModelForCausalLM.from_pretrained(
                     model_path,
                     device_map=device,

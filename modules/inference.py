@@ -65,7 +65,7 @@ class InferenceManager:
             
     def _load_model_and_tokenizer(self):
 
-        self.model,self.tokenizer = load_saved_model(self.model_path, True)
+        self.model,self.tokenizer = load_saved_model(self.model_path)
         self.chat_template = self.tokenizer.chat_template
 
         # self.vision_processor = CLIPProcessor.from_pretrained(

@@ -116,7 +116,7 @@ class FinetuneModel:
         self.per_device_eval_batch_size = 1
         self.gradient_accumulation_steps = 1  # Accumulate to simulate larger batch
         self.learning_rate = 1e-3
-        self.num_train_epochs = 1
+        self.num_train_epochs = 0.001
         self.save_strategy = "best"
         self.training_config_path = self.variable.training_config_path
         
@@ -364,25 +364,41 @@ class FinetuneModel:
         for modelname, dict_dataset in model_training_data['model'].items():
             print(f"{Fore.CYAN}Preparing to fine-tune model: {modelname}{Style.RESET_ALL}")
 
+            model = None
+            tokenizer = None
+            model_task = None
+
             for dataset_name, dataset_info in dict_dataset.items():
                 dataset_format_name = f"{dataset_name.replace('/', '_')}_formatted"
                 dataset = load_from_disk(self.variable.DATASET_FORMATTED_DIR / dataset_format_name)
-                # Create model as designed
+
                 if "conversations" in dataset_info:
                     model_name_checkpoint = modelname.replace("/", "_")
-                    model_name_path = modelname.split("/")[-1]
-                    model_path = self.variable.REGULAR_MODEL_DIR / model_name_path
+                    # model_name_path = modelname.split("/")[-1]
+
                     model_task = "text-generation"
 
+                    local_model = self.variable.LocalModel_DIR / modelname
+                    custom_model = self.variable.REGULAR_MODEL_DIR / modelname
                     conversation_checkpoint = self.variable.CHECKPOINT_DIR / model_task / model_name_checkpoint
 
-                    # Load from checkpoint if exists for training only
+                    # local exist or not
+                    if local_model.exists():
+                        print(f"{Fore.GREEN}Loading conversation model from Local...{Style.RESET_ALL}")
+                        model, tokenizer = load_saved_model(local_model)
+
+
+                    # custom exist or not
+                    if  custom_model.exists():
+                        print(f"{Fore.GREEN}Loading conversation model from Custom...{Style.RESET_ALL}")
+                        model, tokenizer = load_saved_model(custom_model)
+
+                        # Load from checkpoint if exists for training only
                     if conversation_checkpoint.exists():
                         print(f"{Fore.GREEN}Loading conversation model from checkpoint...{Style.RESET_ALL}")
-                        model, tokenizer = load_saved_model(conversation_checkpoint, checkpoint=True)
-                    else:
-                        model, tokenizer = load_saved_model(model_path)
-                    
+                        model, tokenizer = load_saved_model(conversation_checkpoint)
+
+
                     # Set model to training mode
                     model.train()
 
@@ -398,7 +414,7 @@ class FinetuneModel:
 
                     if vision_checkpoint.exists():
                         print(f"{Fore.GREEN}Loading vision model from checkpoint...{Style.RESET_ALL}")
-                        model, tokenizer = load_saved_model(vision_checkpoint, checkpoint=True)
+                        model, tokenizer = load_saved_model(vision_checkpoint)
                     else:
                         model, tokenizer = load_saved_model(model_path)
                     

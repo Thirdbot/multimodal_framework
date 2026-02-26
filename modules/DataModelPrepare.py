@@ -71,55 +71,6 @@ class Manager:
             return None, None
 
 
-    # def _load_from_scratch(self, model_id: Union[str, Path]) -> Tuple[Optional[AutoModelForCausalLM], Optional[AutoTokenizer]]:
-    #     potential_path = Path(model_id)
-    #     model_path = potential_path if potential_path.exists() else (self.variable.LocalModel_DIR / str(model_id))
-    #     try:
-    #         print(f"{Fore.CYAN}Downloading and loading model: {model_path}{Style.RESET_ALL}")
-
-    #         tokenizer = AutoTokenizer.from_pretrained(
-    #             model_path,
-    #             trust_remote_code=True,
-    #             padding_side="right",
-    #             truncation_side="right",
-    #         )
-
-    #         # Ensure tokenizer has padding token
-    #         if tokenizer.pad_token is None:
-    #             tokenizer.pad_token = tokenizer.eos_token
-    #             print(f"{Fore.YELLOW}Set padding token to EOS token{Style.RESET_ALL}")
-
-    #         config = AutoConfig.from_pretrained(
-    #             model_path,
-    #             trust_remote_code=True,
-    #             use_cache=False  # Disable cache for gradient checkpointing compatibility
-    #         )
-
-    #         # Update config with tokenizer's pad_token_id
-    #         if hasattr(tokenizer, 'pad_token_id') and tokenizer.pad_token_id is not None:
-    #             config.pad_token_id = tokenizer.pad_token_id
-
-    #         model,tokeni
-    #         # model = AutoModelForCausalLM.from_pretrained(
-    #         #     model_path,
-    #         #     config=config,
-    #         #     device_map=self.device_map,
-    #         #     trust_remote_code=True,
-    #         #     torch_dtype=torch.float32,
-    #         # )
-
-    #         # Enable training mode and gradient checkpointing
-    #         model.config.use_cache = False  # Ensure config is consistent
-    #         model.train()
-    #         model.gradient_checkpointing_enable()
-
-    #         print(f"{Fore.GREEN}Successfully loaded model and tokenizer{Style.RESET_ALL}")
-    #         return model, tokenizer
-
-        # except Exception as e:
-        #     print(f"{Fore.RED}Error loading model from scratch: {str(e)}{Style.RESET_ALL} from {model_path}")
-        #     return None, None
-
     def load_dataset(self, dataset_name: str, config_name: Optional[str] = None) -> Optional[DatasetDict]:
 
         dataset_name = self.variable.DATASETS_DIR.joinpath(dataset_name).as_posix()
