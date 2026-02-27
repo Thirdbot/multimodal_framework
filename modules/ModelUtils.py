@@ -411,15 +411,15 @@ class VisionModelWrapper(PreTrainedModel):
         self._is_gradient_checkpointing = value
 
     def gradient_checkpointing_enable(self, gradient_checkpointing_kwargs=None):
-        if hasattr(self.vision_model, "gradient_checkpointing_enable"):
-            self.vision_model.gradient_checkpointing_enable(
+        if hasattr(self.lang_model, "gradient_checkpointing_enable"):
+            self.lang_model.gradient_checkpointing_enable(
                 gradient_checkpointing_kwargs=gradient_checkpointing_kwargs
             )
         self.is_gradient_checkpointing = True
 
     def gradient_checkpointing_disable(self):
-        if hasattr(self.vision_model, "gradient_checkpointing_disable"):
-            self.vision_model.gradient_checkpointing_disable()
+        if hasattr(self.lang_model, "gradient_checkpointing_disable"):
+            self.lang_model.gradient_checkpointing_disable()
         self.is_gradient_checkpointing = False
 
     def _set_gradient_checkpointing(self, module, value=False):
@@ -427,8 +427,8 @@ class VisionModelWrapper(PreTrainedModel):
             module.gradient_checkpointing = value
 
     def enable_input_require_grads(self):
-        if hasattr(self.vision_model, "enable_input_require_grads"):
-            self.vision_model.enable_input_require_grads()
+        if hasattr(self.lang_model, "enable_input_require_grads"):
+            self.lang_model.enable_input_require_grads()
 
 
 # ── VisionProcessor ────────────────────────────────────────────────────────────
@@ -579,6 +579,11 @@ class CreateModel:
                 low_cpu_mem_usage=True,
                 trust_remote_code=True,
             )
+
+            model.train()
+            for param in model.parameters():
+                param.requires_grad = True
+
             print("Base model loaded with quantization.")
             return model
         except Exception as e:
