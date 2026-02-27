@@ -1,65 +1,39 @@
-from modules.models.ConversationModel import ConversationModel
-from modules.ModelCreationtemplate import  ModelConfig,create_model,CustomModelConfig
-from modules.ModelUtils import CreateModel
-from transformers import AutoModelForCausalLM, AutoConfig
-import jinja2
+"""
+createmodel.py – Wrap a base model with LoRA and save it as a custom model.
+
+Usage:
+    python createmodel.py
+
+    Reads the base model from local_models/<org>/<name>, applies LoRA
+    adapters via CreateModel, and saves the result to custom_models/.
+
+    Uncomment the vision block to create a multimodal vision model instead.
+"""
 
 from modules.variable import Variable
-from transformers import AutoTokenizer
-vars = Variable()
+from modules.ModelUtils import CreateModel
 
-chat_template_file = vars.chat_template_path / "chat_template_conversation.jinja"
+# ── Paths ──────────────────────────────────────────────────────────────────────
 
-def _read_template_str(template_path) -> str:
-        template_file = template_path
-        with open(template_file, "r", encoding="utf-8") as f:
-            return f.read()
-        
-conversation_folder = vars.REGULAR_MODEL_DIR
+vars       = Variable()
 repo_folder = vars.LocalModel_DIR
 
-model_config = CustomModelConfig(
-    base_config=ModelConfig(
-    model_type="conversation-model",
-    hidden_size=2048,
-    architectures = [
-    "Qwen"
-  ],
-    model_name="ConversationModel",
-))
+# Base model to wrap (must be downloaded to local_models/ first)
+oldmodel_path = repo_folder / "Qwen" / "Qwen1.5-0.5B-Chat"
 
 
-oldmodel_path = repo_folder /"Qwen"/ "Qwen1.5-0.5B-Chat"
-
-
-# # Load the SAME tokenizer that will be used for training (Qwen tokenizer)
-# tokenizer = AutoTokenizer.from_pretrained(oldmodel_path)
-# tokenizer.chat_template = _read_template_str(chat_template_file)
-# tokenizer.pad_token = tokenizer.eos_token
-
-# # Update config with correct vocab size from tokenizer
-# model_config.vocab_size = len(tokenizer)
-# print(f"Setting vocab_size to {model_config.vocab_size} (from tokenizer)")
-
-# # Create the conversation model with tokenizer
-# conver = ConversationModel(model_config, tokenizer=tokenizer)
-
-# # Save directly (tokenizer will be saved automatically)
-# conver.save_pretrained(conversation_folder / "newModel")
-# conver.save_pretrained(repo_folder / "newModel")
-
-# print("Successfully created and saved the conversation model. to "+ str(conversation_folder / "newModel"))
-
-
-
-###attach text-based model to conversation model with conversationwrapper to forward
+# ── Conversation model ─────────────────────────────────────────────────────────
+# Wraps the base model with ConversationModelWrapper + LoRA and saves it
+# under custom_models/conversation-model/
 
 create_conver_model = CreateModel(oldmodel_path, "conversation-model")
 create_conver_model.add_conversation()
 create_conver_model.save_regular_model()
 
 
-###attach text-based model to vision model with visionmodelwrapper to add Vision capability
+# ── Vision model (optional) ────────────────────────────────────────────────────
+# Wraps the base model with VisionModelWrapper + LoRA and saves it
+# under custom_models/vision-model/
 
 # create_vision_model = CreateModel(oldmodel_path, "vision-model")
 # create_vision_model.add_vision()

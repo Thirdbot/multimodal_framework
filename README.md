@@ -1,15 +1,26 @@
-# Multimodal Framework
+# Model DEV Studio
 
-This project is a multimodal framework designed to handle datasets, fine-tune models, and integrate vision and language models for multimodal tasks. It supports downloading datasets and models from Hugging Face, preparing datasets for fine-tuning, and managing the training process.
+A local fine-tuning framework for HuggingFace language models with support for both **text (conversation)** and **vision** modalities. Provides a full pipeline from downloading base models to running inference on trained checkpoints, accessible via either a graphical interface or the command line.
+
+---
+
+## Features
+
+- Download models and datasets directly from HuggingFace Hub
+- Wrap base models with LoRA adapters for efficient fine-tuning
+- Support for **conversation models** and **multimodal vision models** (CLIP + LM)
+- Chat-template-based dataset formatting and tokenization
+- HuggingFace `Trainer`-based fine-tuning with GPU/CPU support
+- Inference on saved checkpoints (text-only or image + text)
+- GUI built with CustomTkinter and CLI entry points for every module
 
 ---
 
 ## Prerequisites
 
-- Python 3.9 or later
-- pip (Python package installer)
-- Hugging Face Hub account (with an access token)
-- PyTorch and related dependencies
+- **Python 3.9** or later
+- **CUDA-compatible GPU** (recommended for fine-tuning) or CPU (for light inference)
+- **HuggingFace Hub account** with an access token for gated models/datasets
 
 ---
 
@@ -17,37 +28,24 @@ This project is a multimodal framework designed to handle datasets, fine-tune mo
 
 ### 1. Install PyTorch
 
-Visit [PyTorch's official website](https://pytorch.org/get-started/locally/) and follow these steps:
+Visit [PyTorch's official website](https://pytorch.org/get-started/locally/) for the correct command for your system.
 
-1. Select your preferences:
-   - PyTorch Build: Stable (2.1.0)
-   - Your OS: Windows
-   - Package: Pip
-   - Language: Python
-   - Compute Platform: CUDA 11.8 (if you have an NVIDIA GPU) or CPU
+Example for Linux/Windows with CUDA 11.8:
+```bash
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+```
 
-2. Run the generated command in your terminal. For example:
-   ```bash
-   # For CUDA 11.8
-   pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
-
-   # For CPU only
-   pip install torch torchvision torchaudio
-   ```
-
-### 2. Install Project Dependencies
-
-After installing PyTorch, install the remaining project dependencies:
+### 2. Install project dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 3. Set Your Hugging Face Access Token
+### 3. HuggingFace token (optional, required for gated repos)
 
-Set your Hugging Face access token as an environment variable:
 ```bash
-export hf_token=YOUR_HUGGINGFACE_TOKEN  # On Windows: set hf_token=YOUR_HUGGINGFACE_TOKEN
+export hf_token=YOUR_HUGGINGFACE_TOKEN   # Linux/macOS
+set hf_token=YOUR_HUGGINGFACE_TOKEN      # Windows
 ```
 
 ---
@@ -56,101 +54,221 @@ export hf_token=YOUR_HUGGINGFACE_TOKEN  # On Windows: set hf_token=YOUR_HUGGINGF
 
 ```
 multimodal_framework/
-├── main.py              # Main application entry point
-├── modules/             # Core modules for the framework
-│   ├── ApiDump.py       # Handles Hugging Face API interactions
-│   ├── DataDownload.py  # Manages dataset and model downloading
-│   ├── DataModelPrepare.py  # Prepares datasets and manages fine-tuning
-│   ├── variable.py      # Stores global variables and configurations
-│   └── createbasemodel.py  # Defines the multimodal model architecture
-├── models/              # Model storage directory
-├── offload/             # Offloading directory
-├── login/               # Login-related modules
-└── README.md            # Documentation for the project
+├── App/
+│   ├── app.py              # GUI application entry point
+│   └── ui_components.py    # CustomTkinter UI components
+├── modules/
+│   ├── variable.py         # Central path/config object
+│   ├── ApiDump.py          # ApiCard manager (model-dataset registry)
+│   ├── DataDownload.py     # HuggingFace Hub downloader
+│   ├── DataModelPrepare.py # Dataset formatting and tokenization
+│   ├── ModelUtils.py       # Model wrappers, LoRA helpers, load/save
+│   ├── train.py            # Fine-tuning pipeline
+│   ├── inference.py        # Inference manager
+│   ├── chatTemplate.py     # Chat template formatter
+│   ├── prerun.py           # Workspace initializer
+│   └── models/             # Custom model config classes
+├── configs/                # ApiCardSet.json, saved_config.json
+├── repositories/           # Downloaded models and datasets
+│   ├── models/
+│   └── datasets/
+├── custom_models/          # LoRA-wrapped models ready for training
+│   ├── conversation-model/
+│   └── vision-model/
+├── formatted_datasets/     # Tokenized datasets saved to disk
+├── checkpoints/            # Training output checkpoints
+├── chat_template/          # Jinja2 chat template files
+├── createmodel.py          # CLI script to wrap a base model
+├── main.py                 # CLI pipeline reference script
+└── requirements.txt
 ```
 
 ---
 
-## Environment Setup
+## GUI
 
-The project uses the following environment variables:
-- `WORKSPACE_DIR`: Project root directory
-- `MODEL_DIR`: Directory for model storage
-- `OFFLOAD_DIR`: Directory for offloading data
+Launch the graphical interface:
 
----
-
-## Usage
-
-### **1. Prepare the Dataset and Model**
-The script automatically downloads the specified dataset and model from Hugging Face. You can modify the dataset and model in the `main.py` file:
-```python
-list_models = api.list_models(model_name='Qwen/Qwen1.5-0.5B-Chat', limit=1, gated=False)
-list_datasets = api.list_datasets(dataset_name='waltsun/MOAT', limit=1, gated=False)
-```
-
-### **2. Run the Script**
-To start the process, simply run:
 ```bash
-python main.py
+python App/app.py
 ```
 
-### **3. What Happens During Execution**
-- **Dataset and Model Download:**  
-  The script downloads the specified dataset and model using the Hugging Face API.
-- **Dataset Preparation:**  
-  The `Manager` class prepares the dataset for multimodal fine-tuning.
-- **Fine-Tuning:**  
-  The script fine-tunes the model using the prepared dataset.
+**Model DEV Studio** opens with a sidebar navigation. All long-running operations execute in background threads so the interface stays responsive. A **global terminal** at the bottom streams live log output from every operation.
+
+### Views
+
+| View | Description |
+|------|-------------|
+| **Download** | Enter a HuggingFace repo ID and download a model or dataset |
+| **Formatted Dataset** | Browse tokenized datasets ready for training |
+| **Custom Model** | Browse LoRA-wrapped models available for training or formatting |
+| **Train** | Start fine-tuning; live logs stream to the view and the global terminal |
+| **Create Model** | Wrap a downloaded base model with LoRA adapters |
+| **Format Dataset and Set Task** | Apply chat templates and tokenize datasets |
+| **Configuration** | View and edit JSON config files |
 
 ---
 
-## Notes
+## CLI
 
-- Make sure you have sufficient disk space for model downloads.
-- GPU acceleration is recommended for better performance.
-- The project uses Hugging Face models, so ensure you have proper authentication set up.
+Every module has a CLI entry point. The sections below cover each step of the pipeline.
 
 ---
 
-## Troubleshooting
+## Workflow
 
-If you encounter any issues during installation or execution:
+### Step 1 — Download a model or dataset
 
-1. Verify your Python version:
-   ```bash
-   python --version
-   ```
-2. Ensure pip is up to date:
-   ```bash
-   pip install --upgrade pip
-   ```
-3. Check CUDA installation (if using GPU):
-   ```bash
-   nvidia-smi
-   ```
-4. Clear pip cache if needed:
-   ```bash
-   pip cache purge
-   ```
+**GUI:** Go to **Download**, enter a repo ID (e.g. `HuggingFaceTB/SmolLM2-360M`), select *Model* or *Dataset*, click **Download**.
+
+**CLI:**
+```bash
+# Download a model
+python -m modules.DataDownload HuggingFaceTB/SmolLM2-360M
+
+# Download a dataset
+python -m modules.DataDownload Lin-Chen/ShareGPT4V --dataset
+```
+
+Files are saved to `repositories/models/` and `repositories/datasets/`.
 
 ---
 
-## Future Work
+### Step 2 — Create a custom model (wrap with LoRA)
 
-- Add support for VLLM inference.
-- Dockerize the framework for deployment on large GPU clusters.
-- Implement RunPod for managing training jobs.
-- Improve dataset merging and rearrangement for multimodal training.
+Wraps a downloaded base model with LoRA adapters and saves it under `custom_models/`.
+
+**GUI:** Go to **Create Model**, select a model, choose *Conversation* or *Vision* mode, click **Create Wrapped Model**.
+
+**CLI:** Edit the paths in `createmodel.py` then run:
+```bash
+python createmodel.py
+```
+
+**API:**
+```python
+from modules.ModelUtils import CreateModel
+
+# Conversation model
+creator = CreateModel("repositories/models/Qwen/Qwen1.5-0.5B-Chat", "conversation-model")
+creator.add_conversation()
+creator.save_regular_model()
+
+# Vision model
+creator = CreateModel("repositories/models/Qwen/Qwen1.5-0.5B-Chat", "vision-model")
+creator.add_vision()
+creator.save_vision_model()
+```
 
 ---
 
-## Contributing
+### Step 3 — Format dataset for training
 
-Contributions are welcome! If you'd like to contribute, please fork the repository and submit a pull request.
+Applies a chat template and tokenizes the dataset, saving the result to `formatted_datasets/`. Also writes `custom_models/training_config.json`, which links model names to dataset column metadata used by the trainer.
+
+**GUI:** Go to **Format Dataset and Set Task**, select a custom model and one or more datasets, click **Run Formatting Process**.
+
+**CLI:**
+```bash
+python -m modules.DataModelPrepare
+```
+
+**API:**
+```python
+from modules.DataModelPrepare import Manager
+
+api_card = {
+    "model": {
+        "conversation-model/Qwen/Qwen1.5-0.5B-Chat": {
+            "ShareGPT4V": ""
+        }
+    }
+}
+Manager().dataset_prepare(api_card)
+```
+
+---
+
+### Step 4 — Fine-tune
+
+Reads `training_config.json`, loads each custom model and its formatted dataset, and runs HuggingFace `Trainer`. Checkpoints are saved under `checkpoints/`.
+
+**GUI:** Go to **Train**, click **Start Training**.
+
+**CLI:**
+```bash
+python -m modules.train
+```
+
+**API:**
+```python
+from modules.train import FinetuneModel
+FinetuneModel().finetune_model()
+```
+
+Training hyperparameters (batch size, learning rate, epochs) can be adjusted in `modules/train.py` inside `FinetuneModel.__init__`.
+
+---
+
+### Step 5 — Run inference
+
+**CLI:**
+```bash
+# Text-only
+python -m modules.inference \
+    --model checkpoints/text-generation/Qwen_Qwen1.5-0.5B-Chat \
+    --prompt "Explain transformers in simple terms"
+
+# With an image (vision model)
+python -m modules.inference \
+    --model checkpoints/text-vision-text-generation/Qwen_Qwen1.5-0.5B-Chat \
+    --prompt "Describe this image" \
+    --image /path/to/image.jpg
+```
+
+**API:**
+```python
+from modules.inference import InferenceManager
+
+manager = InferenceManager("checkpoints/text-generation/Qwen_Qwen1.5-0.5B-Chat")
+print(manager.generate_response("Hello, how are you?"))
+
+# Vision inference
+print(manager.generate_response("What is in this image?", image_path="image.jpg"))
+```
+
+---
+
+## Configuration Files
+
+| File | Location | Purpose |
+|------|----------|---------|
+| `ApiCardSet.json` | `configs/` | Registry linking model names to dataset names |
+| `saved_config.json` | `configs/` | Saved HuggingFace dataset config choices |
+| `training_config.json` | `custom_models/` | Generated after formatting; used by the trainer |
+
+---
+
+## Supported Architectures (LoRA)
+
+Pre-configured LoRA target modules are included for:
+
+`gpt2` · `llama` · `mistral` · `opt` · `bloom` · `t5` · `bert` · `roberta` · `gpt_neox` · `falcon` · `mpt` · `baichuan` · `chatglm` · `qwen` · `phi` · `gemma` · `stablelm`
+
+For any other architecture, LoRA is skipped and the full model is fine-tuned.
+
+---
+
+## Future Roadmap
+
+- [ ] Migrate inference and training to the **Unsloth** library for better performance
+- [ ] Push trained models to HuggingFace Hub after training
+- [ ] Adopt **Unsloth GPT-format** for dataset formatting
+- [ ] Expose more model configuration parameters
+- [ ] Move configuration files from JSON to INI format
 
 ---
 
 ## License
 
-This project is licensed under the MIT License. See the `LICENSE` file for details.
+This project is licensed under the **MIT License**. See the `LICENSE` file for details.
