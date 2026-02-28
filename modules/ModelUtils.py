@@ -418,8 +418,8 @@ class VisionModelWrapper(PreTrainedModel):
         self.is_gradient_checkpointing = True
 
     def gradient_checkpointing_disable(self):
-        if hasattr(self.lang_model, "gradient_checkpointing_disable"):
-            self.lang_model.gradient_checkpointing_disable()
+        if hasattr(self.vision_model, "gradient_checkpointing_disable"):
+            self.vision_model.gradient_checkpointing_disable()
         self.is_gradient_checkpointing = False
 
     def _set_gradient_checkpointing(self, module, value=False):
@@ -770,7 +770,7 @@ def _load_vision_model(model_path, dtype, device):
 
     Expects sub-directories:
       lang_model/                – saved language model (+ optional LoRA adapters)
-      vision_adapter/vision_adapter.pt – saved adapter weights
+      vision_adapter/b .pt – saved adapter weights
     """
     model_path          = Path(model_path)
     lang_model_path     = model_path / "lang_model"
